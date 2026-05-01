@@ -15,6 +15,7 @@ export function PinLock({ id }: { id: string }) {
   const [pinInput, setPinInput] = useState("");
   const [setting, setSetting] = useState(false);
   const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   if (!character) return null;
 
@@ -37,10 +38,15 @@ export function PinLock({ id }: { id: string }) {
         {setting && (
           <form
             className="flex items-center gap-1"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
               if (pinInput.trim().length < 2) return;
-              void patch(id, { pin: pinInput.trim() });
+              const ok = await patch(id, { pin: pinInput.trim() });
+              if (ok) {
+                useStore.setState((s) => ({
+                  pins: { ...s.pins, [id]: pinInput.trim() },
+                }));
+              }
               setPinInput("");
               setSetting(false);
             }}
@@ -67,9 +73,11 @@ export function PinLock({ id }: { id: string }) {
   return (
     <form
       className="flex items-center gap-1"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        const ok = unlock(id, pinInput);
+        setBusy(true);
+        const ok = await unlock(id, pinInput);
+        setBusy(false);
         if (!ok) {
           setError(true);
           setTimeout(() => setError(false), 1500);
@@ -86,8 +94,8 @@ export function PinLock({ id }: { id: string }) {
         placeholder="pin"
         className={`h-7 w-24 text-xs ${error ? "border-red-500" : ""}`}
       />
-      <Button size="sm" type="submit" variant="outline">
-        destravar
+      <Button size="sm" type="submit" variant="outline" disabled={busy}>
+        {busy ? "…" : "destravar"}
       </Button>
     </form>
   );

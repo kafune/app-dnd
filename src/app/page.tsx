@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useStore } from "@/lib/store";
-import { isSupabaseConfigured } from "@/lib/supabase";
 import { Card, CardBody } from "@/components/ui/Card";
 import { abilityMod, formatMod } from "@/lib/types";
 
@@ -20,18 +19,12 @@ export default function Home() {
         <div className="mt-3 inline-flex items-center gap-2 text-xs">
           <span
             className={
-              isSupabaseConfigured
-                ? realtimeReady
-                  ? "rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                  : "rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                : "rounded-full bg-zinc-200 px-2 py-0.5 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              realtimeReady
+                ? "rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                : "rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
             }
           >
-            {isSupabaseConfigured
-              ? realtimeReady
-                ? "🟢 Multiplayer ativo"
-                : "🟡 Conectando…"
-              : "💾 Modo local (sem Supabase)"}
+            {realtimeReady ? "🟢 Sincronizado em tempo real" : "🟡 Conectando…"}
           </span>
         </div>
       </header>
