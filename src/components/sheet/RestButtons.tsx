@@ -3,6 +3,7 @@
 import { Bed, Coffee } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useStore, useUnlocked } from "@/lib/store";
+import { applyLongRest, applyShortRest } from "@/lib/rest";
 
 export function RestButtons({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
@@ -12,27 +13,11 @@ export function RestButtons({ id }: { id: string }) {
   if (!c) return null;
 
   const shortRest = () => {
-    const resources = c.resources.map((r) =>
-      r.recharge === "short" ? { ...r, current: r.max } : r,
-    );
-    void patch(id, { resources });
+    void patch(id, applyShortRest(c));
   };
 
   const longRest = () => {
-    const resources = c.resources.map((r) =>
-      r.recharge === "long" || r.recharge === "short" || r.recharge === "dawn"
-        ? { ...r, current: r.max }
-        : r,
-    );
-    const slots = Object.fromEntries(
-      Object.entries(c.spellSlots).map(([k, v]) => [k, { ...v, current: v.max }]),
-    );
-    void patch(id, {
-      hpCurrent: c.hpMax,
-      hpTemp: 0,
-      resources,
-      spellSlots: slots,
-    });
+    void patch(id, applyLongRest(c));
   };
 
   return (

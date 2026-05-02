@@ -169,6 +169,7 @@ export type Character = {
   playerName: string;
   characterName: string;
   pin?: string;
+  protected?: boolean;
   color?: string; // tailwind hex pra header
   sheet: Sheet;
   hpCurrent: number;

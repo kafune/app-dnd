@@ -15,6 +15,8 @@ import { RestButtons } from "@/components/sheet/RestButtons";
 import { Combat } from "@/components/sheet/Combat";
 import { Spells } from "@/components/sheet/Spells";
 import { Features } from "@/components/sheet/Features";
+import { Notes } from "@/components/sheet/Notes";
+import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
 import {
   ProficienciesAndLanguages,
   Inventory,
@@ -23,6 +25,7 @@ import {
 import { PinLock } from "@/components/sheet/PinLock";
 import { DiceRoller } from "@/components/dice/DiceRoller";
 import { RollHistory } from "@/components/dice/RollHistory";
+import { useUnlocked } from "@/lib/store";
 
 export default function CharacterPage({
   params,
@@ -31,6 +34,7 @@ export default function CharacterPage({
 }) {
   const { id } = use(params);
   const character = useStore((s) => s.characters[id]);
+  const unlocked = useUnlocked(id);
 
   if (!character) {
     return (
@@ -41,6 +45,10 @@ export default function CharacterPage({
         <p className="mt-6 text-zinc-500">Personagem não encontrado.</p>
       </main>
     );
+  }
+
+  if (!unlocked) {
+    return <CharacterAccessGate id={id} />;
   }
 
   const cls = character.sheet.classes
@@ -84,6 +92,7 @@ export default function CharacterPage({
           <Skills id={id} />
           <Spells id={id} />
           <Features id={id} />
+          <Notes id={id} />
           <ProficienciesAndLanguages id={id} />
           <Inventory id={id} />
           <Personality id={id} />

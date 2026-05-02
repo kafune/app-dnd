@@ -27,6 +27,12 @@ export const api = {
       body: JSON.stringify({ patch, pin }),
     }),
 
+  getCharacter: (id: string, pin: string) =>
+    jsonFetch<{ character: Character }>(`/api/characters/${id}`, {
+      cache: "no-store",
+      headers: { "x-character-pin": pin },
+    }),
+
   listRolls: (limit = 50) =>
     jsonFetch<{ rolls: DiceRoll[] }>(`/api/rolls?limit=${limit}`, { cache: "no-store" }),
 

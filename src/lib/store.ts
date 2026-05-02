@@ -3,12 +3,20 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Character, DiceRoll } from "./types";
-import { SEED_CHARACTERS } from "@/data/seed";
+import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
 import { api } from "./api";
+
+export type AppToast = {
+  id: string;
+  title: string;
+  description?: string;
+  tone?: "default" | "success" | "danger";
+};
 
 type Store = {
   characters: Record<string, Character>;
   rolls: DiceRoll[];
+  toasts: AppToast[];
   // PIN guardado por device por personagem; usado para mandar nas requests
   pins: Record<string, string>;
   hydrated: boolean;
@@ -20,14 +28,17 @@ type Store = {
   unlock: (id: string, pin: string) => Promise<boolean>;
   lock: (id: string) => void;
   addRoll: (r: DiceRoll) => Promise<void>;
+  pushToast: (toast: Omit<AppToast, "id">) => void;
+  dismissToast: (id: string) => void;
   hydrate: () => Promise<void>;
 };
 
 export const useStore = create<Store>()(
   persist(
     (set, get) => ({
-      characters: Object.fromEntries(SEED_CHARACTERS.map((c) => [c.id, c])),
+      characters: Object.fromEntries(PUBLIC_CHARACTERS.map((c) => [c.id, c])),
       rolls: [],
+      toasts: [],
       pins: {},
       hydrated: false,
       realtimeReady: false,
@@ -58,10 +69,12 @@ export const useStore = create<Store>()(
       },
 
       unlock: async (id, pin) => {
-        // tenta fazer um patch noop pra validar o PIN
         try {
-          await api.patchCharacter(id, {}, pin);
-          set((s) => ({ pins: { ...s.pins, [id]: pin } }));
+          const { character } = await api.getCharacter(id, pin);
+          set((s) => ({
+            characters: { ...s.characters, [id]: character },
+            pins: { ...s.pins, [id]: pin },
+          }));
           return true;
         } catch {
           return false;
@@ -72,7 +85,13 @@ export const useStore = create<Store>()(
         set((s) => {
           const next = { ...s.pins };
           delete next[id];
-          return { pins: next };
+          return {
+            characters: {
+              ...s.characters,
+              ...(PUBLIC_CHARACTER_MAP[id] ? { [id]: PUBLIC_CHARACTER_MAP[id] } : {}),
+            },
+            pins: next,
+          };
         }),
 
       addRoll: async (r) => {
@@ -83,6 +102,17 @@ export const useStore = create<Store>()(
           // se falhou, mantém local
         }
       },
+
+      pushToast: (toast) =>
+        set((s) => ({
+          toasts: [
+            { ...toast, id: cryptoRandomId() },
+            ...s.toasts,
+          ].slice(0, 4),
+        })),
+
+      dismissToast: (id) =>
+        set((s) => ({ toasts: s.toasts.filter((toast) => toast.id !== id) })),
 
       hydrate: async () => {
         if (get().hydrated) return;
@@ -95,6 +125,14 @@ export const useStore = create<Store>()(
           ]);
           const map: Record<string, Character> = {};
           for (const c of characters) map[c.id] = c;
+          for (const [id, pin] of Object.entries(get().pins)) {
+            try {
+              const { character } = await api.getCharacter(id, pin);
+              map[id] = character;
+            } catch {
+              // PIN removido/alterado no servidor: mantém só o resumo público.
+            }
+          }
           set({ characters: map, rolls });
         } catch {
           // offline: mantém o estado persistido / seed
@@ -136,9 +174,29 @@ function connectSse(
         const data = JSON.parse((ev as MessageEvent).data) as {
           character: Character;
         };
+        const previous = get().characters[data.character.id];
         set({
           characters: { ...get().characters, [data.character.id]: data.character },
         });
+        const pin = get().pins[data.character.id];
+        if (pin) {
+          void api
+            .getCharacter(data.character.id, pin)
+            .then(({ character }) =>
+              set({
+                characters: { ...get().characters, [character.id]: character },
+              }),
+            )
+            .catch(() => {
+              // Se o PIN não servir mais, rebaixa para o resumo público recebido.
+            });
+        }
+        if (previous && previous.updatedAt !== data.character.updatedAt) {
+          get().pushToast({
+            title: `${data.character.characterName} foi atualizado`,
+            description: "Ficha sincronizada em tempo real.",
+          });
+        }
       } catch {
         // ignore
       }
@@ -149,6 +207,15 @@ function connectSse(
         const rolls = get().rolls;
         if (rolls.find((x) => x.id === data.roll.id)) return;
         set({ rolls: [data.roll, ...rolls].slice(0, 50) });
+        get().pushToast({
+          title: `${data.roll.characterName ?? "Alguém"} rolou ${data.roll.label}`,
+          description: `${data.roll.expression} = ${data.roll.result}`,
+          tone: data.roll.detail.crit
+            ? "success"
+            : data.roll.detail.fumble
+              ? "danger"
+              : "default",
+        });
       } catch {
         // ignore
       }
@@ -164,12 +231,19 @@ function connectSse(
   open();
 }
 
+function cryptoRandomId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 export const useCharacter = (id: string) => useStore((s) => s.characters[id]);
 
 export const useUnlocked = (id: string) =>
   useStore((s) => {
     const c = s.characters[id];
     if (!c) return false;
-    if (!c.pin) return true;
+    if (!c.protected) return true;
     return Boolean(s.pins[id]);
   });

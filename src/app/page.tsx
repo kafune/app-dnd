@@ -1,18 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/lib/store";
 import { Card, CardBody } from "@/components/ui/Card";
 import { abilityMod, formatMod } from "@/lib/types";
 
 export default function Home() {
-  const characters = useStore((s) => Object.values(s.characters));
+  const characters = useStore(useShallow((s) => Object.values(s.characters)));
   const realtimeReady = useStore((s) => s.realtimeReady);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10">
       <header className="mb-8">
-        <h1 className="font-mono text-3xl font-bold tracking-tight">Mesa do Pierre</h1>
+        <h1 className="font-mono text-3xl font-bold tracking-tight">Mundo Pankleos</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           D&D 5e · Reino de Solus · 4 desocupados nível 3
         </p>
@@ -56,18 +57,28 @@ export default function Home() {
                   </div>
                   <div className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{cls}</div>
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-400">
-                    <span>
-                      <strong className="text-zinc-900 dark:text-zinc-200">
-                        PV {c.hpCurrent}/{c.hpMax}
-                      </strong>
-                    </span>
-                    <span>CA {c.sheet.ac}</span>
-                    <span>
-                      Iniciativa{" "}
-                      {formatMod(
-                        c.sheet.initiativeBonus || abilityMod(c.sheet.abilityScores.dex),
-                      )}
-                    </span>
+                    {c.protected ? (
+                      <span>
+                        <strong className="text-zinc-900 dark:text-zinc-200">
+                          PIN necessário
+                        </strong>
+                      </span>
+                    ) : (
+                      <>
+                        <span>
+                          <strong className="text-zinc-900 dark:text-zinc-200">
+                            PV {c.hpCurrent}/{c.hpMax}
+                          </strong>
+                        </span>
+                        <span>CA {c.sheet.ac}</span>
+                        <span>
+                          Iniciativa{" "}
+                          {formatMod(
+                            c.sheet.initiativeBonus || abilityMod(c.sheet.abilityScores.dex),
+                          )}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </CardBody>
               </Card>
@@ -77,7 +88,7 @@ export default function Home() {
       </section>
 
       <footer className="mt-10 text-center text-xs text-zinc-400">
-        Feito pra mesa. Suas ações persistem localmente; com Supabase configurado, em tempo real entre celulares.
+        Feito para Mundo Pankleos. Suas ações persistem localmente e sincronizam em tempo real entre celulares.
       </footer>
     </main>
   );

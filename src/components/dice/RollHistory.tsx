@@ -1,11 +1,14 @@
 "use client";
 
+import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/lib/store";
 import { formatRollDetail } from "@/lib/dice";
 
 export function RollHistory({ characterId }: { characterId?: string }) {
-  const rolls = useStore((s) =>
-    characterId ? s.rolls.filter((r) => r.characterId === characterId) : s.rolls,
+  const rolls = useStore(
+    useShallow((s) =>
+      characterId ? s.rolls.filter((r) => r.characterId === characterId) : s.rolls,
+    ),
   );
   if (rolls.length === 0) {
     return (

@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Character, DiceRoll } from "./types";
 import { SEED_CHARACTERS } from "@/data/seed";
+import { PUBLIC_CHARACTER_MAP } from "@/data/publicCharacters";
+import { validateCharacterPin } from "./characterPins";
 
 const DB_PATH = process.env.APP_DND_DB || "./data/app-dnd.sqlite";
 
@@ -58,14 +60,24 @@ export function listCharacters(): Character[] {
   const rows = getDb().prepare("SELECT data FROM characters ORDER BY id").all() as {
     data: string;
   }[];
-  return rows.map((r) => JSON.parse(r.data) as Character);
+  return rows.map((r) => toPublicCharacter(JSON.parse(r.data) as Character));
 }
 
-export function getCharacter(id: string): Character | null {
+function getStoredCharacter(id: string): Character | null {
   const row = getDb().prepare("SELECT data FROM characters WHERE id = ?").get(id) as
     | { data: string }
     | undefined;
   return row ? (JSON.parse(row.data) as Character) : null;
+}
+
+export function getCharacter(
+  id: string,
+  pin?: string,
+): { ok: true; character: Character } | { ok: false; reason: "not_found" | "bad_pin" } {
+  const character = getStoredCharacter(id);
+  if (!character) return { ok: false, reason: "not_found" };
+  if (!validateCharacterPin(id, pin)) return { ok: false, reason: "bad_pin" };
+  return { ok: true, character: toAuthorizedCharacter(character) };
 }
 
 export function upsertCharacter(c: Character): Character {
@@ -86,22 +98,45 @@ export function patchCharacter(
 ): { ok: true; character: Character } | { ok: false; reason: "not_found" | "bad_pin" } {
   const db = getDb();
   return db.transaction(() => {
-    const current = getCharacter(id);
+    const current = getStoredCharacter(id);
     if (!current) return { ok: false as const, reason: "not_found" as const };
-    if (current.pin && current.pin !== pin) {
+    if (!validateCharacterPin(id, pin)) {
       return { ok: false as const, reason: "bad_pin" as const };
     }
     const next: Character = {
       ...current,
       ...patch,
       id: current.id,
+      pin: current.pin,
+      protected: true,
       updatedAt: new Date().toISOString(),
     };
     db.prepare(
       "UPDATE characters SET data = ?, updated_at = ? WHERE id = ?",
     ).run(JSON.stringify(next), next.updatedAt!, id);
-    return { ok: true as const, character: next };
+    return { ok: true as const, character: toAuthorizedCharacter(next) };
   })();
+}
+
+export function toPublicCharacter(character: Character): Character {
+  const fallback = PUBLIC_CHARACTER_MAP[character.id];
+  return {
+    ...(fallback ?? character),
+    playerName: character.playerName,
+    characterName: character.characterName,
+    color: character.color,
+    protected: true,
+    updatedAt: character.updatedAt,
+  };
+}
+
+function toAuthorizedCharacter(character: Character): Character {
+  const safeCharacter = { ...character };
+  delete safeCharacter.pin;
+  return {
+    ...safeCharacter,
+    protected: true,
+  };
 }
 
 // === Rolls ===

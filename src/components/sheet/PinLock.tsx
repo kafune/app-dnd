@@ -11,9 +11,7 @@ export function PinLock({ id }: { id: string }) {
   const unlocked = useUnlocked(id);
   const unlock = useStore((s) => s.unlock);
   const lock = useStore((s) => s.lock);
-  const patch = useStore((s) => s.patchCharacter);
   const [pinInput, setPinInput] = useState("");
-  const [setting, setSetting] = useState(false);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -23,49 +21,11 @@ export function PinLock({ id }: { id: string }) {
     return (
       <div className="flex items-center gap-2">
         <span className="text-xs text-emerald-600 dark:text-emerald-400">
-          <LockOpen className="inline h-3 w-3" /> editando
+          <LockOpen className="inline h-3 w-3" /> acesso liberado
         </span>
-        {character.pin && (
-          <Button size="sm" variant="ghost" onClick={() => lock(id)}>
-            travar
-          </Button>
-        )}
-        {!character.pin && !setting && (
-          <Button size="sm" variant="ghost" onClick={() => setSetting(true)}>
-            definir PIN
-          </Button>
-        )}
-        {setting && (
-          <form
-            className="flex items-center gap-1"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (pinInput.trim().length < 2) return;
-              const ok = await patch(id, { pin: pinInput.trim() });
-              if (ok) {
-                useStore.setState((s) => ({
-                  pins: { ...s.pins, [id]: pinInput.trim() },
-                }));
-              }
-              setPinInput("");
-              setSetting(false);
-            }}
-          >
-            <Input
-              autoFocus
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              placeholder="novo pin"
-              className="h-7 w-24 text-xs"
-            />
-            <Button size="sm" type="submit">
-              ok
-            </Button>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setSetting(false)}>
-              x
-            </Button>
-          </form>
-        )}
+        <Button size="sm" variant="ghost" onClick={() => lock(id)}>
+          travar
+        </Button>
       </div>
     );
   }
