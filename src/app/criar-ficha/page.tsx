@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/Input";
 import { AbilityScoresEditor, type AbilityMode } from "@/components/create/AbilityScoresEditor";
 import { SpellPicker } from "@/components/create/SpellPicker";
 import { EquipmentPicker } from "@/components/create/EquipmentPicker";
+import { TraitPicker } from "@/components/create/TraitPicker";
+import { findTrait } from "@/data/traitsCatalog";
 import { RACES_CATALOG, findRace } from "@/data/racesCatalog";
 import { CLASSES_CATALOG, findClass, classFeaturesUpTo } from "@/data/classesCatalog";
 import { SKILLS_CATALOG } from "@/data/skillsCatalog";
@@ -160,8 +162,17 @@ export default function CriarFicha() {
 
     setSubmitting(true);
     try {
-      // Características de classe ganhas até o nível de cada classe -> entram na ficha
-      const extraFeatures = draft.classes.flatMap((cl) =>
+      // Traços/talentos escolhidos -> features com descrição (do catálogo)
+      const traitFeatures = draft.raceTraits.map((name) => {
+        const t = findTrait(name);
+        return {
+          name,
+          source: t?.kind === "talento" ? "Talento" : draft.raceName || "Raça",
+          description: t?.description ?? "",
+        };
+      });
+      // Características de classe ganhas até o nível de cada classe
+      const classFeatures = draft.classes.flatMap((cl) =>
         cl.name.trim()
           ? classFeaturesUpTo(cl.name, cl.level).map((f) => ({
               name: f.name,
@@ -170,7 +181,10 @@ export default function CriarFicha() {
             }))
           : [],
       );
-      const character = buildCharacter({ ...draft, extraFeatures }, "");
+      const character = buildCharacter(
+        { ...draft, extraFeatures: [...traitFeatures, ...classFeatures] },
+        "",
+      );
       const id = await createCharacter(character);
       pushToast({ title: `${draft.characterName} criado!`, tone: "success" });
       router.push(`/personagem/${id}`);
@@ -317,15 +331,15 @@ export default function CriarFicha() {
               </Field>
             </div>
 
-            <Field label="Traços (separados por vírgula)">
-              <Input
-                value={draft.raceTraits.join(", ")}
-                onChange={(e) =>
-                  upd({ raceTraits: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })
-                }
-                placeholder="Ex: Visão no Escuro, Resiliência Anã"
+            <div>
+              <span className="mb-1 block text-xs font-medium text-zinc-500">
+                Traços & talentos (escolha da lista — mostra a descrição)
+              </span>
+              <TraitPicker
+                selected={draft.raceTraits}
+                onChange={(raceTraits) => upd({ raceTraits })}
               />
-            </Field>
+            </div>
           </CardBody>
         </Card>
 

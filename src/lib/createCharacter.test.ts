@@ -69,6 +69,10 @@ describe("buildCharacter", () => {
     speed: 7.5,
     languages: ["Comum", "Anão"],
     raceTraits: ["Visão no Escuro", "Resiliência Anã"],
+    extraFeatures: [
+      { name: "Visão no Escuro", source: "Anão", description: "..." },
+      { name: "Resiliência Anã", source: "Anão", description: "..." },
+    ],
     classes: [
       {
         name: "Guerreiro",

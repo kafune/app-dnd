@@ -1,6 +1,6 @@
 "use client";
 
-import type { Character, DiceRoll } from "./types";
+import type { Character, CharacterLogEntry, DiceRoll } from "./types";
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -37,6 +37,12 @@ export const api = {
     jsonFetch<{ character: Character }>(`/api/characters/${id}`, {
       cache: "no-store",
       headers: { "x-character-pin": pin },
+    }),
+
+  getCharacterLog: (id: string, pin?: string) =>
+    jsonFetch<{ log: CharacterLogEntry[] }>(`/api/characters/${id}?log=1`, {
+      cache: "no-store",
+      headers: pin ? { "x-character-pin": pin } : {},
     }),
 
   listRolls: (limit = 50) =>

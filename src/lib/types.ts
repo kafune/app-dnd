@@ -136,6 +136,13 @@ export type CatalogClass = {
   progression: Record<string, string[]>;
 };
 
+/** Um traço racial ou talento (feat) do catálogo de referência. */
+export type CatalogTrait = {
+  name: string;
+  description: string;
+  kind: "trait" | "talento";
+};
+
 /** Incremento de atributos de uma raça/sub-raça (chave de atributo -> bônus).
  *  `choose` representa incrementos à escolha (ex.: meio-elfo: +1 em dois à escolha). */
 export type AbilityScoreIncrease = Partial<Record<AbilityKey, number>> & {
@@ -259,6 +266,23 @@ export type Character = {
   resources: Resource[];
   notes?: string;
   updatedAt?: string;
+};
+
+/** Uma alteração registrada no log de modificações de uma ficha. */
+export type CharacterChange = {
+  field: string;
+  from?: string;
+  to?: string;
+  note?: string;
+};
+
+/** Entrada do log de modificações (controle de versão leve da ficha). */
+export type CharacterLogEntry = {
+  id: string;
+  characterId: string;
+  by: "mestre" | "jogador";
+  changes: CharacterChange[];
+  createdAt: string;
 };
 
 export type DiceRoll = {

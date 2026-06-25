@@ -25,6 +25,7 @@ import {
 import { PinLock } from "@/components/sheet/PinLock";
 import { DiceRoller } from "@/components/dice/DiceRoller";
 import { RollHistory } from "@/components/dice/RollHistory";
+import { ChangeLog } from "@/components/sheet/ChangeLog";
 import { useUnlocked } from "@/lib/store";
 
 export default function CharacterPage({
@@ -131,6 +132,8 @@ export default function CharacterPage({
               <RollHistory />
             </CardBody>
           </Card>
+
+          <ChangeLog id={id} />
         </aside>
       </div>
     </main>

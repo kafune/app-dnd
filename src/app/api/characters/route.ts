@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   characterExists,
   listCharacters,
+  recordCharacterLog,
   toPublicCharacter,
   upsertCharacter,
 } from "@/lib/db";
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
   };
 
   const saved = upsertCharacter(character);
+  recordCharacterLog(id, "jogador", [{ field: "Ficha", note: "criada" }]);
   eventBus.publish({ type: "character", character: toPublicCharacter(saved) });
 
   // Devolve a ficha autorizada (sem expor o pin de volta).

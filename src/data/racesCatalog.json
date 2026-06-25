@@ -1,5 +1,71 @@
 [
  {
+  "name": "Aarakocra",
+  "abilityScoreIncrease": {
+   "dex": 2,
+   "wis": 1
+  },
+  "size": "Médio",
+  "speed": 7.5,
+  "languages": [
+   "Comum",
+   "Aarakocra",
+   "Aéreo"
+  ],
+  "traits": [
+   "Voo",
+   "Garras (Talons)"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Aasimar",
+  "abilityScoreIncrease": {
+   "cha": 2
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Celestial"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Resistência Celestial",
+   "Mãos Curandeiras",
+   "Portador de Luz"
+  ],
+  "subraces": [
+   {
+    "name": "Aasimar Protetor",
+    "abilityScoreIncrease": {
+     "wis": 1
+    },
+    "traits": [
+     "Alma Radiante"
+    ]
+   },
+   {
+    "name": "Aasimar Flagelo",
+    "abilityScoreIncrease": {
+     "con": 1
+    },
+    "traits": [
+     "Alma Flagelo"
+    ]
+   },
+   {
+    "name": "Aasimar Caído",
+    "abilityScoreIncrease": {
+     "str": 1
+    },
+    "traits": [
+     "Alma Necrótica"
+    ]
+   }
+  ]
+ },
+ {
   "name": "Anão",
   "abilityScoreIncrease": {
    "con": 2
@@ -33,6 +99,43 @@
     ]
    }
   ]
+ },
+ {
+  "name": "Bugbear",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "dex": 1
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Goblin"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Membros Longos",
+   "Constituição Poderosa",
+   "Furtivo",
+   "Surpresa Brutal"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Draconato",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "cha": 1
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você pode falar, ler e escrever Comum e Dracônico",
+  "traits": [
+   "Ancestral Dracônico",
+   "Arma de Sopro",
+   "Resistência a Dano"
+  ],
+  "subraces": []
  },
  {
   "name": "Elfo",
@@ -85,84 +188,79 @@
   ]
  },
  {
-  "name": "Halfling",
+  "name": "Firbolg",
   "abilityScoreIncrease": {
-   "dex": 2
+   "wis": 2,
+   "str": 1
   },
-  "size": "Pequeno",
-  "speed": 7.5,
-  "languages": "Você pode falar, ler e escrever Comum e Halfling",
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Elfo",
+   "Gigante"
+  ],
   "traits": [
-   "Sortudo",
-   "Bravura",
-   "Agilidade Halfling"
+   "Magia Firbolg",
+   "Disfarce Oculto",
+   "Discurso Bestial e Plantas",
+   "Constituição Poderosa"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Genasi",
+  "abilityScoreIncrease": {
+   "con": 2
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Primordial"
+  ],
+  "traits": [
+   "Resistência Elemental"
   ],
   "subraces": [
    {
-    "name": "Pés Leves",
+    "name": "Genasi do Ar",
     "abilityScoreIncrease": {
-     "cha": 1
+     "dex": 1
     },
     "traits": [
-     "Furtividade Natural"
+     "Alcançar o Ar"
     ]
    },
    {
-    "name": "Robusto",
+    "name": "Genasi da Terra",
     "abilityScoreIncrease": {
-     "con": 1
+     "str": 1
     },
     "traits": [
-     "Resiliência dos Robustos"
+     "Passo Cambiante"
     ]
-   }
-  ]
- },
- {
-  "name": "Humano",
-  "abilityScoreIncrease": {
-   "str": 1,
-   "dex": 1,
-   "con": 1,
-   "int": 1,
-   "wis": 1,
-   "cha": 1
-  },
-  "size": "Médio",
-  "speed": 9.0,
-  "languages": "Você pode falar, ler e escrever Comum e outro idioma adicional, à sua escolha",
-  "traits": [],
-  "subraces": [
+   },
    {
-    "name": "Traços Raciais Alternativos",
-    "abilityScoreIncrease": {},
+    "name": "Genasi do Fogo",
+    "abilityScoreIncrease": {
+     "int": 1
+    },
     "traits": [
-     "Perícia",
-     "Talento",
-     "Draconatos",
-     "Gnomos",
-     "Meio-elfos",
-     "Meio-orcs",
-     "Tieflings"
+     "Filho do Fogo",
+     "Resistência Infernal"
+    ]
+   },
+   {
+    "name": "Genasi da Água",
+    "abilityScoreIncrease": {
+     "wis": 1
+    },
+    "traits": [
+     "Filho do Mar"
     ]
    }
   ]
- },
- {
-  "name": "Draconato",
-  "abilityScoreIncrease": {
-   "str": 2,
-   "cha": 1
-  },
-  "size": "Médio",
-  "speed": 9.0,
-  "languages": "Você pode falar, ler e escrever Comum e Dracônico",
-  "traits": [
-   "Ancestral Dracônico",
-   "Arma de Sopro",
-   "Resistência a Dano"
-  ],
-  "subraces": []
  },
  {
   "name": "Gnomo",
@@ -201,6 +299,164 @@
   ]
  },
  {
+  "name": "Goblin",
+  "abilityScoreIncrease": {
+   "dex": 2,
+   "con": 1
+  },
+  "size": "Pequeno",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Goblin"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Astúcia",
+   "Fúria dos Pequenos"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Golias",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "con": 1
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Gigante"
+  ],
+  "traits": [
+   "Constituição Poderosa",
+   "Resistência Montanhesa",
+   "Pele de Pedra",
+   "Ameaçador"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Halfling",
+  "abilityScoreIncrease": {
+   "dex": 2
+  },
+  "size": "Pequeno",
+  "speed": 7.5,
+  "languages": "Você pode falar, ler e escrever Comum e Halfling",
+  "traits": [
+   "Sortudo",
+   "Bravura",
+   "Agilidade Halfling"
+  ],
+  "subraces": [
+   {
+    "name": "Pés Leves",
+    "abilityScoreIncrease": {
+     "cha": 1
+    },
+    "traits": [
+     "Furtividade Natural"
+    ]
+   },
+   {
+    "name": "Robusto",
+    "abilityScoreIncrease": {
+     "con": 1
+    },
+    "traits": [
+     "Resiliência dos Robustos"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Hobgoblin",
+  "abilityScoreIncrease": {
+   "con": 2,
+   "int": 1
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Goblin"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Salvação Marcial",
+   "Treinamento Marcial"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Homem-lagarto",
+  "abilityScoreIncrease": {
+   "con": 2,
+   "wis": 1
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Dracônico"
+  ],
+  "traits": [
+   "Mordida",
+   "Fabricar Itens",
+   "Camuflagem do Pântano",
+   "Prender o Fôlego",
+   "Faminto Voraz"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Humano",
+  "abilityScoreIncrease": {
+   "str": 1,
+   "dex": 1,
+   "con": 1,
+   "int": 1,
+   "wis": 1,
+   "cha": 1
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você pode falar, ler e escrever Comum e outro idioma adicional, à sua escolha",
+  "traits": [],
+  "subraces": [
+   {
+    "name": "Traços Raciais Alternativos",
+    "abilityScoreIncrease": {},
+    "traits": [
+     "Perícia",
+     "Talento"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Kobold",
+  "abilityScoreIncrease": {
+   "dex": 2,
+   "str": -2
+  },
+  "size": "Pequeno",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Dracônico"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Táticas de Matilha",
+   "Sensibilidade à Luz Solar",
+   "Covardia"
+  ],
+  "subraces": []
+ },
+ {
   "name": "Meio-elfo",
   "abilityScoreIncrease": {
    "cha": 2,
@@ -237,6 +493,47 @@
   "subraces": []
  },
  {
+  "name": "Orc",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "con": 1,
+   "int": -2
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Orc"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Agressivo",
+   "Constituição Poderosa",
+   "Ameaçador"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Tabaxi",
+  "abilityScoreIncrease": {
+   "dex": 2,
+   "cha": 1
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "um à escolha"
+  ],
+  "traits": [
+   "Visão no Escuro",
+   "Agilidade Felina",
+   "Garras Felinas",
+   "Faro de Caçador"
+  ],
+  "subraces": []
+ },
+ {
   "name": "Tiefling",
   "abilityScoreIncrease": {
    "int": 1,
@@ -249,6 +546,27 @@
    "Visão no Escuro",
    "Resistência Infernal",
    "Legado Infernal"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Tortle",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "wis": 1
+  },
+  "size": "Médio",
+  "speed": 9,
+  "languages": [
+   "Comum",
+   "Aquan"
+  ],
+  "traits": [
+   "Armadura Natural",
+   "Garras",
+   "Prender o Fôlego",
+   "Instinto de Sobrevivência",
+   "Defesa de Casco"
   ],
   "subraces": []
  }

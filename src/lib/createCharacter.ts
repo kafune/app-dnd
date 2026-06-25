@@ -221,12 +221,9 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
         known: draft.knownSpells,
       };
 
-  const features: Feature[] = [
-    ...draft.raceTraits
-      .filter((t) => t.trim())
-      .map((name) => ({ name, source: draft.raceName || "Raça", description: "" })),
-    ...draft.extraFeatures,
-  ];
+  // Features = características de raça/talentos + de classe, já montadas com descrição
+  // pela página (via extraFeatures). raceTraits guarda apenas os nomes selecionados.
+  const features: Feature[] = draft.extraFeatures;
 
   const sheet: Sheet = {
     species: draft.raceName,
