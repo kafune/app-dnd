@@ -80,6 +80,93 @@ export type Spell = {
   prepared?: boolean;
 };
 
+/** Livro de origem de uma magia do catálogo. */
+export type SpellSource = "PHB" | "XGtE" | "TCoE";
+
+export const SPELL_SOURCE_LABELS: Record<SpellSource, string> = {
+  PHB: "Livro do Jogador",
+  XGtE: "Guia de Xanathar",
+  TCoE: "Caldeirão de Tasha",
+};
+
+/** Classes conjuradoras (inclui Artífice, do Caldeirão de Tasha). */
+export type SpellClass =
+  | "Artífice"
+  | "Bardo"
+  | "Bruxo"
+  | "Clérigo"
+  | "Druida"
+  | "Feiticeiro"
+  | "Mago"
+  | "Paladino"
+  | "Patrulheiro";
+
+/** Uma magia do catálogo de referência (extraído dos livros). */
+export type CatalogSpell = Spell & {
+  ritual: boolean;
+  concentration: boolean;
+  source: SpellSource;
+  /** Classes que podem conjurar esta magia (das listas de magia dos livros). */
+  classes: SpellClass[];
+};
+
+/** Escolha de perícias de uma classe: quantas e dentre quais. */
+export type ClassSkillChoice = { choose: number; from: string[] };
+
+/** Equipamento inicial de uma classe: grupos de escolha "(a) ou (b)" + itens fixos. */
+export type StartingEquipment = {
+  choices: string[][];
+  fixed: string[];
+};
+
+/** Uma classe do catálogo de referência (extraída do Livro do Jogador). */
+export type CatalogClass = {
+  name: string;
+  hitDie: string; // ex: "d8"
+  primaryAbility: AbilityKey | null;
+  savingThrows: AbilityKey[];
+  spellcastingAbility: AbilityKey | null; // null = não conjura na base
+  armorProficiencies: string;
+  weaponProficiencies: string;
+  toolProficiencies: string;
+  skillProficiencies: ClassSkillChoice | null;
+  subclasses: string[];
+  startingEquipment: StartingEquipment;
+  /** Características ganhas por nível: { "1": ["Fúria", ...], "3": [...] }. */
+  progression: Record<string, string[]>;
+};
+
+/** Um traço racial ou talento (feat) do catálogo de referência. */
+export type CatalogTrait = {
+  name: string;
+  description: string;
+  kind: "trait" | "talento";
+};
+
+/** Incremento de atributos de uma raça/sub-raça (chave de atributo -> bônus).
+ *  `choose` representa incrementos à escolha (ex.: meio-elfo: +1 em dois à escolha). */
+export type AbilityScoreIncrease = Partial<Record<AbilityKey, number>> & {
+  choose?: { count: number; amount: number };
+};
+
+/** Uma sub-raça (ex.: Anão da Colina). */
+export type CatalogSubrace = {
+  name: string;
+  abilityScoreIncrease: AbilityScoreIncrease;
+  traits: string[];
+};
+
+/** Uma raça do catálogo de referência (extraída do Livro do Jogador). */
+export type CatalogRace = {
+  name: string;
+  abilityScoreIncrease: AbilityScoreIncrease;
+  size: string; // "Médio" | "Pequeno"
+  speed: number | null; // metros
+  languages: string;
+  traits: string[];
+  subraces: CatalogSubrace[];
+};
+
 export type Weapon = {
   name: string;
   damage: string;
@@ -179,6 +266,23 @@ export type Character = {
   resources: Resource[];
   notes?: string;
   updatedAt?: string;
+};
+
+/** Uma alteração registrada no log de modificações de uma ficha. */
+export type CharacterChange = {
+  field: string;
+  from?: string;
+  to?: string;
+  note?: string;
+};
+
+/** Entrada do log de modificações (controle de versão leve da ficha). */
+export type CharacterLogEntry = {
+  id: string;
+  characterId: string;
+  by: "mestre" | "jogador";
+  changes: CharacterChange[];
+  createdAt: string;
 };
 
 export type DiceRoll = {

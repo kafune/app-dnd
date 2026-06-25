@@ -1,10 +1,23 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import type { Character, DiceRoll } from "./types";
+import type { Character, CharacterChange, CharacterLogEntry, DiceRoll } from "./types";
 import { SEED_CHARACTERS } from "@/data/seed";
 import { PUBLIC_CHARACTER_MAP } from "@/data/publicCharacters";
-import { validateCharacterPin } from "./characterPins";
+import { CHARACTER_PINS, isMasterPin } from "./characterPins";
+
+/**
+ * Valida o PIN de uma ficha. A chave mestra do Mestre abre qualquer ficha.
+ * Fichas seed têm PIN no mapa fixo (CHARACTER_PINS); fichas criadas pelo usuário
+ * guardam o PIN no próprio registro (campo `pin`). Sem PIN => ficha aberta.
+ */
+function characterPinOk(stored: Character, pin: string | undefined): boolean {
+  if (isMasterPin(pin)) return true;
+  const expected = CHARACTER_PINS[stored.id] ?? stored.pin;
+  if (!expected) return true;
+  return expected === pin?.trim();
+}
 
 const DB_PATH = process.env.APP_DND_DB || "./data/app-dnd.sqlite";
 
@@ -36,6 +49,16 @@ function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS rolls_created_idx ON rolls (created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS character_log (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL,
+      by TEXT NOT NULL,
+      changes TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS character_log_idx ON character_log (character_id, created_at DESC);
   `);
 
   // Seed se vazio
@@ -76,8 +99,13 @@ export function getCharacter(
 ): { ok: true; character: Character } | { ok: false; reason: "not_found" | "bad_pin" } {
   const character = getStoredCharacter(id);
   if (!character) return { ok: false, reason: "not_found" };
-  if (!validateCharacterPin(id, pin)) return { ok: false, reason: "bad_pin" };
+  if (!characterPinOk(character, pin)) return { ok: false, reason: "bad_pin" };
   return { ok: true, character: toAuthorizedCharacter(character) };
+}
+
+export function characterExists(id: string): boolean {
+  const row = getDb().prepare("SELECT 1 FROM characters WHERE id = ?").get(id);
+  return Boolean(row);
 }
 
 export function upsertCharacter(c: Character): Character {
@@ -100,7 +128,7 @@ export function patchCharacter(
   return db.transaction(() => {
     const current = getStoredCharacter(id);
     if (!current) return { ok: false as const, reason: "not_found" as const };
-    if (!validateCharacterPin(id, pin)) {
+    if (!characterPinOk(current, pin)) {
       return { ok: false as const, reason: "bad_pin" as const };
     }
     const next: Character = {
@@ -114,19 +142,139 @@ export function patchCharacter(
     db.prepare(
       "UPDATE characters SET data = ?, updated_at = ? WHERE id = ?",
     ).run(JSON.stringify(next), next.updatedAt!, id);
+    const changes = diffChanges(current, patch);
+    if (changes.length) {
+      recordCharacterLog(id, isMasterPin(pin) ? "mestre" : "jogador", changes);
+    }
     return { ok: true as const, character: toAuthorizedCharacter(next) };
   })();
 }
 
+// === Log de modificações (controle de versão leve) ===
+
+const FIELD_LABELS: Record<string, string> = {
+  hpCurrent: "PV atual",
+  hpMax: "PV máximo",
+  hpTemp: "PV temporário",
+  notes: "Anotações",
+  spellSlots: "Espaços de magia",
+  resources: "Recursos",
+  sheet: "Ficha",
+  characterName: "Nome",
+  playerName: "Jogador",
+  color: "Cor",
+};
+
+function short(v: unknown): string {
+  const s = typeof v === "string" ? v : String(v ?? "");
+  return s.length > 40 ? s.slice(0, 39) + "…" : s;
+}
+
+/** Compara o estado atual com o patch e descreve o que mudou. */
+function diffChanges(current: Character, patch: Partial<Character>): CharacterChange[] {
+  const out: CharacterChange[] = [];
+  for (const key of Object.keys(patch) as (keyof Character)[]) {
+    if (key === "id" || key === "pin" || key === "protected" || key === "updatedAt") continue;
+    const before = current[key];
+    const after = patch[key];
+    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    const field = FIELD_LABELS[key] ?? String(key);
+    if (typeof after !== "object" && typeof before !== "object") {
+      out.push({ field, from: short(before), to: short(after) });
+    } else {
+      out.push({ field, note: "atualizado" });
+    }
+  }
+  return out;
+}
+
+export function recordCharacterLog(
+  characterId: string,
+  by: "mestre" | "jogador",
+  changes: CharacterChange[],
+): void {
+  const db = getDb();
+  db.prepare(
+    "INSERT INTO character_log (id, character_id, by, changes, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).run(randomUUID(), characterId, by, JSON.stringify(changes), new Date().toISOString());
+  // mantém só as 100 entradas mais recentes por ficha
+  db.prepare(
+    `DELETE FROM character_log WHERE character_id = ? AND id NOT IN (
+       SELECT id FROM character_log WHERE character_id = ? ORDER BY created_at DESC LIMIT 100
+     )`,
+  ).run(characterId, characterId);
+}
+
+export function listCharacterLog(characterId: string, limit = 50): CharacterLogEntry[] {
+  const rows = getDb()
+    .prepare(
+      "SELECT id, character_id, by, changes, created_at FROM character_log WHERE character_id = ? ORDER BY created_at DESC LIMIT ?",
+    )
+    .all(characterId, limit) as {
+    id: string;
+    character_id: string;
+    by: string;
+    changes: string;
+    created_at: string;
+  }[];
+  return rows.map((r) => ({
+    id: r.id,
+    characterId: r.character_id,
+    by: r.by === "mestre" ? "mestre" : "jogador",
+    changes: JSON.parse(r.changes) as CharacterChange[],
+    createdAt: r.created_at,
+  }));
+}
+
 export function toPublicCharacter(character: Character): Character {
   const fallback = PUBLIC_CHARACTER_MAP[character.id];
+  // Fichas seed têm resumo curado; fichas novas recebem um resumo mascarado
+  // (só identidade + espécie/classes p/ o card) para nunca vazar `pin`/sheet.
+  const base = fallback ?? maskedPublic(character);
   return {
-    ...(fallback ?? character),
+    ...base,
     playerName: character.playerName,
     characterName: character.characterName,
     color: character.color,
     protected: true,
     updatedAt: character.updatedAt,
+  };
+}
+
+/** Resumo público mínimo de uma ficha sem entrada curada (sem `pin`, sem sheet completo). */
+function maskedPublic(c: Character): Character {
+  return {
+    id: c.id,
+    playerName: c.playerName,
+    characterName: c.characterName,
+    color: c.color,
+    protected: true,
+    updatedAt: c.updatedAt,
+    hpCurrent: 0,
+    hpMax: 0,
+    hpTemp: 0,
+    spellSlots: {},
+    resources: [],
+    sheet: {
+      species: c.sheet.species,
+      classes: c.sheet.classes,
+      background: "",
+      abilityScores: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      saves: [],
+      skills: [],
+      proficiencies: [],
+      languages: [],
+      ac: 0,
+      speed: 0,
+      initiativeBonus: 0,
+      proficiencyBonus: 0,
+      weapons: [],
+      features: [],
+      spells: { saveDC: 0, attackMod: 0, castingAbility: "int", cantrips: [], known: [] },
+      inventory: { coins: { gp: 0, sp: 0, cp: 0 }, items: [] },
+      appearance: { size: "", height: "" },
+      personality: { trait: "", ideal: "", flaw: "", why: "", backstory: "" },
+    },
   };
 }
 

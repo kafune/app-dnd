@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCharacter, patchCharacter, toPublicCharacter } from "@/lib/db";
+import { getCharacter, listCharacterLog, patchCharacter, toPublicCharacter } from "@/lib/db";
 import { eventBus } from "@/lib/eventBus";
 import type { Character } from "@/lib/types";
 
@@ -17,6 +17,10 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       { error: result.reason },
       { status: result.reason === "not_found" ? 404 : 403 },
     );
+  }
+  // ?log=1 -> retorna o log de modificações (mesma autorização da ficha)
+  if (_req.nextUrl.searchParams.get("log")) {
+    return NextResponse.json({ log: listCharacterLog(id) });
   }
   return NextResponse.json({ character: result.character });
 }

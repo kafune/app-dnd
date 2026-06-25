@@ -1,0 +1,1327 @@
+[
+ {
+  "name": "Bárbaro",
+  "hitDie": "d12",
+  "primaryAbility": "str",
+  "savingThrows": [
+   "str",
+   "con"
+  ],
+  "spellcastingAbility": null,
+  "armorProficiencies": "Armaduras leves, armaduras médias e escudos",
+  "weaponProficiencies": "Armas simples, armas marciais",
+  "toolProficiencies": "Nenhuma",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Adestrar Animais",
+    "Atletismo",
+    "Intimidação",
+    "Natureza",
+    "Percepção",
+    "Sobrevivência"
+   ]
+  },
+  "subclasses": [
+   "Caminho do Furioso",
+   "Caminho do Guerreiro Totêmico"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "um machado grande",
+     "qualquer arma marcial corpo-a-corpo"
+    ],
+    [
+     "dois machados de mão",
+     "qualquer arma simples"
+    ]
+   ],
+   "fixed": [
+    "Um pacote de aventureiro e quatro azagaias"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Fúria",
+    "Defesa sem Armadura"
+   ],
+   "2": [
+    "Ataque Descuidado",
+    "Sentido de Perigo"
+   ],
+   "3": [
+    "Caminho Primitivo"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Ataque Extra",
+    "Movimento Rápido"
+   ],
+   "6": [
+    "Característica de Caminho Primitivo"
+   ],
+   "7": [
+    "Instinto Selvagem"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [
+    "Crítico Brutal (+1 dado)"
+   ],
+   "10": [
+    "Característica de Caminho Primitivo"
+   ],
+   "11": [
+    "Fúria Implacável"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [
+    "Crítico Brutal (+2 dados)"
+   ],
+   "14": [
+    "Característica de Caminho enfrentar uma ameaça em comum? Monstros ou uma"
+   ],
+   "15": [
+    "Fúria Persistente tornando você um refugiado sem origem? Talvez você seja"
+   ],
+   "16": [
+    "Incremento no Valor de um prisioneiro de guerra",
+    "trazido acorrentado para as"
+   ],
+   "17": [
+    "Crítico Brutal (+3 dados) liberdade. Ou você teve que abandonar seu povo por"
+   ],
+   "18": [
+    "Força Indomável causa de um crime que cometeu",
+    "um tabu que você violou"
+   ],
+   "19": [
+    "Incremento no Valor de ou um golpe que depôs você de uma posição de"
+   ],
+   "20": [
+    "Campeão Primitivo"
+   ]
+  }
+ },
+ {
+  "name": "Bardo",
+  "hitDie": "d8",
+  "primaryAbility": "cha",
+  "savingThrows": [
+   "dex",
+   "cha"
+  ],
+  "spellcastingAbility": "cha",
+  "armorProficiencies": "Armaduras leves",
+  "weaponProficiencies": "Armas simples, bestas de mão, espadas longas, rapieiras, espadas curtas",
+  "toolProficiencies": "Três instrumentos musicais, à sua escolha",
+  "skillProficiencies": {
+   "choose": 3,
+   "from": [
+    "Acrobacia",
+    "Adestrar Animais",
+    "Arcanismo",
+    "Atletismo",
+    "Atuação",
+    "Enganação",
+    "Furtividade",
+    "História",
+    "Intimidação",
+    "Intuição",
+    "Investigação",
+    "Medicina",
+    "Natureza",
+    "Percepção",
+    "Persuasão",
+    "Prestidigitação",
+    "Religião",
+    "Sobrevivência"
+   ]
+  },
+  "subclasses": [
+   "Colégio do Conhecimento",
+   "Colégio da Bravura"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma rapieira",
+     "uma espada longa",
+     "qualquer arma simples"
+    ],
+    [
+     "um pacote de diplomata",
+     "um pacote de artista"
+    ],
+    [
+     "um lute",
+     "qualquer outro instrumento musical"
+    ]
+   ],
+   "fixed": [
+    "Armadura de couro e uma adaga"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Conjuração",
+    "Inspiração de Bardo (d6)"
+   ],
+   "2": [
+    "Versatilidade",
+    "Canção do Descanso (d6)"
+   ],
+   "3": [
+    "Colégio de Bardo",
+    "Aptidão"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Inspiração de Bardo (d8)",
+    "Fonte de Inspiração"
+   ],
+   "6": [
+    "Habilidade de Colégio de Bardo",
+    "Canção de Proteção"
+   ],
+   "7": [],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [
+    "Canção do Descanso (d8)"
+   ],
+   "10": [
+    "Inspiração de Bardo (d10)",
+    "Aptidão",
+    "Segredos Mágicos"
+   ],
+   "11": [],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [
+    "Canção do Descanso (d10)"
+   ],
+   "14": [
+    "Habilidade de Colégio de Bardo",
+    "Segredos Mágicos"
+   ],
+   "15": [
+    "Inspiração de Bardo (d12)"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [
+    "Canção do Descanso (d12)"
+   ],
+   "18": [
+    "Segredos Mágicos"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Inspiração Superior"
+   ]
+  }
+ },
+ {
+  "name": "Bruxo",
+  "hitDie": "d8",
+  "primaryAbility": "cha",
+  "savingThrows": [
+   "wis",
+   "cha"
+  ],
+  "spellcastingAbility": "cha",
+  "armorProficiencies": "Armaduras leves",
+  "weaponProficiencies": "Armas simples",
+  "toolProficiencies": "Nenhuma",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Arcanismo",
+    "Enganação",
+    "História",
+    "Intimidação",
+    "Investigação",
+    "Natureza",
+    "Religião"
+   ]
+  },
+  "subclasses": [
+   "Arquifada",
+   "Corruptor",
+   "Grande Antigo"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma besta leve e 20 virotes",
+     "qualquer arma simples"
+    ],
+    [
+     "uma bolsa de componentes",
+     "um foco arcano"
+    ],
+    [
+     "um pacote de estudioso",
+     "um pacote de explorador"
+    ]
+   ],
+   "fixed": [
+    "Armadura de couro, qualquer arma simples e duas adagas"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Patrono Transcendental",
+    "Magia de Pacto 1°"
+   ],
+   "2": [
+    "Invocações Místicas 1°"
+   ],
+   "3": [
+    "Dádiva do Pacto 2°"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade 2°"
+   ],
+   "5": [
+    "3°"
+   ],
+   "6": [
+    "Característica de Patrono Transcendental 3°"
+   ],
+   "7": [
+    "4°"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade 4°"
+   ],
+   "9": [
+    "5°"
+   ],
+   "10": [
+    "Característica de Patrono Transcendental 5°"
+   ],
+   "11": [
+    "Arcana Mística (6° nível) 5°"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade 5°"
+   ],
+   "13": [
+    "Arcana Mística (7° nível) 5°"
+   ],
+   "14": [
+    "Característica de Patrono Transcendental 5°"
+   ],
+   "15": [
+    "Arcana Mística (8° nível) 5°"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade 5°"
+   ],
+   "17": [
+    "Arcana Mística (9° nível) 5°"
+   ],
+   "18": [
+    "5°"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade 5°"
+   ],
+   "20": [
+    "Mestre Místico 5°"
+   ]
+  }
+ },
+ {
+  "name": "Clérigo",
+  "hitDie": "d8",
+  "primaryAbility": "wis",
+  "savingThrows": [
+   "wis",
+   "cha"
+  ],
+  "spellcastingAbility": "wis",
+  "armorProficiencies": "Armaduras leves, armaduras médias, escudos",
+  "weaponProficiencies": "Todas as armas simples",
+  "toolProficiencies": "Nenhuma",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "História",
+    "Intuição",
+    "Medicina",
+    "Persuasão",
+    "Religião"
+   ]
+  },
+  "subclasses": [
+   "Conhecimento",
+   "Enganação",
+   "Guerra",
+   "Luz",
+   "Natureza",
+   "Tempestade",
+   "Vida"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma maça",
+     "um martelo de guerra (se for proficiente)"
+    ],
+    [
+     "brunea",
+     "armadura de couro",
+     "cota de malha (se for proficiente)"
+    ],
+    [
+     "um besta leve e 20 virotes",
+     "qualquer arma simples"
+    ],
+    [
+     "um pacote de sacerdote",
+     "um pacote de aventureiro"
+    ]
+   ],
+   "fixed": [
+    "Um escudo e um símbolo sagrado"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Conjuração",
+    "Domínio Divino"
+   ],
+   "2": [
+    "Canalizar Divindade (1/descanso)",
+    "Característica de Domínio Divino"
+   ],
+   "3": [],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Destruir Mortos-Vivos (ND 1/2)"
+   ],
+   "6": [
+    "Canalizar Divindade (2/descanso)",
+    "Característica de Domínio Divino"
+   ],
+   "7": [],
+   "8": [
+    "Incremento no Valor de Habilidade",
+    "Destruir Mortos- Vivos (ND 1)",
+    "Característica de Domínio Divino"
+   ],
+   "9": [],
+   "10": [
+    "Intervenção Divina"
+   ],
+   "11": [
+    "Destruir Mortos-Vivos (ND 2)"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [],
+   "14": [
+    "Destruir Mortos-Vivos (ND 3)"
+   ],
+   "15": [],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [
+    "Destruir Mortos-Vivos (ND 4)",
+    "Característica de Domínio Divino"
+   ],
+   "18": [
+    "Canalizar Divindade (3/descanso)"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Aprimoramento de Intervenção Divina"
+   ]
+  }
+ },
+ {
+  "name": "Druida",
+  "hitDie": "d8",
+  "primaryAbility": "wis",
+  "savingThrows": [
+   "int",
+   "wis"
+  ],
+  "spellcastingAbility": "wis",
+  "armorProficiencies": "Armaduras leves, armaduras médias, escudos (druidas não irão vestir armaduras ou usar escudos feitos de metal)",
+  "weaponProficiencies": "Clavas, adagas, dardos, azagaias, maças, bordões, cimitarras, foices, fundas e lanças",
+  "toolProficiencies": "Kit de herbalismo",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Arcanismo",
+    "Adestrar Animais",
+    "Intuição",
+    "Medicina",
+    "Natureza",
+    "Percepção",
+    "Religião",
+    "Sobrevivência"
+   ]
+  },
+  "subclasses": [
+   "Círculo da Terra",
+   "Círculo da Lua"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "um escudo de madeira",
+     "qualquer arma simples"
+    ],
+    [
+     "uma cimitarra",
+     "qualquer arma corpo-a-corpo simples"
+    ],
+    [
+     "um pacote de estudioso",
+     "um pacote de explorador"
+    ]
+   ],
+   "fixed": [
+    "Armadura de couro, um pacote de aventureiro e um foco druídico"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Druídico",
+    "Conjuração"
+   ],
+   "2": [
+    "Círculo Druídico",
+    "Forma Selvagem"
+   ],
+   "3": [],
+   "4": [
+    "Aprimoramento de Forma Selvagem",
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [],
+   "6": [
+    "Característica de Círculo Druídico"
+   ],
+   "7": [],
+   "8": [
+    "Aprimoramento de Forma Selvagem",
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [],
+   "10": [
+    "Característica de Círculo Druídico"
+   ],
+   "11": [],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [],
+   "14": [
+    "Característica de Círculo Druídico"
+   ],
+   "15": [],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [],
+   "18": [
+    "Corpo Atemporal",
+    "Magias da Besta"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Arquidruida"
+   ]
+  }
+ },
+ {
+  "name": "Feiticeiro",
+  "hitDie": "d6",
+  "primaryAbility": "cha",
+  "savingThrows": [
+   "con",
+   "cha"
+  ],
+  "spellcastingAbility": "cha",
+  "armorProficiencies": "Nenhuma",
+  "weaponProficiencies": "Adagas, dardos, fundas, bordões e bestas leves",
+  "toolProficiencies": "Nenhuma",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Arcanismo",
+    "Enganação",
+    "Intuição",
+    "Intimidação",
+    "Persuasão",
+    "Religião"
+   ]
+  },
+  "subclasses": [
+   "Linhagem Dracônica",
+   "Magia Selvagem"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma besta leve e 20 virotes",
+     "qualquer arma simples"
+    ],
+    [
+     "uma bolsa de componentes",
+     "um foco arcano"
+    ],
+    [
+     "um pacote de explorador",
+     "um pacote de aventureiro"
+    ]
+   ],
+   "fixed": []
+  },
+  "progression": {
+   "1": [
+    "Conjuração",
+    "Origem de Feitiçaria"
+   ],
+   "2": [
+    "Fonte de Magia"
+   ],
+   "3": [
+    "Metamágica"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [],
+   "6": [
+    "Característica de Origem de Feitiçaria"
+   ],
+   "7": [],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [],
+   "10": [
+    "Metamágica"
+   ],
+   "11": [],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [],
+   "14": [
+    "Característica de Origem de Feitiçaria"
+   ],
+   "15": [],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [
+    "Metamágica"
+   ],
+   "18": [
+    "Característica de Origem de Feitiçaria"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Restauração Mística"
+   ]
+  }
+ },
+ {
+  "name": "Guerreiro",
+  "hitDie": "d10",
+  "primaryAbility": "str",
+  "savingThrows": [
+   "str",
+   "con"
+  ],
+  "spellcastingAbility": null,
+  "armorProficiencies": "Todas as armaduras, escudos",
+  "weaponProficiencies": "Armas simples, armas marciais",
+  "toolProficiencies": "nenhum",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Acrobacia",
+    "Adestrar animais",
+    "Atletismo",
+    "História",
+    "Intuição",
+    "Intimidação",
+    "Percepção",
+    "Sobrevivência"
+   ]
+  },
+  "subclasses": [
+   "Campeão",
+   "Cavaleiro Arcano",
+   "Mestre de Batalha"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "cota de malha",
+     "gibão de peles, arco longo e 20 flechas"
+    ],
+    [
+     "uma arma marcial e um escudo",
+     "duas armas marciais"
+    ],
+    [
+     "uma besta leve e 20 virotes",
+     "dois machados de arremesso"
+    ],
+    [
+     "uma pacote de aventureiro",
+     "um pacote de explorador"
+    ]
+   ],
+   "fixed": []
+  },
+  "progression": {
+   "1": [
+    "Estilo de Luta",
+    "Retomar o Fôlego"
+   ],
+   "2": [
+    "Surto de Ação (um uso)"
+   ],
+   "3": [
+    "Arquétipo Marcial"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Ataque Extra"
+   ],
+   "6": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "7": [
+    "Característica de Arquétipo Marcial"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [
+    "Indomável (um uso)"
+   ],
+   "10": [
+    "Característica de Arquétipo Marcial"
+   ],
+   "11": [
+    "Ataque Extra (2)"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [
+    "Indomável (dois usos)"
+   ],
+   "14": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "15": [
+    "Característica de Arquétipo Marcial"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [
+    "Surto de Ação (dois usos)",
+    "Indomável (três usos)"
+   ],
+   "18": [
+    "Característica de Arquétipo Marcial"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Ataque Extra (3)"
+   ]
+  }
+ },
+ {
+  "name": "Ladino",
+  "hitDie": "d8",
+  "primaryAbility": "dex",
+  "savingThrows": [
+   "dex",
+   "int"
+  ],
+  "spellcastingAbility": null,
+  "armorProficiencies": "Armaduras leves",
+  "weaponProficiencies": "Armas simples, bestas de mão, espadas longas, rapieiras, espadas curtas",
+  "toolProficiencies": "Ferramentas de ladrão",
+  "skillProficiencies": {
+   "choose": 4,
+   "from": [
+    "Acrobacia",
+    "Atletismo",
+    "Atuação",
+    "Enganação",
+    "Furtividade",
+    "Intimidação",
+    "Intuição",
+    "Investigação",
+    "Percepção",
+    "Persuasão",
+    "Prestidigitação"
+   ]
+  },
+  "subclasses": [
+   "Assassino",
+   "Ladrão",
+   "Trapaceiro Arcano"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma rapieira",
+     "uma espada longa"
+    ],
+    [
+     "um arco curto e uma aljava com 20 flechas",
+     "uma espada curta"
+    ],
+    [
+     "um pacote de assaltante",
+     "um pacote de aventureiro",
+     "um pacote de explorador"
+    ]
+   ],
+   "fixed": [
+    "Armadura de couro, duas adagas e ferramentas de ladrão"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Especialização",
+    "Ataque Furtivo",
+    "Gíria de Ladrão"
+   ],
+   "2": [
+    "Ação Ardilosa"
+   ],
+   "3": [
+    "Arquétipo de Ladino"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Esquiva Sobrenatural"
+   ],
+   "6": [
+    "Especialização"
+   ],
+   "7": [
+    "Evasão"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [
+    "Característica de Arquétipo de Ladino"
+   ],
+   "10": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "11": [
+    "Talento Confiável"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [
+    "Característica de Arquétipo de Ladino"
+   ],
+   "14": [
+    "Sentido Cego"
+   ],
+   "15": [
+    "Mente Escorregadia"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [
+    "Característica de Arquétipo de Ladino"
+   ],
+   "18": [
+    "Elusivo"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Golpe de Sorte"
+   ]
+  }
+ },
+ {
+  "name": "Mago",
+  "hitDie": "d6",
+  "primaryAbility": "int",
+  "savingThrows": [
+   "int",
+   "wis"
+  ],
+  "spellcastingAbility": "int",
+  "armorProficiencies": "Nenhuma",
+  "weaponProficiencies": "Adagas, dardos, fundas, bordões, bestas leves",
+  "toolProficiencies": "Nenhuma",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Arcanismo",
+    "História",
+    "Intuição",
+    "Investigação",
+    "Medicina",
+    "Religião"
+   ]
+  },
+  "subclasses": [
+   "Abjuração",
+   "Adivinhação",
+   "Conjuração",
+   "Encantamento",
+   "Evocação",
+   "Ilusão",
+   "Necromancia",
+   "Transmutação"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "um bordão",
+     "uma adaga"
+    ],
+    [
+     "uma bolsa de componentes",
+     "um foco arcano"
+    ],
+    [
+     "um pacote de estudioso",
+     "um pacote de explorador"
+    ]
+   ],
+   "fixed": [
+    "Um grimório"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Conjuração",
+    "Recuperação Arcana"
+   ],
+   "2": [
+    "Tradição Arcana"
+   ],
+   "3": [],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [],
+   "6": [
+    "Característica de Tradição Arcana"
+   ],
+   "7": [],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [],
+   "10": [
+    "Característica de Tradição Arcana"
+   ],
+   "11": [],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [],
+   "14": [
+    "Característica de Tradição Arcana"
+   ],
+   "15": [],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [],
+   "18": [
+    "Dominar Magia"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Assinatura Mágica"
+   ]
+  }
+ },
+ {
+  "name": "Monge",
+  "hitDie": "d8",
+  "primaryAbility": "dex",
+  "savingThrows": [
+   "str",
+   "dex"
+  ],
+  "spellcastingAbility": null,
+  "armorProficiencies": "Nenhuma",
+  "weaponProficiencies": "Armas simples, espadas curtas",
+  "toolProficiencies": "Escolha um tipo de ferramenta de artesão ou um instrumento musical",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Acrobacia",
+    "Atletismo",
+    "Furtividade",
+    "História",
+    "Intuição",
+    "Religião"
+   ]
+  },
+  "subclasses": [
+   "Caminho da Mão Aberta",
+   "Caminho Sombrio",
+   "Caminho dos Quatro Elementos"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma espada curta",
+     "qualquer arma simples"
+    ],
+    [
+     "um pacote de explorador",
+     "um pacote de aventureiro"
+    ]
+   ],
+   "fixed": [
+    "10 dardos"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Defesa sem Armadura",
+    "Artes Marciais"
+   ],
+   "2": [
+    "Chi",
+    "Movimento sem Armadura"
+   ],
+   "3": [
+    "Tradição Monástica",
+    "Defletir Projéteis"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade",
+    "Queda Lenta"
+   ],
+   "5": [
+    "Ataque Extra",
+    "Ataque Atordoante"
+   ],
+   "6": [
+    "Golpes de Chi",
+    "Característica de Tradição Monástica"
+   ],
+   "7": [
+    "Evasão",
+    "Mente Tranquila"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [
+    "Aprimoramento de Movimento sem Armadura"
+   ],
+   "10": [
+    "Pureza Corporal"
+   ],
+   "11": [
+    "Característica de Tradição Monástica"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [
+    "Idiomas do Sol e da Lua"
+   ],
+   "14": [
+    "Alma de Diamante"
+   ],
+   "15": [
+    "Corpo Atemporal"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [
+    "Característica de Tradição Monástica"
+   ],
+   "18": [
+    "Corpo Vazio"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Auto Aperfeiçoamento"
+   ]
+  }
+ },
+ {
+  "name": "Paladino",
+  "hitDie": "d10",
+  "primaryAbility": "str",
+  "savingThrows": [
+   "wis",
+   "cha"
+  ],
+  "spellcastingAbility": "cha",
+  "armorProficiencies": "Todas as armaduras, escudos",
+  "weaponProficiencies": "Armas simples, armas marciais",
+  "toolProficiencies": "Nenhum",
+  "skillProficiencies": {
+   "choose": 2,
+   "from": [
+    "Atletismo",
+    "Intuição",
+    "Intimidação",
+    "Medicina",
+    "Persuasão",
+    "Religião"
+   ]
+  },
+  "subclasses": [
+   "Juramento de Devoção",
+   "Juramento dos Anciões",
+   "Juramento de Vingança"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "uma arma marcial e um escudo",
+     "duas armas marciais"
+    ],
+    [
+     "cinco azagaias",
+     "qualquer arma simples corpoa-corpo"
+    ],
+    [
+     "um pacote de sacerdote",
+     "um pacote de aventureiro"
+    ]
+   ],
+   "fixed": [
+    "Cota de malha e um símbolo sagrado"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Sentido Divino",
+    "Cura pelas Mãos"
+   ],
+   "2": [
+    "Estilo de Luta",
+    "Conjuração",
+    "Destruição Divina"
+   ],
+   "3": [
+    "Saúde Divina",
+    "Juramento Sagrado"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Ataque Extra"
+   ],
+   "6": [
+    "Aura de Proteção"
+   ],
+   "7": [
+    "Característica de Juramento Sagrado"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "9": [],
+   "10": [
+    "Aura da Coragem"
+   ],
+   "11": [
+    "Destruição Divina Aprimorada"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [],
+   "14": [
+    "Toque Purificador"
+   ],
+   "15": [
+    "Característica de Juramento Sagrado"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [],
+   "18": [
+    "Aprimoramentos de Aura"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Característica de Juramento Sagrado"
+   ]
+  }
+ },
+ {
+  "name": "Patrulheiro",
+  "hitDie": "d10",
+  "primaryAbility": "dex",
+  "savingThrows": [
+   "str",
+   "dex"
+  ],
+  "spellcastingAbility": "wis",
+  "armorProficiencies": "Armaduras leves, armaduras médias, escudos",
+  "weaponProficiencies": "Armas simples, armas marciais",
+  "toolProficiencies": "Nenhuma",
+  "skillProficiencies": {
+   "choose": 3,
+   "from": [
+    "Acrobacia",
+    "Adestrar Animais",
+    "Atletismo",
+    "Furtividade",
+    "Intuição",
+    "Investigação",
+    "Natureza",
+    "Percepção",
+    "Sobrevivência"
+   ]
+  },
+  "subclasses": [
+   "Caçador",
+   "Mestre das Bestas"
+  ],
+  "startingEquipment": {
+   "choices": [
+    [
+     "camisão de malha",
+     "armadura de couro"
+    ],
+    [
+     "duas espadas curtas",
+     "duas armas simples corpo-a-corpo"
+    ],
+    [
+     "um pacote de explorador",
+     "um pacote de aventureiro"
+    ]
+   ],
+   "fixed": [
+    "Um arco longo e uma aljava com 20 flechas"
+   ]
+  },
+  "progression": {
+   "1": [
+    "Inimigo Favorito",
+    "Explorador Natural"
+   ],
+   "2": [
+    "Estilo de Luta",
+    "Conjuração"
+   ],
+   "3": [
+    "Arquétipo de Patrulheiro",
+    "Prontidão Primitiva"
+   ],
+   "4": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "5": [
+    "Ataque Extra"
+   ],
+   "6": [
+    "Aprimoramentos de Inimigo Favorito e Explorador Natural"
+   ],
+   "7": [
+    "Característica de Arquétipo de Patrulheiro"
+   ],
+   "8": [
+    "Incremento no Valor de Habilidade",
+    "Caminho da Floresta"
+   ],
+   "9": [],
+   "10": [
+    "Aprimoramento de Explorador Natural",
+    "Mimetismo"
+   ],
+   "11": [
+    "Característica de Arquétipo de Patrulheiro"
+   ],
+   "12": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "13": [],
+   "14": [
+    "Aprimoramento de Inimigo Favorito",
+    "Desaparecer"
+   ],
+   "15": [
+    "Característica de Arquétipo de Patrulheiro"
+   ],
+   "16": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "17": [],
+   "18": [
+    "Sentidos Selvagens"
+   ],
+   "19": [
+    "Incremento no Valor de Habilidade"
+   ],
+   "20": [
+    "Matador de Inimigos"
+   ]
+  }
+ }
+]

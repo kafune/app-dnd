@@ -1,0 +1,502 @@
+[
+ {
+  "name": "Agilidade Felina",
+  "description": "Dobra a distância de movimento numa rodada (1x até se mover 0m numa rodada).",
+  "kind": "trait"
+ },
+ {
+  "name": "Agilidade Halfling",
+  "description": "Pode se mover através do espaço de criaturas de tamanho maior que o seu.",
+  "kind": "trait"
+ },
+ {
+  "name": "Agressivo",
+  "description": "Como ação bônus, move-se até seu deslocamento em direção a um inimigo visível.",
+  "kind": "trait"
+ },
+ {
+  "name": "Alcançar o Ar",
+  "description": "Conjura Levitação 1x por descanso longo (Genasi do Ar).",
+  "kind": "trait"
+ },
+ {
+  "name": "Alma Flagelo",
+  "description": "No 3º nível, libera energia radiante numa explosão ao seu redor (1x por descanso longo).",
+  "kind": "trait"
+ },
+ {
+  "name": "Alma Necrótica",
+  "description": "No 3º nível, manifesta asas esqueléticas e amedronta inimigos próximos (1x por descanso longo).",
+  "kind": "trait"
+ },
+ {
+  "name": "Alma Radiante",
+  "description": "No 3º nível, pode emanar asas e causar dano radiante extra (1x por descanso longo).",
+  "kind": "trait"
+ },
+ {
+  "name": "Ameaçador",
+  "description": "Você é proficiente na perícia Intimidação.",
+  "kind": "trait"
+ },
+ {
+  "name": "Ancestral Dracônico",
+  "description": "Escolha um tipo de dragão; define o dano e a forma do seu sopro e a resistência associada.",
+  "kind": "trait"
+ },
+ {
+  "name": "Ancestral Feérico",
+  "description": "Vantagem contra ser enfeitiçado e a magia do sono não o afeta.",
+  "kind": "trait"
+ },
+ {
+  "name": "Arma de Sopro",
+  "description": "Usa uma ação para exalar energia destrutiva (CD por Constituição), 2d6 escalando com o nível.",
+  "kind": "trait"
+ },
+ {
+  "name": "Armadura Natural",
+  "description": "Sua CA base é 17 (não se beneficia de armadura); pode usar escudo.",
+  "kind": "trait"
+ },
+ {
+  "name": "Astúcia",
+  "description": "Como ação bônus, pode se Esconder ou Disparar (Desengajar).",
+  "kind": "trait"
+ },
+ {
+  "name": "Ataques Selvagens",
+  "description": "Num acerto crítico corpo-a-corpo, role um dado de dano da arma adicional.",
+  "kind": "trait"
+ },
+ {
+  "name": "Bravura",
+  "description": "Vantagem em testes de resistência contra ficar amedrontado.",
+  "kind": "trait"
+ },
+ {
+  "name": "Caixa de Música",
+  "description": "Pode construir uma caixa de música que toca uma única canção ao abrir.",
+  "kind": "trait"
+ },
+ {
+  "name": "Camuflagem do Pântano",
+  "description": "Vantagem em Furtividade em terreno pantanoso.",
+  "kind": "trait"
+ },
+ {
+  "name": "Conhecimento de Artífice",
+  "description": "Adiciona o dobro do bônus de proficiência em testes de Int sobre dispositivos mágicos, alquímicos ou tecnológicos.",
+  "kind": "trait"
+ },
+ {
+  "name": "Constituição Poderosa",
+  "description": "Conta como uma categoria de tamanho acima para carga e peso que pode empurrar/arrastar/erguer.",
+  "kind": "trait"
+ },
+ {
+  "name": "Covardia",
+  "description": "Como ação, pode se encolher e dar vantagem a aliados próximos contra um inimigo (até o fim do seu turno).",
+  "kind": "trait"
+ },
+ {
+  "name": "Defesa de Casco",
+  "description": "Recolhe-se no casco: +4 CA, vantagem em salvaguardas de For e Con, mas fica incapacitado e com deslocamento 0.",
+  "kind": "trait"
+ },
+ {
+  "name": "Discurso Bestial e Plantas",
+  "description": "Pode se comunicar de forma simples com bestas e plantas.",
+  "kind": "trait"
+ },
+ {
+  "name": "Disfarce Oculto",
+  "description": "Como ação bônus, fica invisível por 1 turno (1x por descanso curto).",
+  "kind": "trait"
+ },
+ {
+  "name": "Especialização em Rochas",
+  "description": "Dobra o bônus de proficiência em testes de Inteligência (História) sobre trabalhos em pedra.",
+  "kind": "trait"
+ },
+ {
+  "name": "Esperteza Gnômica",
+  "description": "Vantagem em testes de resistência de Int, Sab e Car contra magia.",
+  "kind": "trait"
+ },
+ {
+  "name": "Fabricar Itens",
+  "description": "Proficiência para criar itens simples a partir de partes de criaturas (escudo, etc.).",
+  "kind": "trait"
+ },
+ {
+  "name": "Falar com Bestas Pequenas",
+  "description": "Comunica ideias simples a bestas Pequenas ou menores.",
+  "kind": "trait"
+ },
+ {
+  "name": "Faminto Voraz",
+  "description": "Ao comer parte de um inimigo abatido e descansar, ganha PV temporários e um bônus.",
+  "kind": "trait"
+ },
+ {
+  "name": "Faro de Caçador",
+  "description": "Proficiência em Percepção e Furtividade.",
+  "kind": "trait"
+ },
+ {
+  "name": "Filho do Fogo",
+  "description": "Conhece o truque Produzir Chama; no 3º nível conjura Mãos Flamejantes 1x/dia (Genasi do Fogo).",
+  "kind": "trait"
+ },
+ {
+  "name": "Filho do Mar",
+  "description": "Pode respirar na água; deslocamento de natação de 9m; conjura Modelar Água (Genasi da Água).",
+  "kind": "trait"
+ },
+ {
+  "name": "Furtividade Natural",
+  "description": "Pode tentar se esconder mesmo quando obscurecido só por uma criatura ao menos um tamanho maior.",
+  "kind": "trait"
+ },
+ {
+  "name": "Furtivo",
+  "description": "Você é proficiente na perícia Furtividade.",
+  "kind": "trait"
+ },
+ {
+  "name": "Fúria dos Pequenos",
+  "description": "Quando acerta um alvo maior que você, causa dano extra (1x por turno).",
+  "kind": "trait"
+ },
+ {
+  "name": "Garras",
+  "description": "Garras como armas naturais (1d4 cortante).",
+  "kind": "trait"
+ },
+ {
+  "name": "Garras (Talons)",
+  "description": "Garras como armas naturais (1d4 cortante).",
+  "kind": "trait"
+ },
+ {
+  "name": "Garras Felinas",
+  "description": "Garras como armas naturais (1d4 cortante) e deslocamento de escalada de 6m.",
+  "kind": "trait"
+ },
+ {
+  "name": "Idioma Adicional",
+  "description": "Você fala, lê e escreve um idioma adicional à sua escolha.",
+  "kind": "trait"
+ },
+ {
+  "name": "Ilusionista Nato",
+  "description": "Conhece o truque Ilusão Menor (conjurado com Inteligência).",
+  "kind": "trait"
+ },
+ {
+  "name": "Instinto de Sobrevivência",
+  "description": "Proficiência na perícia Sobrevivência.",
+  "kind": "trait"
+ },
+ {
+  "name": "Isqueiro Mecânico",
+  "description": "Pode construir pequenos engenhos (isqueiro, brinquedo mecânico, caixa de música).",
+  "kind": "trait"
+ },
+ {
+  "name": "Legado Infernal",
+  "description": "Conhece o truque Taumaturgia; no 3º nível Repreensão Infernal e no 5º Escuridão (1x/dia, por Carisma).",
+  "kind": "trait"
+ },
+ {
+  "name": "Magia Drow",
+  "description": "Conhece o truque Globos de Luz; no 3º nível conjura Fogo das Fadas e no 5º Escuridão (1x/dia, por Carisma).",
+  "kind": "trait"
+ },
+ {
+  "name": "Magia Firbolg",
+  "description": "Conjura Detectar Magia e Disfarçar-se (por Sabedoria), 1x cada por descanso curto.",
+  "kind": "trait"
+ },
+ {
+  "name": "Membros Longos",
+  "description": "Seu alcance de ataques corpo-a-corpo é 1,5m maior na sua vez.",
+  "kind": "trait"
+ },
+ {
+  "name": "Mordida",
+  "description": "Mordida como arma natural (1d6 perfurante).",
+  "kind": "trait"
+ },
+ {
+  "name": "Máscara da Natureza",
+  "description": "Pode se esconder mesmo apenas levemente obscurecido por folhagem, chuva, neve, névoa, etc.",
+  "kind": "trait"
+ },
+ {
+  "name": "Mãos Curandeiras",
+  "description": "Como ação, toca uma criatura e ela recupera PV igual ao seu nível (1x por descanso longo).",
+  "kind": "trait"
+ },
+ {
+  "name": "Passo Cambiante",
+  "description": "Conjura Passos Largos 1x por descanso longo (Genasi da Terra).",
+  "kind": "trait"
+ },
+ {
+  "name": "Pele de Pedra",
+  "description": "Como reação ao sofrer dano, reduz o dano em 1d12 + Constituição (1x por descanso curto).",
+  "kind": "trait"
+ },
+ {
+  "name": "Perícia",
+  "description": "Proficiência em uma perícia à sua escolha.",
+  "kind": "trait"
+ },
+ {
+  "name": "Portador de Luz",
+  "description": "Conhece o truque Luz (conjurado com Carisma).",
+  "kind": "trait"
+ },
+ {
+  "name": "Prender o Fôlego",
+  "description": "Pode prender a respiração por até 15 minutos.",
+  "kind": "trait"
+ },
+ {
+  "name": "Pés Ligeiros",
+  "description": "Seu deslocamento base aumenta para 10,5m.",
+  "kind": "trait"
+ },
+ {
+  "name": "Resiliência Anã",
+  "description": "Vantagem em testes de resistência contra veneno e resistência a dano de veneno.",
+  "kind": "trait"
+ },
+ {
+  "name": "Resiliência dos Robustos",
+  "description": "Vantagem em testes de resistência contra veneno e resistência a dano de veneno.",
+  "kind": "trait"
+ },
+ {
+  "name": "Resistência Celestial",
+  "description": "Resistência a dano necrótico e radiante.",
+  "kind": "trait"
+ },
+ {
+  "name": "Resistência Elemental",
+  "description": "Resistência ao tipo de dano do seu elemento (Genasi).",
+  "kind": "trait"
+ },
+ {
+  "name": "Resistência Implacável",
+  "description": "Ao cair a 0 PV (sem morrer direto), fica com 1 PV (1x por descanso longo).",
+  "kind": "trait"
+ },
+ {
+  "name": "Resistência Infernal",
+  "description": "Resistência a dano de fogo.",
+  "kind": "trait"
+ },
+ {
+  "name": "Resistência Montanhesa",
+  "description": "Resistência a dano de frio e aclimatado a grandes altitudes.",
+  "kind": "trait"
+ },
+ {
+  "name": "Resistência a Dano",
+  "description": "Resistência ao tipo de dano associado ao seu ancestral dracônico.",
+  "kind": "trait"
+ },
+ {
+  "name": "Salvação Marcial",
+  "description": "Quando falha numa salvaguarda perto de aliados, ganha bônus por aliado visível (1x por descanso curto).",
+  "kind": "trait"
+ },
+ {
+  "name": "Sensibilidade à Luz Solar",
+  "description": "Desvantagem em ataques e em testes de Percepção (visão) sob luz solar direta.",
+  "kind": "trait"
+ },
+ {
+  "name": "Sentidos Aguçados",
+  "description": "Você é proficiente na perícia Percepção.",
+  "kind": "trait"
+ },
+ {
+  "name": "Sortudo",
+  "description": "Ao rolar 1 num d20 de ataque, teste de habilidade ou resistência, role de novo e use o novo resultado.",
+  "kind": "trait"
+ },
+ {
+  "name": "Surpresa Brutal",
+  "description": "Causa dano extra (2d6) ao acertar uma criatura surpresa no 1º turno do combate.",
+  "kind": "trait"
+ },
+ {
+  "name": "Talento",
+  "description": "Você ganha um talento (feat) à sua escolha.",
+  "kind": "trait"
+ },
+ {
+  "name": "Tenacidade Anã",
+  "description": "Seu máximo de pontos de vida aumenta em 1 e em +1 a cada nível.",
+  "kind": "trait"
+ },
+ {
+  "name": "Transe",
+  "description": "Não dorme; medita 4 horas em vez de dormir 8 para o equivalente a um descanso.",
+  "kind": "trait"
+ },
+ {
+  "name": "Treinamento Anão com Armaduras",
+  "description": "Proficiência com armaduras leves e médias.",
+  "kind": "trait"
+ },
+ {
+  "name": "Treinamento Anão em Combate",
+  "description": "Proficiência com machados de batalha, machadinhas, martelos leves e martelos de guerra.",
+  "kind": "trait"
+ },
+ {
+  "name": "Treinamento Drow com Armas",
+  "description": "Proficiência com rapieiras, espadas curtas e bestas de mão.",
+  "kind": "trait"
+ },
+ {
+  "name": "Treinamento Marcial",
+  "description": "Proficiência com armaduras leves e duas armas marciais à sua escolha.",
+  "kind": "trait"
+ },
+ {
+  "name": "Treinamento Élfico com Armas",
+  "description": "Proficiência com espadas longas e curtas, arcos curtos e longos.",
+  "kind": "trait"
+ },
+ {
+  "name": "Táticas de Matilha",
+  "description": "Vantagem em ataques contra um inimigo se um aliado seu estiver a até 1,5m dele.",
+  "kind": "trait"
+ },
+ {
+  "name": "Versatilidade em Perícia",
+  "description": "Proficiência em duas perícias à sua escolha.",
+  "kind": "trait"
+ },
+ {
+  "name": "Visão no Escuro",
+  "description": "Enxerga na penumbra a até 18m como se fosse luz plena e no escuro como penumbra (só tons de cinza).",
+  "kind": "trait"
+ },
+ {
+  "name": "Visão no Escuro Superior",
+  "description": "Visão no escuro com alcance de 36m.",
+  "kind": "trait"
+ },
+ {
+  "name": "Voo",
+  "description": "Deslocamento de voo de 15m (não pode usar armadura média/pesada para voar).",
+  "kind": "trait"
+ },
+ {
+  "name": "Alerta",
+  "description": "+5 na iniciativa; não pode ser surpreendido enquanto consciente; criaturas ocultas não têm vantagem contra você.",
+  "kind": "talento"
+ },
+ {
+  "name": "Atacante Selvagem",
+  "description": "1x por turno, ao acertar um ataque corpo-a-corpo, pode rolar de novo os dados de dano e usar o melhor.",
+  "kind": "talento"
+ },
+ {
+  "name": "Atleta",
+  "description": "+1 For ou Des; levantar-se custa só 1,5m; escala sem custo extra; corre/salta após 1,5m de impulso.",
+  "kind": "talento"
+ },
+ {
+  "name": "Atirador de Elite",
+  "description": "Ignora cobertura leve/média e penalidade de longo alcance; pode trocar -5 no ataque por +10 no dano.",
+  "kind": "talento"
+ },
+ {
+  "name": "Conjurador de Guerra",
+  "description": "Vantagem em salvaguardas para manter concentração; pode conjurar com mãos ocupadas; pode usar reação para conjurar.",
+  "kind": "talento"
+ },
+ {
+  "name": "Combatente com Armas Grandes",
+  "description": "Em arma pesada de duas mãos, ao matar/critar ganha ataque bônus; pode trocar -5 no ataque por +10 no dano.",
+  "kind": "talento"
+ },
+ {
+  "name": "Combatente com Duas Armas",
+  "description": "+1 CA empunhando duas armas; pode usar duas armas mesmo sem a propriedade leve.",
+  "kind": "talento"
+ },
+ {
+  "name": "Curandeiro",
+  "description": "Com um kit de curandeiro, estabiliza e cura criaturas de forma mais eficaz.",
+  "kind": "talento"
+ },
+ {
+  "name": "Defensor com Escudo",
+  "description": "Bônus defensivos com escudo; pode empurrar inimigos e proteger-se de áreas de efeito.",
+  "kind": "talento"
+ },
+ {
+  "name": "Especialista em Bestas",
+  "description": "Ignora a recarga de bestas leves; sem desvantagem em alcance curto; pode atacar com besta de mão e outra arma.",
+  "kind": "talento"
+ },
+ {
+  "name": "Iniciado em Magia",
+  "description": "Aprende dois truques e uma magia de 1º nível de uma classe à sua escolha.",
+  "kind": "talento"
+ },
+ {
+  "name": "Mestre em Armas de Haste",
+  "description": "Ganha ataque bônus com a haste da arma; provoca ataque de oportunidade quando inimigos entram no seu alcance.",
+  "kind": "talento"
+ },
+ {
+  "name": "Mobilidade",
+  "description": "+3m de deslocamento; correr não provoca ataques de oportunidade do alvo que você atacou.",
+  "kind": "talento"
+ },
+ {
+  "name": "Observador",
+  "description": "+1 Int ou Sab; lê lábios; +5 em Percepção e Investigação passivas.",
+  "kind": "talento"
+ },
+ {
+  "name": "Resiliente",
+  "description": "+1 num atributo à escolha e ganha proficiência em salvaguardas desse atributo.",
+  "kind": "talento"
+ },
+ {
+  "name": "Robusto",
+  "description": "Seu máximo de pontos de vida aumenta em 2 por nível de personagem.",
+  "kind": "talento"
+ },
+ {
+  "name": "Sentinela",
+  "description": "Acerto de oportunidade reduz o deslocamento do alvo a 0; ataca quem desengaja ou ataca um aliado próximo.",
+  "kind": "talento"
+ },
+ {
+  "name": "Sortudo",
+  "description": "Tem 3 pontos de sorte por descanso longo para rolar um d20 extra em ataques, testes ou salvaguardas.",
+  "kind": "talento"
+ },
+ {
+  "name": "Talentoso",
+  "description": "Ganha proficiência em três perícias ou ferramentas à sua escolha.",
+  "kind": "talento"
+ },
+ {
+  "name": "Usuário de Armadura Pesada",
+  "description": "+1 Con; reduz em 3 o dano de ataques não-mágicos enquanto usa armadura pesada.",
+  "kind": "talento"
+ }
+]
