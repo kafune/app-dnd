@@ -24,6 +24,7 @@ type Store = {
   patchError: string | null;
 
   setLocalCharacter: (c: Character) => void;
+  createCharacter: (character: Character) => Promise<string>;
   patchCharacter: (id: string, patch: Partial<Character>) => Promise<boolean>;
   unlock: (id: string, pin: string) => Promise<boolean>;
   lock: (id: string) => void;
@@ -46,6 +47,16 @@ export const useStore = create<Store>()(
 
       setLocalCharacter: (c) =>
         set((s) => ({ characters: { ...s.characters, [c.id]: c } })),
+
+      createCharacter: async (character) => {
+        const { character: saved } = await api.createCharacter(character);
+        set((s) => ({
+          characters: { ...s.characters, [saved.id]: saved },
+          // O criador já fica destravado com o PIN que digitou.
+          pins: character.pin ? { ...s.pins, [saved.id]: character.pin } : s.pins,
+        }));
+        return saved.id;
+      },
 
       patchCharacter: async (id, patch) => {
         const pin = get().pins[id];

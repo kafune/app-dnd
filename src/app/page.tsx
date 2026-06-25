@@ -13,10 +13,20 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10">
       <header className="mb-8">
-        <h1 className="font-mono text-3xl font-bold tracking-tight">Mundo Pankleos</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          D&D 5e · Reino de Solus · 4 desocupados nível 3
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-mono text-3xl font-bold tracking-tight">Mundo Pankleos</h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              D&D 5e · Reino de Solus · 4 desocupados nível 3
+            </p>
+          </div>
+          <Link
+            href="/criar-ficha"
+            className="shrink-0 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+          >
+            + Criar ficha
+          </Link>
+        </div>
         <div className="mt-3 inline-flex items-center gap-2 text-xs">
           <span
             className={

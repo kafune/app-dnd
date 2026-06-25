@@ -1,0 +1,255 @@
+[
+ {
+  "name": "Anão",
+  "abilityScoreIncrease": {
+   "con": 2
+  },
+  "size": "Médio",
+  "speed": 7.5,
+  "languages": "Você pode falar, ler e escrever Comum e Anão",
+  "traits": [
+   "Visão no Escuro",
+   "Resiliência Anã",
+   "Treinamento Anão em Combate",
+   "Especialização em Rochas"
+  ],
+  "subraces": [
+   {
+    "name": "Anão da Colina",
+    "abilityScoreIncrease": {
+     "wis": 1
+    },
+    "traits": [
+     "Tenacidade Anã"
+    ]
+   },
+   {
+    "name": "Anão da Montanha",
+    "abilityScoreIncrease": {
+     "str": 2
+    },
+    "traits": [
+     "Treinamento Anão com Armaduras"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Elfo",
+  "abilityScoreIncrease": {
+   "dex": 2
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você pode falar, ler e escrever Comum e Élfico",
+  "traits": [
+   "Visão no Escuro",
+   "Sentidos Aguçados",
+   "Ancestral Feérico",
+   "Transe"
+  ],
+  "subraces": [
+   {
+    "name": "Alto Elfo",
+    "abilityScoreIncrease": {
+     "int": 1
+    },
+    "traits": [
+     "Treinamento Élfico com Armas",
+     "Idioma Adicional"
+    ]
+   },
+   {
+    "name": "Elfo da Floresta",
+    "abilityScoreIncrease": {
+     "wis": 1
+    },
+    "traits": [
+     "Treinamento Élfico com Armas",
+     "Pés Ligeiros",
+     "Máscara da Natureza"
+    ]
+   },
+   {
+    "name": "Elfo Negro (drow)",
+    "abilityScoreIncrease": {
+     "cha": 1
+    },
+    "traits": [
+     "Visão no Escuro Superior",
+     "Sensibilidade à Luz Solar",
+     "Magia Drow",
+     "Treinamento Drow com Armas"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Halfling",
+  "abilityScoreIncrease": {
+   "dex": 2
+  },
+  "size": "Pequeno",
+  "speed": 7.5,
+  "languages": "Você pode falar, ler e escrever Comum e Halfling",
+  "traits": [
+   "Sortudo",
+   "Bravura",
+   "Agilidade Halfling"
+  ],
+  "subraces": [
+   {
+    "name": "Pés Leves",
+    "abilityScoreIncrease": {
+     "cha": 1
+    },
+    "traits": [
+     "Furtividade Natural"
+    ]
+   },
+   {
+    "name": "Robusto",
+    "abilityScoreIncrease": {
+     "con": 1
+    },
+    "traits": [
+     "Resiliência dos Robustos"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Humano",
+  "abilityScoreIncrease": {
+   "str": 1,
+   "dex": 1,
+   "con": 1,
+   "int": 1,
+   "wis": 1,
+   "cha": 1
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você pode falar, ler e escrever Comum e outro idioma adicional, à sua escolha",
+  "traits": [],
+  "subraces": [
+   {
+    "name": "Traços Raciais Alternativos",
+    "abilityScoreIncrease": {},
+    "traits": [
+     "Perícia",
+     "Talento",
+     "Draconatos",
+     "Gnomos",
+     "Meio-elfos",
+     "Meio-orcs",
+     "Tieflings"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Draconato",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "cha": 1
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você pode falar, ler e escrever Comum e Dracônico",
+  "traits": [
+   "Ancestral Dracônico",
+   "Arma de Sopro",
+   "Resistência a Dano"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Gnomo",
+  "abilityScoreIncrease": {
+   "int": 2
+  },
+  "size": "Pequeno",
+  "speed": 7.5,
+  "languages": "Você sabe falar, ler e escrever Comum e Gnômico",
+  "traits": [
+   "Visão no Escuro",
+   "Esperteza Gnômica"
+  ],
+  "subraces": [
+   {
+    "name": "Gnomo da Floresta",
+    "abilityScoreIncrease": {
+     "dex": 1
+    },
+    "traits": [
+     "Ilusionista Nato",
+     "Falar com Bestas Pequenas"
+    ]
+   },
+   {
+    "name": "Gnomo das Rochas",
+    "abilityScoreIncrease": {
+     "con": 1
+    },
+    "traits": [
+     "Conhecimento de Artífice",
+     "Isqueiro Mecânico",
+     "Caixa de Música"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Meio-elfo",
+  "abilityScoreIncrease": {
+   "cha": 2,
+   "choose": {
+    "count": 2,
+    "amount": 1
+   }
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você sabe falar, ler e escrever Comum, Élfico e um idioma adicional, à sua escolha",
+  "traits": [
+   "Visão no Escuro",
+   "Ancestral Feérico",
+   "Versatilidade em Perícia"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Meio-orc",
+  "abilityScoreIncrease": {
+   "str": 2,
+   "con": 1
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você sabe falar, ler e escrever Comum, Orc",
+  "traits": [
+   "Visão no Escuro",
+   "Ameaçador",
+   "Resistência Implacável",
+   "Ataques Selvagens"
+  ],
+  "subraces": []
+ },
+ {
+  "name": "Tiefling",
+  "abilityScoreIncrease": {
+   "int": 1,
+   "cha": 2
+  },
+  "size": "Médio",
+  "speed": 9.0,
+  "languages": "Você sabe falar, ler e escrever Comum e Infernal",
+  "traits": [
+   "Visão no Escuro",
+   "Resistência Infernal",
+   "Legado Infernal"
+  ],
+  "subraces": []
+ }
+]

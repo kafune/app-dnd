@@ -21,6 +21,12 @@ export const api = {
   listCharacters: () =>
     jsonFetch<{ characters: Character[] }>("/api/characters", { cache: "no-store" }),
 
+  createCharacter: (character: Character) =>
+    jsonFetch<{ character: Character }>("/api/characters", {
+      method: "POST",
+      body: JSON.stringify({ character }),
+    }),
+
   patchCharacter: (id: string, patch: Partial<Character>, pin?: string) =>
     jsonFetch<{ character: Character }>(`/api/characters/${id}`, {
       method: "PATCH",
