@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { use } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -23,6 +23,7 @@ import {
   Personality,
 } from "@/components/sheet/Misc";
 import { PinLock } from "@/components/sheet/PinLock";
+import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 import { DiceRoller } from "@/components/dice/DiceRoller";
 import { RollHistory } from "@/components/dice/RollHistory";
 import { ChangeLog } from "@/components/sheet/ChangeLog";
@@ -35,7 +36,20 @@ export default function CharacterPage({
 }) {
   const { id } = use(params);
   const character = useStore((s) => s.characters[id]);
+  const clearRolls = useStore((s) => s.clearRolls);
+  const editMode = useStore((s) => s.editMode);
+  const setEditMode = useStore((s) => s.setEditMode);
+  const patchCharacter = useStore((s) => s.patchCharacter);
+  const patchSheet = useStore((s) => s.patchSheet);
   const unlocked = useUnlocked(id);
+
+  const limparHistorico = (scope: "player" | "mesa") => {
+    const msg =
+      scope === "mesa"
+        ? "Limpar TODAS as rolagens da mesa? Isso afeta todos os jogadores."
+        : "Limpar as rolagens desta ficha?";
+    if (window.confirm(msg)) void clearRolls(scope === "mesa" ? undefined : id);
+  };
 
   if (!character) {
     return (
@@ -56,6 +70,11 @@ export default function CharacterPage({
     .map((k) => `${k.name}${k.subclass ? ` (${k.subclass})` : ""} ${k.level}`)
     .join(" / ");
 
+  const classes = character.sheet.classes;
+  const setClasses = (next: typeof classes) => void patchSheet(id, { classes: next });
+  const updateClassEntry = (i: number, patch: Partial<(typeof classes)[number]>) =>
+    setClasses(classes.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="mb-4 flex items-center gap-3">
@@ -65,19 +84,132 @@ export default function CharacterPage({
           </Button>
         </Link>
         <PinLock id={id} />
+        <Button
+          variant={editMode ? "success" : "outline"}
+          size="sm"
+          className="ml-auto"
+          onClick={() => setEditMode(!editMode)}
+        >
+          {editMode ? (
+            <>
+              <Check className="h-3 w-3" /> Concluir edição
+            </>
+          ) : (
+            <>
+              <Pencil className="h-3 w-3" /> Editar ficha
+            </>
+          )}
+        </Button>
       </div>
 
       <header
         className="mb-6 rounded-xl border-l-4 bg-white p-4 shadow-sm dark:bg-zinc-900"
         style={{ borderLeftColor: character.color }}
       >
-        <div className="text-xs uppercase tracking-wider text-zinc-500">
-          {character.playerName}
-        </div>
-        <h1 className="font-mono text-3xl font-bold">{character.characterName}</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {character.sheet.species} · {cls} · {character.sheet.background}
-        </p>
+        {editMode ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="text-xs text-zinc-500">
+                Jogador
+                <EditableText
+                  value={character.playerName}
+                  onSave={(v) => patchCharacter(id, { playerName: v })}
+                />
+              </label>
+              <label className="text-xs text-zinc-500">
+                Personagem
+                <EditableText
+                  value={character.characterName}
+                  onSave={(v) => patchCharacter(id, { characterName: v })}
+                />
+              </label>
+              <label className="text-xs text-zinc-500">
+                Espécie/Raça
+                <EditableText
+                  value={character.sheet.species}
+                  onSave={(v) => patchSheet(id, { species: v })}
+                />
+              </label>
+              <label className="text-xs text-zinc-500">
+                Antecedente
+                <EditableText
+                  value={character.sheet.background}
+                  onSave={(v) => patchSheet(id, { background: v })}
+                />
+              </label>
+              <label className="text-xs text-zinc-500">
+                Tendência
+                <EditableText
+                  value={character.sheet.alignment ?? ""}
+                  onSave={(v) => patchSheet(id, { alignment: v })}
+                />
+              </label>
+              <label className="text-xs text-zinc-500">
+                Cor
+                <input
+                  type="color"
+                  value={character.color ?? "#7c3aed"}
+                  onChange={(e) => patchCharacter(id, { color: e.target.value })}
+                  className="h-9 w-full rounded-md border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </label>
+            </div>
+            {/* Classes */}
+            <div>
+              <div className="mb-1 text-xs text-zinc-500">Classes</div>
+              <div className="space-y-1">
+                {classes.map((c, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-1">
+                    <EditableText
+                      value={c.name}
+                      onSave={(v) => updateClassEntry(i, { name: v })}
+                      className="w-36"
+                    />
+                    <EditableText
+                      value={c.subclass ?? ""}
+                      onSave={(v) => updateClassEntry(i, { subclass: v || undefined })}
+                      placeholder="subclasse"
+                      className="w-40"
+                    />
+                    <EditableNumber
+                      value={c.level}
+                      min={1}
+                      max={20}
+                      onSave={(v) => updateClassEntry(i, { level: v })}
+                      className="w-16"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Remover classe"
+                      onClick={() => setClasses(classes.filter((_, idx) => idx !== i))}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-1"
+                onClick={() => setClasses([...classes, { name: "Classe", level: 1 }])}
+              >
+                + Classe
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="text-xs uppercase tracking-wider text-zinc-500">
+              {character.playerName}
+            </div>
+            <h1 className="font-mono text-3xl font-bold">{character.characterName}</h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              {character.sheet.species} · {cls} · {character.sheet.background}
+            </p>
+          </>
+        )}
       </header>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -113,7 +245,18 @@ export default function CharacterPage({
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Histórico</CardTitle>
-                <span className="text-[10px] text-zinc-500">esta ficha</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-500">esta ficha</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => limparHistorico("player")}
+                    aria-label="Limpar rolagens desta ficha"
+                    title="Limpar rolagens desta ficha"
+                  >
+                    <Trash2 className="h-3 w-3" /> Limpar
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardBody>
@@ -125,7 +268,18 @@ export default function CharacterPage({
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Mesa</CardTitle>
-                <span className="text-[10px] text-zinc-500">todos</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-zinc-500">todos</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => limparHistorico("mesa")}
+                    aria-label="Limpar todas as rolagens da mesa"
+                    title="Limpar todas as rolagens da mesa"
+                  >
+                    <Trash2 className="h-3 w-3" /> Limpar
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardBody>

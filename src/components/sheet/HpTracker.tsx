@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardBody } from "@/components/ui/Card";
 import { useStore, useUnlocked } from "@/lib/store";
+import { EditableNumber } from "@/components/sheet/edit/EditControls";
 
 export function HpTracker({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const patch = useStore((s) => s.patchCharacter);
+  const editMode = useStore((s) => s.editMode);
   const unlocked = useUnlocked(id);
   const [delta, setDelta] = useState("");
 
@@ -90,6 +92,25 @@ export function HpTracker({ id }: { id: string }) {
             />
           </div>
         </fieldset>
+
+        {editMode && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-2 text-xs dark:border-zinc-800">
+            <span>PV atual</span>
+            <EditableNumber
+              value={c.hpCurrent}
+              min={0}
+              onSave={(v) => void patch(id, { hpCurrent: v })}
+              className="h-7 w-16"
+            />
+            <span>PV máximo</span>
+            <EditableNumber
+              value={c.hpMax}
+              min={1}
+              onSave={(v) => void patch(id, { hpMax: v })}
+              className="h-7 w-16"
+            />
+          </div>
+        )}
       </CardBody>
     </Card>
   );

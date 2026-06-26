@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Character, DiceRoll } from "./types";
+import type { Character, DiceRoll, Sheet } from "./types";
 import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
 import { api } from "./api";
 
@@ -22,13 +22,17 @@ type Store = {
   hydrated: boolean;
   realtimeReady: boolean;
   patchError: string | null;
+  editMode: boolean;
 
+  setEditMode: (v: boolean) => void;
   setLocalCharacter: (c: Character) => void;
   createCharacter: (character: Character) => Promise<string>;
   patchCharacter: (id: string, patch: Partial<Character>) => Promise<boolean>;
+  patchSheet: (id: string, partial: Partial<Sheet>) => Promise<boolean>;
   unlock: (id: string, pin: string) => Promise<boolean>;
   lock: (id: string) => void;
   addRoll: (r: DiceRoll) => Promise<void>;
+  clearRolls: (characterId?: string) => Promise<void>;
   pushToast: (toast: Omit<AppToast, "id">) => void;
   dismissToast: (id: string) => void;
   hydrate: () => Promise<void>;
@@ -44,6 +48,9 @@ export const useStore = create<Store>()(
       hydrated: false,
       realtimeReady: false,
       patchError: null,
+      editMode: false,
+
+      setEditMode: (v) => set({ editMode: v }),
 
       setLocalCharacter: (c) =>
         set((s) => ({ characters: { ...s.characters, [c.id]: c } })),
@@ -79,6 +86,13 @@ export const useStore = create<Store>()(
         }
       },
 
+      // Patch de campos do sheet (mescla com o sheet atual e envia via patchCharacter).
+      patchSheet: async (id, partial) => {
+        const c = get().characters[id];
+        if (!c) return false;
+        return get().patchCharacter(id, { sheet: { ...c.sheet, ...partial } });
+      },
+
       unlock: async (id, pin) => {
         try {
           const { character } = await api.getCharacter(id, pin);
@@ -111,6 +125,24 @@ export const useStore = create<Store>()(
           await api.postRoll(r);
         } catch {
           // se falhou, mantém local
+        }
+      },
+
+      clearRolls: async (characterId) => {
+        const prev = get().rolls;
+        // update otimista
+        set({
+          rolls: characterId ? prev.filter((r) => r.characterId !== characterId) : [],
+        });
+        try {
+          await api.clearRolls(characterId);
+        } catch (e) {
+          set({ rolls: prev }); // rollback
+          get().pushToast({
+            title: "Falha ao limpar o histórico",
+            description: e instanceof Error ? e.message : undefined,
+            tone: "danger",
+          });
         }
       },
 
@@ -226,6 +258,19 @@ function connectSse(
             : data.roll.detail.fumble
               ? "danger"
               : "default",
+        });
+      } catch {
+        // ignore
+      }
+    });
+    es.addEventListener("rolls-cleared", (ev) => {
+      try {
+        const data = JSON.parse((ev as MessageEvent).data) as { characterId: string | null };
+        const rolls = get().rolls;
+        set({
+          rolls: data.characterId
+            ? rolls.filter((r) => r.characterId !== data.characterId)
+            : [],
         });
       } catch {
         // ignore

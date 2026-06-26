@@ -16,9 +16,23 @@ const ALL_SKILLS = Object.keys(SKILL_TO_ABILITY) as SkillName[];
 export function Skills({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const addRoll = useStore((s) => s.addRoll);
+  const editMode = useStore((s) => s.editMode);
+  const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
 
   const profMap = new Map(c.sheet.skills.map((s) => [s.name, s]));
+
+  // ciclo: nenhuma -> proficiente -> especialista -> nenhuma
+  const cycleSkill = (name: SkillName) => {
+    const cur = profMap.get(name);
+    const others = c.sheet.skills.filter((s) => s.name !== name);
+    const next = !cur?.proficient
+      ? { name, proficient: true }
+      : !cur.expert
+        ? { name, proficient: true, expert: true }
+        : null;
+    void patchSheet(id, { skills: next ? [...others, next] : others });
+  };
 
   const calc = (name: SkillName) => {
     const ability = SKILL_TO_ABILITY[name];
@@ -56,11 +70,16 @@ export function Skills({ id }: { id: string }) {
               key={name}
               className="group flex items-center justify-between rounded px-2 py-1 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
               onClick={(e) => {
-                if (e.shiftKey) doRoll(name, true);
+                if (editMode) cycleSkill(name);
+                else if (e.shiftKey) doRoll(name, true);
                 else if (e.altKey) doRoll(name, false, true);
                 else doRoll(name);
               }}
-              title="Clique para rolar (Shift = vantagem, Alt = desvantagem)"
+              title={
+                editMode
+                  ? "Clique para alternar: proficiente → especialista → nenhuma"
+                  : "Clique para rolar (Shift = vantagem, Alt = desvantagem)"
+              }
             >
               <span className="flex items-center gap-1.5">
                 <span
