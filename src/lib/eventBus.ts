@@ -2,7 +2,8 @@ import type { Character, DiceRoll } from "./types";
 
 export type AppEvent =
   | { type: "character"; character: Character }
-  | { type: "roll"; roll: DiceRoll };
+  | { type: "roll"; roll: DiceRoll }
+  | { type: "rolls-cleared"; characterId: string | null };
 
 type Subscriber = (e: AppEvent) => void;
 

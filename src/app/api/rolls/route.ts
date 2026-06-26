@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { insertRoll, listRolls } from "@/lib/db";
+import { clearRolls, insertRoll, listRolls } from "@/lib/db";
 import { eventBus } from "@/lib/eventBus";
 import type { DiceRoll } from "@/lib/types";
 
@@ -19,4 +19,11 @@ export async function POST(req: NextRequest) {
   const stored = insertRoll(body.roll);
   eventBus.publish({ type: "roll", roll: stored });
   return NextResponse.json({ roll: stored });
+}
+
+export async function DELETE(req: NextRequest) {
+  const characterId = req.nextUrl.searchParams.get("characterId");
+  const removed = clearRolls(characterId);
+  eventBus.publish({ type: "rolls-cleared", characterId: characterId ?? null });
+  return NextResponse.json({ ok: true, removed });
 }

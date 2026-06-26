@@ -340,3 +340,12 @@ export function insertRoll(r: DiceRoll): DiceRoll {
 
   return r;
 }
+
+/** Limpa o log de rolagens. Com characterId, só as daquele personagem; sem, todas (mesa). */
+export function clearRolls(characterId?: string | null): number {
+  const db = getDb();
+  const info = characterId
+    ? db.prepare("DELETE FROM rolls WHERE character_id = ?").run(characterId)
+    : db.prepare("DELETE FROM rolls").run();
+  return info.changes;
+}

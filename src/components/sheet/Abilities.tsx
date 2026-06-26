@@ -10,11 +10,23 @@ import {
   type AbilityKey,
 } from "@/lib/types";
 import { roll } from "@/lib/dice";
+import { EditableNumber } from "@/components/sheet/edit/EditControls";
 
 export function Abilities({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const addRoll = useStore((s) => s.addRoll);
+  const editMode = useStore((s) => s.editMode);
+  const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
+
+  const setScore = (key: AbilityKey, v: number) =>
+    void patchSheet(id, { abilityScores: { ...c.sheet.abilityScores, [key]: v } });
+  const toggleSave = (key: AbilityKey) =>
+    void patchSheet(id, {
+      saves: c.sheet.saves.includes(key)
+        ? c.sheet.saves.filter((k) => k !== key)
+        : [...c.sheet.saves, key],
+    });
 
   const rollAbility = (key: AbilityKey) => {
     const mod = abilityMod(c.sheet.abilityScores[key]);
@@ -48,6 +60,29 @@ export function Abilities({ id }: { id: string }) {
             const score = c.sheet.abilityScores[key];
             const mod = abilityMod(score);
             const proficient = c.sheet.saves.includes(key);
+            if (editMode) {
+              return (
+                <div key={key} className="rounded-lg border border-zinc-200 p-2 text-center dark:border-zinc-800">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                    {ABILITY_LABELS[key]}
+                  </div>
+                  <EditableNumber
+                    value={score}
+                    onSave={(v) => setScore(key, v)}
+                    className="mx-auto mt-1 h-8 w-14 text-center"
+                  />
+                  <label className="mt-1 flex items-center justify-center gap-1 text-[10px] text-zinc-500">
+                    <input
+                      type="checkbox"
+                      className="h-3 w-3 accent-amber-600"
+                      checked={proficient}
+                      onChange={() => toggleSave(key)}
+                    />
+                    save
+                  </label>
+                </div>
+              );
+            }
             return (
               <div key={key} className="rounded-lg border border-zinc-200 p-2 text-center dark:border-zinc-800">
                 <div className="text-[10px] uppercase tracking-wider text-zinc-500">
