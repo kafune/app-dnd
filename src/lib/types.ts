@@ -136,6 +136,25 @@ export type CatalogClass = {
   progression: Record<string, string[]>;
 };
 
+/** Um antecedente do catálogo de referência (Livro do Jogador, Costa da Espada, caseiros). */
+export type CatalogBackground = {
+  name: string;
+  /** Perícias concedidas (texto, pois muitos têm escolhas). */
+  skills: string;
+  /** Proficiências em ferramentas (opcional). */
+  tools?: string;
+  /** Idiomas adicionais (opcional). */
+  languages?: string;
+  /** Equipamento inicial (texto). */
+  equipment: string;
+  /** Recurso do antecedente: nome + descrição. */
+  feature: { name: string; description: string };
+  /** Livro/fonte de origem. */
+  source: string;
+  /** Nomes de variantes do antecedente (ex.: Espião, Pirata). */
+  variants?: string[];
+};
+
 /** Um traço racial ou talento (feat) do catálogo de referência. */
 export type CatalogTrait = {
   name: string;

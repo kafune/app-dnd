@@ -1,0 +1,266 @@
+[
+ {
+  "name": "Acólito",
+  "skills": "Intuição, Religião",
+  "languages": "Dois à escolha",
+  "equipment": "Um símbolo sagrado, um livro de oração, cinco bastões de incenso, vestimentas, roupas comuns e 15 PO.",
+  "feature": {
+   "name": "Abrigo dos Fiéis",
+   "description": "Você tem o respeito de outros de sua fé e pode realizar as cerimônias religiosas de sua divindade. Você e seus companheiros podem esperar cura e cuidado grátis em um templo de sua fé (pagando por componentes caros). Sua religião e doações o sustentam em um estilo de vida modesto. Próximo a um templo a que tem elos, recebe assistência de seus sacerdotes, desde que não seja algo perigoso."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Agente",
+  "skills": "Intuição e uma perícia de INT, SAB ou CAR apropriada à organização",
+  "languages": "Dois à escolha",
+  "equipment": "Emblema de sua organização, um livro de códigos, roupas comuns e 15 PO.",
+  "feature": {
+   "name": "Abrigo Seguro",
+   "description": "Você tem acesso a uma rede de operativos e auxiliares. Conhece palavras secretas e senhas para acessar casas seguras, pouso grátis ou informação. Outros agentes não arriscam a vida ou serem descobertos para ajudá-lo, porém."
+  },
+  "source": "Guia da Costa da Espada"
+ },
+ {
+  "name": "Artesão de Guilda",
+  "skills": "Intuição, Persuasão",
+  "tools": "Uma ferramenta de artesão",
+  "equipment": "Uma ferramenta de artesão, uma carta de referência de sua guilda, roupas de viajante e 15 PO.",
+  "feature": {
+   "name": "Membro de Guilda",
+   "description": "Como membro respeitado de uma guilda, seus companheiros de guilda lhe providenciam alimentação e hospedagem e pagam por seus custos funerais. Guildas têm grande poder político e lhe darão suporte caso seja inocente ou seu crime justificável. Você paga 5 PO por mês para fazer parte da guilda."
+  },
+  "source": "Livro do Jogador",
+  "variants": ["Mercante de Guilda"]
+ },
+ {
+  "name": "Artista (Entretenimento)",
+  "skills": "Acrobacia, Atuação",
+  "tools": "Kit de disfarce, um instrumento musical",
+  "equipment": "Um instrumento musical, um item de um admirador, uma fantasia e 15 PO.",
+  "feature": {
+   "name": "Por Exigência Popular",
+   "description": "Você sempre consegue um lugar para se apresentar (taverna, estalagem, circo, teatro ou corte de um nobre). Recebe alimentação e pouso modesto ou confortável enquanto se apresentar todas as noites. Sua performance o deixa famoso: estranhos que o reconhecem nos locais onde se apresentou tendem a gostar de você."
+  },
+  "source": "Livro do Jogador",
+  "variants": ["Gladiador"]
+ },
+ {
+  "name": "Caçador de Recompensas",
+  "skills": "Dois entre Enganação, Furtividade, Intuição e Persuasão",
+  "tools": "Dois entre ferramentas de ladrão, instrumento musical ou jogo",
+  "equipment": "Roupas apropriadas para sua profissão e 20 PO.",
+  "feature": {
+   "name": "Ouvido no Chão",
+   "description": "Você tem contato com as pessoas com quem suas presas se comunicam. Essa conexão vem na forma de contatos em todo lugar que visita, alguém que lhe dá informação sobre as pessoas e lugares da área."
+  },
+  "source": "Caseiro / Costa da Espada"
+ },
+ {
+  "name": "Cavaleiro da Ordem",
+  "skills": "Persuasão e uma entre Arcanismo, História ou Religião (apropriada à ordem)",
+  "tools": "Instrumento musical ou jogo",
+  "languages": "Um à escolha",
+  "equipment": "Estandarte, sinete ou selo da ordem, roupas de viajante e 10 PO.",
+  "feature": {
+   "name": "Respeito do Cavaleiro",
+   "description": "Você recebe apoio de cavaleiros de sua ordem e de quem concorda com seus objetivos, na forma de refeições e abrigo, cura conforme apropriado, e o ocasional risco de vida com o povo ajudando um cavaleiro ferido."
+  },
+  "source": "Guia da Costa da Espada"
+ },
+ {
+  "name": "Charlatão",
+  "skills": "Enganação, Prestidigitação",
+  "tools": "Kit de disfarce, kit de falsificação",
+  "equipment": "Roupas elegantes, um kit de disfarce, as ferramentas de seu golpe favorito e 15 PO.",
+  "feature": {
+   "name": "Identidade Falsa",
+   "description": "Você criou uma segunda identidade que inclui documentos, conhecidos e disfarces. Você também consegue forjar documentos, incluindo oficiais e cartas pessoais, desde que tenha um exemplo do documento ou escrita que está copiando."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Cortesão",
+  "skills": "Intuição, Persuasão",
+  "languages": "Dois à escolha",
+  "equipment": "Roupas elegantes e 5 PO.",
+  "feature": {
+   "name": "Funcionário da Corte",
+   "description": "Seu conhecimento de burocracia lhe permite acessar os mecanismos internos de qualquer corte nobre ou governo. Você sabe a quem apaziguar e a quem pedir favores, bem como quais são as intrigas atuais."
+  },
+  "source": "Guia da Costa da Espada"
+ },
+ {
+  "name": "Criminoso",
+  "skills": "Enganação, Furtividade",
+  "tools": "Um tipo de jogo, ferramentas de ladrão",
+  "equipment": "Um pé de cabra, roupas comuns com capuz e 15 PO.",
+  "feature": {
+   "name": "Contato Criminal",
+   "description": "Você tem um contato confiável entre você e uma rede criminosa. Você sabe como mandar mensagens a seu contato, mesmo a grandes distâncias: conhece os mensageiros, mestres de caravana e marinheiros corruptos dispostos a entregá-las."
+  },
+  "source": "Livro do Jogador",
+  "variants": ["Espião"]
+ },
+ {
+  "name": "Eremita",
+  "skills": "Medicina, Religião",
+  "tools": "Kit de herbalista",
+  "languages": "Um à escolha",
+  "equipment": "Um porta-pergaminho com anotações, um cobertor de inverno, roupas comuns, kit de herbalista e 5 PO.",
+  "feature": {
+   "name": "Descoberta",
+   "description": "Sua reclusão lhe garantiu uma poderosa descoberta, de acordo com seu afastamento: uma verdade sobre os deuses, o cosmos, as forças da natureza ou a história. Pode ser informação importante para um grupo, ou perigosa para os que o exilaram. O mestre trabalhará com você sobre a natureza e o impacto dela."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Escolástico",
+  "skills": "História e uma entre Arcanismo, Natureza ou Religião",
+  "languages": "Dois à escolha",
+  "equipment": "Robes de sua ordem, kit de escrita, um livro emprestado e 10 PO.",
+  "feature": {
+   "name": "Acesso à Biblioteca",
+   "description": "Você tem acesso livre à maior parte das bibliotecas de sua ordem e sabe lidar com a burocracia para encontrar informação. Também recebe tratamento preferencial em outras bibliotecas e com professores e escolásticos."
+  },
+  "source": "Guia da Costa da Espada"
+ },
+ {
+  "name": "Forasteiro",
+  "skills": "Atletismo, Sobrevivência",
+  "tools": "Um instrumento musical",
+  "languages": "Um à escolha",
+  "equipment": "Um cajado, uma armadilha de caçador, um troféu de uma presa, roupas de viajante e 10 PO.",
+  "feature": {
+   "name": "Andarilho",
+   "description": "Você tem uma memória excelente para mapas e geografia, e sempre se lembra de terreno, postos de civilização e outros traços ao redor. Você também encontra comida e água para si e até mais cinco pessoas por dia, desde que a região as ofereça."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Guarda da Cidade",
+  "skills": "Atletismo, Intuição",
+  "languages": "Dois à escolha",
+  "equipment": "Um uniforme, chifre de sinal, grilhões e 10 PO.",
+  "feature": {
+   "name": "Olho do Guardião",
+   "description": "Sua experiência protegendo a lei lhe dá uma boa noção das leis locais. Você facilmente encontra o posto da guarda local e organizações similares, bem como antros de atividade criminosa."
+  },
+  "source": "Guia da Costa da Espada",
+  "variants": ["Investigador"]
+ },
+ {
+  "name": "Herdeiro",
+  "skills": "Sobrevivência e uma entre Arcanismo, História ou Religião",
+  "tools": "Instrumento musical ou jogo",
+  "equipment": "Sua herança, roupas de viajante, um item em que é proficiente e 15 PO.",
+  "feature": {
+   "name": "Herança",
+   "description": "Você herdou um objeto de grande valor, confiado apenas a você. Ele serve como gancho para o mestre, que cria detalhes junto com você: pode ser crucial para algo ou um item mágico menor que se torna mais potente com o tempo."
+  },
+  "source": "Guia da Costa da Espada"
+ },
+ {
+  "name": "Herói do Povo",
+  "skills": "Adestrar Animais, Sobrevivência",
+  "tools": "Uma ferramenta de artesão, veículos (terra)",
+  "equipment": "Uma ferramenta de artesão, uma pá, uma panela de ferro, roupas comuns e 10 PO.",
+  "feature": {
+   "name": "Hospitalidade Rústica",
+   "description": "Vindo do povo comum, você encontra espaço entre eles. Sempre pode achar um lugar para se esconder, descansar ou se recuperar entre a plebe, a não ser que tenha se mostrado um perigo. Eles o escondem da lei ou de quem o persegue, apesar de não arriscarem a vida por você."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Marujo (Navegante)",
+  "skills": "Atletismo, Percepção",
+  "tools": "Ferramentas de navegação, veículos (água)",
+  "equipment": "Um porrete, 15 m de corda de seda, um amuleto da sorte, roupas comuns e 10 PO.",
+  "feature": {
+   "name": "Passagem de Navio",
+   "description": "Quando precisa, você arranja passagem grátis para si e seus companheiros em um navio, oferecendo seu conhecimento e trabalho em troca. Como depende de um favor, as viagens geralmente não atendem todas as suas necessidades e espera-se que ajudem na travessia."
+  },
+  "source": "Livro do Jogador",
+  "variants": ["Pirata"]
+ },
+ {
+  "name": "Mercenário Veterano",
+  "skills": "Atletismo, Persuasão",
+  "tools": "Um tipo de jogo, veículos (terra)",
+  "equipment": "Uniforme, insígnia de posto, um jogo e 10 PO.",
+  "feature": {
+   "name": "Vida de Mercenário",
+   "description": "Você reconhece companhias mercenárias pelos símbolos, bem como sua reputação e comandantes. Consegue encontrar as tavernas que mercenários frequentam e arranjar trabalho mercenário entre aventuras."
+  },
+  "source": "Guia da Costa da Espada"
+ },
+ {
+  "name": "Meretriz",
+  "skills": "Intuição e uma entre Enganação ou Persuasão",
+  "tools": "Um jogo ou instrumento",
+  "equipment": "Capa longa, roupas comuns, roupas reveladoras e 15 PO.",
+  "feature": {
+   "name": "Companhia Bem-Vinda",
+   "description": "As pessoas pagam bem por sua companhia e você não tem dificuldade em conseguir um teto. Relaxadas, elas tendem a confiar em você, e você usa seu charme para descobrir rumores e segredos locais. Também identifica meretrizes locais, que costumam ajudar companheiros de profissão com informação ou equipamento simples."
+  },
+  "source": "Caseiro"
+ },
+ {
+  "name": "Nobre",
+  "skills": "História, Persuasão",
+  "tools": "Um jogo à escolha",
+  "languages": "Um à escolha",
+  "equipment": "Roupas boas, um sinete, identificações de linhagem e 25 PO.",
+  "feature": {
+   "name": "Posição de Privilégio",
+   "description": "Graças a seu título, as pessoas tendem a esperar o melhor de você. Você é bem recebido na alta sociedade, e assumem que você tem o direito de estar onde está. O povo comum tenta evitar desagradá-lo e você pode conseguir uma audiência com nobres locais."
+  },
+  "source": "Livro do Jogador",
+  "variants": ["Cavaleiro", "Servos"]
+ },
+ {
+  "name": "Órfão",
+  "skills": "Furtividade, Prestidigitação",
+  "tools": "Kit de disfarce, ferramentas de ladrão",
+  "equipment": "Uma faca pequena, um mapa da cidade em que cresceu, um bichinho de estimação, um memento de seus parentes, roupas comuns e 10 PO.",
+  "feature": {
+   "name": "Segredos da Cidade",
+   "description": "Você conhece os padrões e fluxos secretos das cidades e encontra passagens que outros perderiam. Fora de combate, você e seus companheiros podem se mover de um local a outro na cidade em metade do tempo."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Sábio",
+  "skills": "Arcanismo, História",
+  "languages": "Dois à escolha",
+  "equipment": "Tinta preta, pena, uma faca pequena, uma carta com uma pergunta ainda sem resposta, roupas comuns e 10 PO.",
+  "feature": {
+   "name": "Pesquisador",
+   "description": "Quando você não sabe de algo, costuma saber onde e com quem encontrar — normalmente uma universidade, biblioteca ou sábio específico. Alguns segredos levam tempo para serem descobertos, e há coisas sobre as quais ninguém com autoridade falou ainda."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Soldado",
+  "skills": "Atletismo, Intimidação",
+  "tools": "Um tipo de jogo, veículos (terra)",
+  "equipment": "Uma medalha de patente, um troféu tirado de um oponente caído, um tipo de jogo, roupas comuns e 10 PO.",
+  "feature": {
+   "name": "Patente Militar",
+   "description": "Você tem uma patente de sua carreira como soldado. Soldados leais a sua antiga organização ainda reconhecem sua autoridade e influência, prestando deferência a você. Pode usar essa influência para emprestar cavalos e equipamentos simples, ou acessar fortalezas e acampamentos militares onde sua patente é reconhecida."
+  },
+  "source": "Livro do Jogador"
+ },
+ {
+  "name": "Viajante Distante",
+  "skills": "Intuição, Percepção",
+  "tools": "Um instrumento musical ou jogo de sua terra natal",
+  "languages": "Um à escolha",
+  "equipment": "Roupas de viajante, o instrumento ou jogo escolhido, um mapa simples de onde você está, uma jóia de sua terra de 15 PO e 5 PO.",
+  "feature": {
+   "name": "Olhos em Você",
+   "description": "Seu sotaque, maneirismos e talvez sua aparência o marcam como estrangeiro. Embora isso possa ser perigoso, também atrai pessoas curiosas com sua história: nobres, príncipes e escolásticos podem se interessar por sua companhia exótica."
+  },
+  "source": "Guia da Costa da Espada"
+ }
+]

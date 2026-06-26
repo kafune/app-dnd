@@ -14,6 +14,7 @@ import { EquipmentPicker } from "@/components/create/EquipmentPicker";
 import { TraitPicker } from "@/components/create/TraitPicker";
 import { findTrait } from "@/data/traitsCatalog";
 import { RACES_CATALOG, findRace } from "@/data/racesCatalog";
+import { BACKGROUNDS_CATALOG, findBackground } from "@/data/backgroundsCatalog";
 import { CLASSES_CATALOG, findClass, classFeaturesUpTo } from "@/data/classesCatalog";
 import { SKILLS_CATALOG } from "@/data/skillsCatalog";
 import {
@@ -48,6 +49,7 @@ export default function CriarFicha() {
 
   const [draft, setDraft] = useState<CharacterDraft>(emptyDraft);
   const [raceMode, setRaceMode] = useState<"catalog" | "custom">("catalog");
+  const [bgMode, setBgMode] = useState<"catalog" | "custom">("catalog");
   const [abilityMode, setAbilityMode] = useState<AbilityMode>("pointbuy");
   const [showAllSkills, setShowAllSkills] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +59,10 @@ export default function CriarFicha() {
 
   // Perícias se baseiam na 1ª classe (regra 5e); as demais entram via multiclasse.
   const primaryClass = findClass(draft.classes[0]?.name ?? "");
+  const selectedBackground = useMemo(
+    () => (bgMode === "catalog" ? findBackground(draft.background) : undefined),
+    [bgMode, draft.background],
+  );
   const skillOptions: string[] = showAllSkills
     ? SKILLS_CATALOG.map((s) => s.name)
     : (primaryClass?.skillProficiencies?.from ?? SKILLS_CATALOG.map((s) => s.name));
@@ -95,6 +101,17 @@ export default function CriarFicha() {
       speed: r.speed ?? 9,
       raceTraits: r.traits,
     });
+  }
+
+  function onSelectBackground(value: string) {
+    if (value === CUSTOM) {
+      setBgMode("custom");
+      upd({ background: "" });
+      return;
+    }
+    setBgMode("catalog");
+    const b = findBackground(value);
+    upd({ background: b?.name ?? value });
   }
 
   function setClasses(next: DraftClass[]) {
@@ -181,8 +198,22 @@ export default function CriarFicha() {
             }))
           : [],
       );
+      // Recurso do antecedente escolhido no catálogo -> feature com descrição
+      const bg = bgMode === "catalog" ? findBackground(draft.background) : undefined;
+      const backgroundFeatures = bg
+        ? [
+            {
+              name: bg.feature.name,
+              source: `Antecedente: ${bg.name}`,
+              description: bg.feature.description,
+            },
+          ]
+        : [];
       const character = buildCharacter(
-        { ...draft, extraFeatures: [...traitFeatures, ...classFeatures] },
+        {
+          ...draft,
+          extraFeatures: [...traitFeatures, ...classFeatures, ...backgroundFeatures],
+        },
         "",
       );
       const id = await createCharacter(character);
@@ -242,11 +273,27 @@ export default function CriarFicha() {
               />
             </Field>
             <Field label="Antecedente">
-              <Input
-                value={draft.background}
-                onChange={(e) => upd({ background: e.target.value })}
-                placeholder="Ex: Forasteiro"
-              />
+              <select
+                className={selectCls}
+                value={bgMode === "custom" ? CUSTOM : draft.background}
+                onChange={(e) => onSelectBackground(e.target.value)}
+              >
+                <option value="">— escolha —</option>
+                {BACKGROUNDS_CATALOG.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+                <option value={CUSTOM}>✎ Custom (homebrew)…</option>
+              </select>
+              {bgMode === "custom" && (
+                <Input
+                  className="mt-2"
+                  value={draft.background}
+                  onChange={(e) => upd({ background: e.target.value })}
+                  placeholder="Ex: Caçador de Tempestades"
+                />
+              )}
             </Field>
             <Field label="Tendência (opcional)">
               <Input
@@ -255,6 +302,34 @@ export default function CriarFicha() {
                 placeholder="Ex: Caótico e Bom"
               />
             </Field>
+            {bgMode === "catalog" && selectedBackground && (
+              <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50 sm:col-span-2">
+                <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                  {selectedBackground.source}
+                </div>
+                <dl className="space-y-1">
+                  <BgRow label="Perícias" value={selectedBackground.skills} />
+                  {selectedBackground.tools && (
+                    <BgRow label="Ferramentas" value={selectedBackground.tools} />
+                  )}
+                  {selectedBackground.languages && (
+                    <BgRow label="Idiomas" value={selectedBackground.languages} />
+                  )}
+                  <BgRow label="Equipamento" value={selectedBackground.equipment} />
+                  {selectedBackground.variants?.length ? (
+                    <BgRow label="Variantes" value={selectedBackground.variants.join(", ")} />
+                  ) : null}
+                </dl>
+                <div className="mt-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+                    {selectedBackground.feature.name}.
+                  </span>{" "}
+                  <span className="text-zinc-600 dark:text-zinc-300">
+                    {selectedBackground.feature.description}
+                  </span>
+                </div>
+              </div>
+            )}
           </CardBody>
         </Card>
 
@@ -577,6 +652,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1 block text-xs font-medium text-zinc-500">{label}</span>
       {children}
     </label>
+  );
+}
+
+function BgRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="shrink-0 font-medium text-zinc-500">{label}:</dt>
+      <dd className="text-zinc-600 dark:text-zinc-300">{value}</dd>
+    </div>
   );
 }
 
