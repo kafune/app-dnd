@@ -1,4 +1,4 @@
-# Mesa do Pierre — D&D companion
+# Mesa Pankleos — D&D companion
 
 Webapp de fichas para uma mesa de D&D 5e (BR). Roda inteiro num único processo Node — backend SQLite + Server-Sent Events para sync em tempo real entre os celulares da galera.
 
