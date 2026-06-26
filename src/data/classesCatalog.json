@@ -85,24 +85,22 @@
     "Crítico Brutal (+2 dados)"
    ],
    "14": [
-    "Característica de Caminho enfrentar uma ameaça em comum? Monstros ou uma"
+    "Característica de Caminho Primitivo"
    ],
    "15": [
-    "Fúria Persistente tornando você um refugiado sem origem? Talvez você seja"
+    "Fúria Persistente"
    ],
    "16": [
-    "Incremento no Valor de um prisioneiro de guerra",
-    "trazido acorrentado para as"
+    "Incremento no Valor de Habilidade"
    ],
    "17": [
-    "Crítico Brutal (+3 dados) liberdade. Ou você teve que abandonar seu povo por"
+    "Crítico Brutal (+3 dados)"
    ],
    "18": [
-    "Força Indomável causa de um crime que cometeu",
-    "um tabu que você violou"
+    "Força Indomável"
    ],
    "19": [
-    "Incremento no Valor de ou um golpe que depôs você de uma posição de"
+    "Incremento no Valor de Habilidade"
    ],
    "20": [
     "Campeão Primitivo"
@@ -286,64 +284,56 @@
   "progression": {
    "1": [
     "Patrono Transcendental",
-    "Magia de Pacto 1°"
+    "Magia de Pacto"
    ],
    "2": [
-    "Invocações Místicas 1°"
+    "Invocações Místicas"
    ],
    "3": [
-    "Dádiva do Pacto 2°"
+    "Dádiva do Pacto"
    ],
    "4": [
-    "Incremento no Valor de Habilidade 2°"
+    "Incremento no Valor de Habilidade"
    ],
-   "5": [
-    "3°"
-   ],
+   "5": [],
    "6": [
-    "Característica de Patrono Transcendental 3°"
+    "Característica de Patrono Transcendental"
    ],
-   "7": [
-    "4°"
-   ],
+   "7": [],
    "8": [
-    "Incremento no Valor de Habilidade 4°"
+    "Incremento no Valor de Habilidade"
    ],
-   "9": [
-    "5°"
-   ],
+   "9": [],
    "10": [
-    "Característica de Patrono Transcendental 5°"
+    "Característica de Patrono Transcendental"
    ],
    "11": [
-    "Arcana Mística (6° nível) 5°"
+    "Arcana Mística (6° nível)"
    ],
    "12": [
-    "Incremento no Valor de Habilidade 5°"
+    "Incremento no Valor de Habilidade"
    ],
    "13": [
-    "Arcana Mística (7° nível) 5°"
+    "Arcana Mística (7° nível)"
    ],
    "14": [
-    "Característica de Patrono Transcendental 5°"
+    "Característica de Patrono Transcendental"
    ],
    "15": [
-    "Arcana Mística (8° nível) 5°"
+    "Arcana Mística (8° nível)"
    ],
    "16": [
-    "Incremento no Valor de Habilidade 5°"
+    "Incremento no Valor de Habilidade"
    ],
    "17": [
-    "Arcana Mística (9° nível) 5°"
+    "Arcana Mística (9° nível)"
    ],
-   "18": [
-    "5°"
-   ],
+   "18": [],
    "19": [
-    "Incremento no Valor de Habilidade 5°"
+    "Incremento no Valor de Habilidade"
    ],
    "20": [
-    "Mestre Místico 5°"
+    "Mestre Místico"
    ]
   }
  },

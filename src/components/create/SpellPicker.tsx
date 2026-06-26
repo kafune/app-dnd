@@ -198,23 +198,86 @@ function SpellList({
         const checked = selected.has(s.name.toLowerCase());
         const disabled = !checked && disabledFor(s);
         return (
-        <label
-          key={s.name}
-          className={`flex items-center gap-2 text-sm ${disabled ? "opacity-40" : ""}`}
-        >
-          <input
-            type="checkbox"
+          <SpellChoice
+            key={s.name}
+            spell={s}
             checked={checked}
             disabled={disabled}
-            onChange={() => onToggle(s)}
+            onToggle={() => onToggle(s)}
           />
-          <span>{s.name}</span>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Uma magia na lista: a caixa seleciona; clicar/passar o mouse no nome abre um
+ * popup com a descrição. No desktop o `title` também mostra a descrição ao
+ * passar o mouse; no mobile, tocar o nome abre/fecha o popup.
+ */
+function SpellChoice({
+  spell: s,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  spell: CatalogSpell;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  // O popup abre ao passar o mouse (desktop). No mobile, tocar o nome dispara o
+  // mouseenter sintetizado e abre o popup; tocar em outro lugar fecha (mouseleave).
+  // A caixa de seleção é independente, então tocar nela seleciona a magia.
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className={`rounded text-sm ${disabled ? "opacity-40" : ""} ${
+        open ? "bg-zinc-50 dark:bg-zinc-800/50" : ""
+      }`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <div className="flex items-center gap-2 px-1 py-0.5">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={onToggle}
+          aria-label={`Selecionar ${s.name}`}
+        />
+        <button
+          type="button"
+          className="flex flex-1 items-center gap-2 text-left"
+          title={s.description}
+          onClick={() => setOpen(true)}
+        >
+          <span className="underline decoration-dotted underline-offset-2">{s.name}</span>
           <span className="text-xs text-zinc-500">{s.school}</span>
           {s.concentration && <span className="text-[10px] text-amber-600">C</span>}
           {s.ritual && <span className="text-[10px] text-blue-600">R</span>}
-        </label>
-        );
-      })}
+        </button>
+      </div>
+      {open && (
+        <div className="mb-1 ml-6 mr-1 rounded border border-zinc-200 bg-white p-2 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="mb-1 grid grid-cols-2 gap-x-2 text-zinc-500">
+            <div>
+              <strong>Nível:</strong> {s.level === 0 ? "Truque" : s.level}
+            </div>
+            <div>
+              <strong>Conjuração:</strong> {s.castingTime}
+            </div>
+            <div>
+              <strong>Alcance:</strong> {s.range}
+            </div>
+            <div>
+              <strong>Duração:</strong> {s.duration}
+            </div>
+          </div>
+          <p className="whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{s.description}</p>
+        </div>
+      )}
     </div>
   );
 }

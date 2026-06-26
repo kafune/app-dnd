@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore } from "@/lib/store";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
-import type { Item } from "@/lib/types";
+import { CREATURE_SIZES, type Item } from "@/lib/types";
 
 const splitList = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -199,7 +199,17 @@ export function Personality({ id }: { id: string }) {
         <CardBody className="space-y-2 text-sm">
           <AppearanceImageEditor id={id} />
           <div className="flex gap-1">
-            <EditableText value={ap.size} onSave={(v) => void patchSheet(id, { appearance: { ...ap, size: v } })} placeholder="tamanho" className="w-28" />
+            <select
+              className="h-9 w-28 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              value={CREATURE_SIZES.includes(ap.size as (typeof CREATURE_SIZES)[number]) ? ap.size : "Médio"}
+              onChange={(e) => void patchSheet(id, { appearance: { ...ap, size: e.target.value } })}
+            >
+              {CREATURE_SIZES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
             <EditableText value={ap.height} onSave={(v) => void patchSheet(id, { appearance: { ...ap, height: v } })} placeholder="altura" className="w-28" />
           </div>
           <EditableText value={ap.description ?? ""} onSave={(v) => void patchSheet(id, { appearance: { ...ap, description: v || undefined } })} placeholder="aparência" multiline />
