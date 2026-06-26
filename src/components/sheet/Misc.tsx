@@ -1,6 +1,7 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore } from "@/lib/store";
@@ -8,6 +9,35 @@ import { EditableText, EditableNumber } from "@/components/sheet/edit/EditContro
 import type { Item } from "@/lib/types";
 
 const splitList = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
+
+/**
+ * Lê uma imagem do disco e devolve um data URL JPEG reduzido (máx. ~640px no maior
+ * lado, qualidade 0.8). Mantém a ficha leve, já que ela é salva inteira como JSON.
+ */
+function fileToCompressedDataUrl(file: File, maxDim = 640, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Falha ao ler o arquivo."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Arquivo de imagem inválido."));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas indisponível."));
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 export function ProficienciesAndLanguages({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
@@ -167,6 +197,7 @@ export function Personality({ id }: { id: string }) {
           <CardTitle>Aparência & História</CardTitle>
         </CardHeader>
         <CardBody className="space-y-2 text-sm">
+          <AppearanceImageEditor id={id} />
           <div className="flex gap-1">
             <EditableText value={ap.size} onSave={(v) => void patchSheet(id, { appearance: { ...ap, size: v } })} placeholder="tamanho" className="w-28" />
             <EditableText value={ap.height} onSave={(v) => void patchSheet(id, { appearance: { ...ap, height: v } })} placeholder="altura" className="w-28" />
@@ -192,6 +223,14 @@ export function Personality({ id }: { id: string }) {
         <CardTitle>Aparência & História</CardTitle>
       </CardHeader>
       <CardBody className="space-y-2 text-sm">
+        {ap.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={ap.imageUrl}
+            alt={`Aparência de ${c.characterName}`}
+            className="mx-auto max-h-72 w-auto rounded-lg border border-zinc-200 object-contain dark:border-zinc-800"
+          />
+        )}
         <div className="text-xs text-zinc-500">
           {c.sheet.appearance.size} · {c.sheet.appearance.height}
         </div>
@@ -210,5 +249,72 @@ export function Personality({ id }: { id: string }) {
         )}
       </CardBody>
     </Card>
+  );
+}
+
+/** Upload/edição da imagem de aparência (mostrado no modo de edição). */
+function AppearanceImageEditor({ id }: { id: string }) {
+  const c = useStore((s) => s.characters[id]);
+  const patchSheet = useStore((s) => s.patchSheet);
+  const pushToast = useStore((s) => s.pushToast);
+  const [busy, setBusy] = useState(false);
+  if (!c) return null;
+  const ap = c.sheet.appearance;
+
+  const onPick = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const imageUrl = await fileToCompressedDataUrl(file);
+      await patchSheet(id, { appearance: { ...ap, imageUrl } });
+    } catch (e) {
+      pushToast({
+        title: "Não foi possível carregar a imagem",
+        description: e instanceof Error ? e.message : undefined,
+        tone: "danger",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {ap.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={ap.imageUrl}
+          alt="Aparência"
+          className="mx-auto max-h-56 w-auto rounded-lg border border-zinc-200 object-contain dark:border-zinc-800"
+        />
+      )}
+      <div className="flex items-center gap-2">
+        <label className="inline-flex">
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => {
+              void onPick(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <span className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-md border border-zinc-300 px-3 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
+            <ImagePlus className="h-3 w-3" />
+            {busy ? "Enviando…" : ap.imageUrl ? "Trocar imagem" : "Enviar imagem"}
+          </span>
+        </label>
+        {ap.imageUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void patchSheet(id, { appearance: { ...ap, imageUrl: undefined } })}
+          >
+            <Trash2 className="h-3 w-3" /> Remover
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

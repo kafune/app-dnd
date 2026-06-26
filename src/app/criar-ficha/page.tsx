@@ -23,6 +23,7 @@ import {
   emptyClass,
   finalScores,
   proficiencyBonusForLevel,
+  spellCapacity,
   totalHp,
   totalLevel,
   type CharacterDraft,
@@ -68,13 +69,16 @@ export default function CriarFicha() {
     : (primaryClass?.skillProficiencies?.from ?? SKILLS_CATALOG.map((s) => s.name));
   const skillChoose = primaryClass?.skillProficiencies?.choose ?? null;
 
-  const casterClassNames = draft.classes
-    .filter((c) => c.spellcastingAbility && c.name.trim())
-    .map((c) => c.name);
+  const casterClasses = draft.classes.filter((c) => c.spellcastingAbility && c.name.trim());
+  const casterClassNames = casterClasses.map((c) => c.name);
 
   const scores = useMemo(
     () => finalScores(draft.baseScores, draft.raceBonuses),
     [draft.baseScores, draft.raceBonuses],
+  );
+  const spellCaps = spellCapacity(
+    casterClasses.map((c) => ({ name: c.name, level: c.level })),
+    scores,
   );
   const profBonus = proficiencyBonusForLevel(totalLevel(draft.classes));
   const previewHp = draft.hpOverride ?? totalHp(draft.classes, abilityMod(scores.con));
@@ -583,6 +587,8 @@ export default function CriarFicha() {
                 classNames={casterClassNames}
                 cantrips={draft.cantrips}
                 known={draft.knownSpells}
+                cantripsMax={spellCaps.cantrips}
+                spellsMax={spellCaps.spells}
                 onChange={(cantrips, knownSpells) => upd({ cantrips, knownSpells })}
               />
             </CardBody>

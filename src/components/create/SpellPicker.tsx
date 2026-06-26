@@ -9,6 +9,10 @@ type Props = {
   classNames: string[];
   cantrips: Spell[];
   known: Spell[];
+  /** Limite de truques (null = sem limite, ex.: classe homebrew). */
+  cantripsMax?: number | null;
+  /** Limite de magias conhecidas/preparadas (null = sem limite). */
+  spellsMax?: number | null;
   onChange: (cantrips: Spell[], known: Spell[]) => void;
 };
 
@@ -35,9 +39,19 @@ function norm(s: string) {
     .toLowerCase();
 }
 
-export function SpellPicker({ classNames, cantrips, known, onChange }: Props) {
+export function SpellPicker({
+  classNames,
+  cantrips,
+  known,
+  cantripsMax = null,
+  spellsMax = null,
+  onChange,
+}: Props) {
   const [query, setQuery] = useState("");
   const [openLevels, setOpenLevels] = useState<Set<number>>(new Set([0, 1]));
+
+  const atCantripCap = cantripsMax !== null && cantrips.length >= cantripsMax;
+  const atSpellCap = spellsMax !== null && known.length >= spellsMax;
 
   const available = useMemo(
     () =>
@@ -59,8 +73,14 @@ export function SpellPicker({ classNames, cantrips, known, onChange }: Props) {
     [cantrips, known],
   );
 
+  function disabledFor(spell: CatalogSpell) {
+    if (selected.has(spell.name.toLowerCase())) return false;
+    return spell.level === 0 ? atCantripCap : atSpellCap;
+  }
+
   function toggle(spell: CatalogSpell) {
     const isSel = selected.has(spell.name.toLowerCase());
+    if (!isSel && disabledFor(spell)) return; // respeita o limite da classe
     if (spell.level === 0) {
       onChange(
         isSel
@@ -101,12 +121,20 @@ export function SpellPicker({ classNames, cantrips, known, onChange }: Props) {
           className="max-w-xs"
         />
         <span className="shrink-0 text-xs text-zinc-500">
-          {cantrips.length} truques · {known.length} magias
+          <span className={atCantripCap ? "font-medium text-amber-600" : ""}>
+            {cantrips.length}
+            {cantripsMax !== null ? `/${cantripsMax}` : ""} truques
+          </span>{" "}
+          ·{" "}
+          <span className={atSpellCap ? "font-medium text-amber-600" : ""}>
+            {known.length}
+            {spellsMax !== null ? `/${spellsMax}` : ""} magias
+          </span>
         </span>
       </div>
 
       {q ? (
-        <SpellList list={matches} selected={selected} onToggle={toggle} />
+        <SpellList list={matches} selected={selected} onToggle={toggle} disabledFor={disabledFor} />
       ) : (
         levels.map((lvl) => {
           const list = byLevel.get(lvl)!;
@@ -137,7 +165,12 @@ export function SpellPicker({ classNames, cantrips, known, onChange }: Props) {
               </button>
               {open && (
                 <div className="border-t border-zinc-100 px-2 py-2 dark:border-zinc-800">
-                  <SpellList list={list} selected={selected} onToggle={toggle} />
+                  <SpellList
+                    list={list}
+                    selected={selected}
+                    onToggle={toggle}
+                    disabledFor={disabledFor}
+                  />
                 </div>
               )}
             </div>
@@ -152,18 +185,27 @@ function SpellList({
   list,
   selected,
   onToggle,
+  disabledFor,
 }: {
   list: CatalogSpell[];
   selected: Set<string>;
   onToggle: (s: CatalogSpell) => void;
+  disabledFor: (s: CatalogSpell) => boolean;
 }) {
   return (
     <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-      {list.map((s) => (
-        <label key={s.name} className="flex items-center gap-2 text-sm">
+      {list.map((s) => {
+        const checked = selected.has(s.name.toLowerCase());
+        const disabled = !checked && disabledFor(s);
+        return (
+        <label
+          key={s.name}
+          className={`flex items-center gap-2 text-sm ${disabled ? "opacity-40" : ""}`}
+        >
           <input
             type="checkbox"
-            checked={selected.has(s.name.toLowerCase())}
+            checked={checked}
+            disabled={disabled}
             onChange={() => onToggle(s)}
           />
           <span>{s.name}</span>
@@ -171,7 +213,8 @@ function SpellList({
           {s.concentration && <span className="text-[10px] text-amber-600">C</span>}
           {s.ritual && <span className="text-[10px] text-blue-600">R</span>}
         </label>
-      ))}
+        );
+      })}
     </div>
   );
 }

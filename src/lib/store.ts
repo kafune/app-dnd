@@ -29,6 +29,7 @@ type Store = {
   createCharacter: (character: Character) => Promise<string>;
   patchCharacter: (id: string, patch: Partial<Character>) => Promise<boolean>;
   patchSheet: (id: string, partial: Partial<Sheet>) => Promise<boolean>;
+  deleteCharacter: (id: string) => Promise<boolean>;
   unlock: (id: string, pin: string) => Promise<boolean>;
   lock: (id: string) => void;
   addRoll: (r: DiceRoll) => Promise<void>;
@@ -82,6 +83,32 @@ export const useStore = create<Store>()(
             set((s) => ({ characters: { ...s.characters, [id]: prev } }));
           }
           set({ patchError: e instanceof Error ? e.message : String(e) });
+          return false;
+        }
+      },
+
+      deleteCharacter: async (id) => {
+        const pin = get().pins[id];
+        try {
+          await api.deleteCharacter(id, pin);
+          set((s) => {
+            const characters = { ...s.characters };
+            delete characters[id];
+            const pins = { ...s.pins };
+            delete pins[id];
+            return {
+              characters,
+              pins,
+              rolls: s.rolls.filter((r) => r.characterId !== id),
+            };
+          });
+          return true;
+        } catch (e) {
+          get().pushToast({
+            title: "Falha ao deletar a ficha",
+            description: e instanceof Error ? e.message : undefined,
+            tone: "danger",
+          });
           return false;
         }
       },
@@ -240,6 +267,17 @@ function connectSse(
             description: "Ficha sincronizada em tempo real.",
           });
         }
+      } catch {
+        // ignore
+      }
+    });
+    es.addEventListener("character-deleted", (ev) => {
+      try {
+        const data = JSON.parse((ev as MessageEvent).data) as { id: string };
+        const characters = { ...get().characters };
+        if (!(data.id in characters)) return;
+        delete characters[data.id];
+        set({ characters });
       } catch {
         // ignore
       }

@@ -9,8 +9,22 @@ import {
   pointsSpent,
   proficiencyBonusForLevel,
   slugifyName,
+  spellCapacity,
+  spellSlotsForClasses,
   type CharacterDraft,
 } from "./createCharacter";
+
+const cls = (name: string, level: number) => ({
+  name,
+  level,
+  hitDie: "d8",
+  saves: [],
+  proficiencies: [],
+  spellcastingAbility: null,
+});
+const scores = (p: Partial<Record<"str" | "dex" | "con" | "int" | "wis" | "cha", number>>) => ({
+  str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10, ...p,
+});
 
 describe("compra de pontos", () => {
   test("custo do array padrão 15,14,13,12,10,8 = 27", () => {
@@ -154,5 +168,50 @@ describe("slugifyName", () => {
   test("remove acentos e normaliza", () => {
     expect(slugifyName("Thorin Pedra-Forte")).toBe("thorin-pedra-forte");
     expect(slugifyName("Anão Núñez")).toBe("anao-nunez");
+  });
+});
+
+describe("espaços de magia", () => {
+  test("conjurador pleno (Mago 3) usa a tabela padrão", () => {
+    expect(spellSlotsForClasses([cls("Mago", 3)])).toEqual({
+      "1": { current: 4, max: 4 },
+      "2": { current: 2, max: 2 },
+    });
+  });
+
+  test("meio-conjurador: Paladino 1 não tem espaços; nível 2 ganha", () => {
+    expect(spellSlotsForClasses([cls("Paladino", 1)])).toEqual({});
+    expect(spellSlotsForClasses([cls("Paladino", 2)])).toEqual({ "1": { current: 2, max: 2 } });
+  });
+
+  test("Bruxo usa Pacto Mágico (nível 3 = 2 espaços de 2º nível)", () => {
+    expect(spellSlotsForClasses([cls("Bruxo", 3)])).toEqual({ "2": { current: 2, max: 2 } });
+  });
+
+  test("classe não conjuradora não tem espaços", () => {
+    expect(spellSlotsForClasses([cls("Guerreiro", 5)])).toEqual({});
+  });
+});
+
+describe("capacidade de magias", () => {
+  test("Mago 1 com INT 16: 3 truques e 4 magias (mod 3 + nível 1)", () => {
+    expect(spellCapacity([{ name: "Mago", level: 1 }], scores({ int: 16 }))).toEqual({
+      cantrips: 3,
+      spells: 4,
+    });
+  });
+
+  test("Bardo 1 (lista fixa): 2 truques, 4 magias", () => {
+    expect(spellCapacity([{ name: "Bardo", level: 1 }], scores({}))).toEqual({
+      cantrips: 2,
+      spells: 4,
+    });
+  });
+
+  test("classe homebrew não impõe limite (null)", () => {
+    expect(spellCapacity([{ name: "Necromante do Caos", level: 5 }], scores({}))).toEqual({
+      cantrips: null,
+      spells: null,
+    });
   });
 });

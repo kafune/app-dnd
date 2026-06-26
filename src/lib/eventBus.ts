@@ -2,6 +2,7 @@ import type { Character, DiceRoll } from "./types";
 
 export type AppEvent =
   | { type: "character"; character: Character }
+  | { type: "character-deleted"; id: string }
   | { type: "roll"; roll: DiceRoll }
   | { type: "rolls-cleared"; characterId: string | null };
 

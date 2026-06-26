@@ -98,6 +98,151 @@ export function isValidPointBuy(scores: AbilityScores): boolean {
   return inRange && pointsSpent(scores) <= POINT_BUY_BUDGET;
 }
 
+// === Espaços de magia (tabela 5e) ===
+
+/** Tabela do conjurador multiclasse (PHB): nível de conjurador -> espaços por nível 1..9. */
+const MULTICLASS_SLOTS: Record<number, number[]> = {
+  1: [2, 0, 0, 0, 0, 0, 0, 0, 0],
+  2: [3, 0, 0, 0, 0, 0, 0, 0, 0],
+  3: [4, 2, 0, 0, 0, 0, 0, 0, 0],
+  4: [4, 3, 0, 0, 0, 0, 0, 0, 0],
+  5: [4, 3, 2, 0, 0, 0, 0, 0, 0],
+  6: [4, 3, 3, 0, 0, 0, 0, 0, 0],
+  7: [4, 3, 3, 1, 0, 0, 0, 0, 0],
+  8: [4, 3, 3, 2, 0, 0, 0, 0, 0],
+  9: [4, 3, 3, 3, 1, 0, 0, 0, 0],
+  10: [4, 3, 3, 3, 2, 0, 0, 0, 0],
+  11: [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  12: [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  13: [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  14: [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  15: [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  16: [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  17: [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  19: [4, 3, 3, 3, 3, 2, 1, 1, 1],
+  20: [4, 3, 3, 3, 3, 2, 2, 1, 1],
+};
+
+/** Pacto Mágico do Bruxo: nível de bruxo -> [qtde de espaços, nível dos espaços]. */
+const WARLOCK_PACT: Record<number, [number, number]> = {
+  1: [1, 1], 2: [2, 1], 3: [2, 2], 4: [2, 2], 5: [2, 3], 6: [2, 3], 7: [2, 4],
+  8: [2, 4], 9: [2, 5], 10: [2, 5], 11: [3, 5], 12: [3, 5], 13: [3, 5], 14: [3, 5],
+  15: [3, 5], 16: [3, 5], 17: [4, 5], 18: [4, 5], 19: [4, 5], 20: [4, 5],
+};
+
+const FULL_CASTERS = new Set(["Bardo", "Clérigo", "Druida", "Feiticeiro", "Mago"]);
+const HALF_CASTERS = new Set(["Paladino", "Patrulheiro"]);
+
+/**
+ * Calcula os espaços de magia iniciais a partir das classes (regra 5e).
+ * Conjuradores plenos contam nível cheio; meio-conjuradores contam metade
+ * (arredondado p/ baixo); Artífice arredonda p/ cima. O Bruxo usa Pacto Mágico
+ * em separado — se houver outras classes conjuradoras, o Pacto é omitido aqui
+ * (pode ser ajustado à mão na ficha).
+ */
+export function spellSlotsForClasses(classes: DraftClass[]): Record<string, { current: number; max: number }> {
+  let casterLevel = 0;
+  let warlockLevel = 0;
+  for (const c of classes) {
+    const lvl = Math.max(0, c.level || 0);
+    if (FULL_CASTERS.has(c.name)) casterLevel += lvl;
+    else if (HALF_CASTERS.has(c.name)) casterLevel += Math.floor(lvl / 2);
+    else if (c.name === "Artífice") casterLevel += Math.ceil(lvl / 2);
+    else if (c.name === "Bruxo") warlockLevel += lvl;
+  }
+
+  const slots: Record<string, { current: number; max: number }> = {};
+  if (casterLevel > 0) {
+    const row = MULTICLASS_SLOTS[Math.min(20, casterLevel)] ?? [];
+    row.forEach((max, i) => {
+      if (max > 0) slots[String(i + 1)] = { current: max, max };
+    });
+  } else if (warlockLevel > 0) {
+    const [count, level] = WARLOCK_PACT[Math.min(20, warlockLevel)] ?? [0, 0];
+    if (count > 0) slots[String(level)] = { current: count, max: count };
+  }
+  return slots;
+}
+
+// === Capacidade de magias (truques e magias conhecidas/preparadas) ===
+
+export type SpellCapacity = { cantrips: number | null; spells: number | null };
+
+/** Truques conhecidos por classe/nível (PHB). null = classe homebrew, sem limite. */
+function cantripsKnown(cls: string, level: number): number | null {
+  const t = (a: number, b: number, c: number) => (level >= 10 ? c : level >= 4 ? b : a);
+  switch (cls) {
+    case "Bardo":
+    case "Bruxo":
+    case "Druida":
+      return t(2, 3, 4);
+    case "Clérigo":
+    case "Mago":
+      return t(3, 4, 5);
+    case "Feiticeiro":
+      return t(4, 5, 6);
+    case "Paladino":
+    case "Patrulheiro":
+      return 0;
+    default:
+      return null;
+  }
+}
+
+/** Magias conhecidas (lista fixa) por classe/nível-1. */
+const SPELLS_KNOWN_TABLE: Record<string, number[]> = {
+  Bardo: [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 15, 16, 18, 19, 19, 20, 22, 22, 22],
+  Feiticeiro: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15],
+  Bruxo: [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15],
+  Patrulheiro: [0, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11],
+};
+
+/** Magias conhecidas ou preparadas por classe/nível. null = homebrew (sem limite). */
+function spellsKnownOrPrepared(cls: string, level: number, scores: AbilityScores): number | null {
+  const lv = Math.max(1, Math.min(20, level));
+  const known = SPELLS_KNOWN_TABLE[cls];
+  if (known) return known[lv - 1];
+  switch (cls) {
+    case "Clérigo":
+    case "Druida":
+      return Math.max(1, abilityMod(scores.wis) + lv);
+    case "Mago":
+      return Math.max(1, abilityMod(scores.int) + lv);
+    case "Paladino":
+      return Math.max(0, abilityMod(scores.cha) + Math.floor(lv / 2));
+    default:
+      return null;
+  }
+}
+
+/**
+ * Limite de truques e de magias do personagem, somando as classes conjuradoras.
+ * Se qualquer classe for homebrew (fora das tabelas), o limite vira `null`
+ * (não restringe), pra não bloquear conteúdo customizado.
+ */
+export function spellCapacity(
+  classes: { name: string; level: number }[],
+  scores: AbilityScores,
+): SpellCapacity {
+  let cantrips = 0;
+  let spells = 0;
+  let cantripsBounded = true;
+  let spellsBounded = true;
+  for (const c of classes) {
+    const ck = cantripsKnown(c.name, c.level);
+    if (ck === null) cantripsBounded = false;
+    else cantrips += ck;
+    const sk = spellsKnownOrPrepared(c.name, c.level, scores);
+    if (sk === null) spellsBounded = false;
+    else spells += sk;
+  }
+  return {
+    cantrips: cantripsBounded ? cantrips : null,
+    spells: spellsBounded ? spells : null,
+  };
+}
+
 // === Derivados ===
 export function proficiencyBonusForLevel(level: number): number {
   return 2 + Math.floor((Math.max(1, level) - 1) / 4);
@@ -263,7 +408,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     hpCurrent: hpMax,
     hpMax,
     hpTemp: 0,
-    spellSlots: {},
+    spellSlots: spellSlotsForClasses(classes),
     resources: [],
   };
 }

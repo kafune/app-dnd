@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCharacter, listCharacterLog, patchCharacter, toPublicCharacter } from "@/lib/db";
+import {
+  deleteCharacter,
+  getCharacter,
+  listCharacterLog,
+  patchCharacter,
+  toPublicCharacter,
+} from "@/lib/db";
 import { eventBus } from "@/lib/eventBus";
 import type { Character } from "@/lib/types";
 
@@ -43,4 +49,18 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
   eventBus.publish({ type: "character", character: toPublicCharacter(result.character) });
   return NextResponse.json({ character: result.character });
+}
+
+export async function DELETE(req: NextRequest, { params }: Ctx) {
+  const { id } = await params;
+  const pin = req.headers.get("x-character-pin") ?? undefined;
+  const result = deleteCharacter(id, pin);
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.reason },
+      { status: result.reason === "not_found" ? 404 : 403 },
+    );
+  }
+  eventBus.publish({ type: "character-deleted", id });
+  return NextResponse.json({ ok: true });
 }

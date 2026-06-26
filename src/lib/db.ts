@@ -150,6 +150,22 @@ export function patchCharacter(
   })();
 }
 
+export function deleteCharacter(
+  id: string,
+  pin?: string,
+): { ok: true } | { ok: false; reason: "not_found" | "bad_pin" } {
+  const db = getDb();
+  return db.transaction(() => {
+    const current = getStoredCharacter(id);
+    if (!current) return { ok: false as const, reason: "not_found" as const };
+    if (!characterPinOk(current, pin)) return { ok: false as const, reason: "bad_pin" as const };
+    db.prepare("DELETE FROM characters WHERE id = ?").run(id);
+    db.prepare("DELETE FROM character_log WHERE character_id = ?").run(id);
+    db.prepare("DELETE FROM rolls WHERE character_id = ?").run(id);
+    return { ok: true as const };
+  })();
+}
+
 // === Log de modificações (controle de versão leve) ===
 
 const FIELD_LABELS: Record<string, string> = {

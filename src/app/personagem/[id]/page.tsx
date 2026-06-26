@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -35,8 +36,11 @@ export default function CharacterPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const character = useStore((s) => s.characters[id]);
   const clearRolls = useStore((s) => s.clearRolls);
+  const deleteCharacter = useStore((s) => s.deleteCharacter);
+  const pushToast = useStore((s) => s.pushToast);
   const editMode = useStore((s) => s.editMode);
   const setEditMode = useStore((s) => s.setEditMode);
   const patchCharacter = useStore((s) => s.patchCharacter);
@@ -49,6 +53,19 @@ export default function CharacterPage({
         ? "Limpar TODAS as rolagens da mesa? Isso afeta todos os jogadores."
         : "Limpar as rolagens desta ficha?";
     if (window.confirm(msg)) void clearRolls(scope === "mesa" ? undefined : id);
+  };
+
+  const onDelete = async () => {
+    if (!character) return;
+    const name = character.characterName || "esta ficha";
+    if (!window.confirm(`Deletar ${name} permanentemente? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    const ok = await deleteCharacter(id);
+    if (ok) {
+      pushToast({ title: `${name} foi deletado.`, tone: "success" });
+      router.push("/");
+    }
   };
 
   if (!character) {
@@ -84,22 +101,28 @@ export default function CharacterPage({
           </Button>
         </Link>
         <PinLock id={id} />
-        <Button
-          variant={editMode ? "success" : "outline"}
-          size="sm"
-          className="ml-auto"
-          onClick={() => setEditMode(!editMode)}
-        >
-          {editMode ? (
-            <>
-              <Check className="h-3 w-3" /> Concluir edição
-            </>
-          ) : (
-            <>
-              <Pencil className="h-3 w-3" /> Editar ficha
-            </>
+        <div className="ml-auto flex items-center gap-2">
+          {editMode && (
+            <Button variant="danger" size="sm" onClick={() => void onDelete()}>
+              <Trash2 className="h-3 w-3" /> Deletar
+            </Button>
           )}
-        </Button>
+          <Button
+            variant={editMode ? "success" : "outline"}
+            size="sm"
+            onClick={() => setEditMode(!editMode)}
+          >
+            {editMode ? (
+              <>
+                <Check className="h-3 w-3" /> Concluir edição
+              </>
+            ) : (
+              <>
+                <Pencil className="h-3 w-3" /> Editar ficha
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <header

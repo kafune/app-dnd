@@ -39,6 +39,12 @@ export const api = {
       headers: { "x-character-pin": pin },
     }),
 
+  deleteCharacter: (id: string, pin?: string) =>
+    jsonFetch<{ ok: true }>(`/api/characters/${id}`, {
+      method: "DELETE",
+      headers: pin ? { "x-character-pin": pin } : {},
+    }),
+
   getCharacterLog: (id: string, pin?: string) =>
     jsonFetch<{ log: CharacterLogEntry[] }>(`/api/characters/${id}?log=1`, {
       cache: "no-store",
