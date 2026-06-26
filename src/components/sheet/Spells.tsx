@@ -4,14 +4,25 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore } from "@/lib/store";
-import type { Spell } from "@/lib/types";
+import { ABILITY_LABELS, ABILITY_ORDER, type AbilityKey, type Spell } from "@/lib/types";
+import { EditableNumber } from "@/components/sheet/edit/EditControls";
+import { SpellPicker } from "@/components/create/SpellPicker";
+
+const selectCls =
+  "h-7 rounded-md border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
 
 export function Spells({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
+  const editMode = useStore((s) => s.editMode);
+  const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
-  const { cantrips, known, saveDC, attackMod } = c.sheet.spells;
+  const { cantrips, known, saveDC, attackMod, castingAbility } = c.sheet.spells;
   const all = [...cantrips, ...known];
-  if (all.length === 0) return null;
+  if (all.length === 0 && !editMode) return null;
+
+  const setSpells = (partial: Partial<typeof c.sheet.spells>) =>
+    void patchSheet(id, { spells: { ...c.sheet.spells, ...partial } });
+  const classNames = c.sheet.classes.map((k) => k.name);
 
   const byLevel = new Map<number, Spell[]>();
   for (const sp of all) {
@@ -28,13 +39,42 @@ export function Spells({ id }: { id: string }) {
             <Sparkles className="mr-1 inline h-3.5 w-3.5" />
             Magias
           </CardTitle>
-          <div className="text-xs text-zinc-500">
-            CD {saveDC} · Ataque +{attackMod}
-          </div>
+          {editMode ? (
+            <div className="flex items-center gap-1 text-xs text-zinc-500">
+              CD
+              <EditableNumber value={saveDC} onSave={(v) => setSpells({ saveDC: v })} className="h-7 w-12" />
+              Atq
+              <EditableNumber value={attackMod} onSave={(v) => setSpells({ attackMod: v })} className="h-7 w-12" />
+              <select
+                className={selectCls}
+                value={castingAbility}
+                onChange={(e) => setSpells({ castingAbility: e.target.value as AbilityKey })}
+              >
+                {ABILITY_ORDER.map((k) => (
+                  <option key={k} value={k}>
+                    {ABILITY_LABELS[k].slice(0, 3)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="text-xs text-zinc-500">
+              CD {saveDC} · Ataque +{attackMod}
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardBody className="space-y-3">
-        {sortedLevels.map((lvl) => (
+        {editMode && (
+          <SpellPicker
+            classNames={classNames}
+            cantrips={cantrips}
+            known={known}
+            onChange={(cantrips, known) => setSpells({ cantrips, known })}
+          />
+        )}
+        {!editMode &&
+          sortedLevels.map((lvl) => (
           <div key={lvl}>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
               {lvl === 0 ? "Truques" : `Nível ${lvl}`}

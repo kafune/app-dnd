@@ -53,4 +53,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ roll }),
     }),
+
+  clearRolls: (characterId?: string) =>
+    jsonFetch<{ ok: true; removed: number }>(
+      `/api/rolls${characterId ? `?characterId=${encodeURIComponent(characterId)}` : ""}`,
+      { method: "DELETE" },
+    ),
 };

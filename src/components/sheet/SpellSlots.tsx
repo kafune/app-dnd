@@ -1,16 +1,39 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore, useUnlocked } from "@/lib/store";
+import { EditableNumber } from "@/components/sheet/edit/EditControls";
 
 export function SpellSlots({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const patch = useStore((s) => s.patchCharacter);
+  const editMode = useStore((s) => s.editMode);
   const unlocked = useUnlocked(id);
 
   if (!c) return null;
   const levels = Object.keys(c.spellSlots).sort();
-  if (levels.length === 0) return null;
+  if (levels.length === 0 && !editMode) return null;
+
+  const setMax = (level: string, max: number) => {
+    const slot = c.spellSlots[level];
+    void patch(id, {
+      spellSlots: {
+        ...c.spellSlots,
+        [level]: { max: Math.max(0, max), current: Math.min(slot?.current ?? max, Math.max(0, max)) },
+      },
+    });
+  };
+  const removeLevel = (level: string) => {
+    const next = { ...c.spellSlots };
+    delete next[level];
+    void patch(id, { spellSlots: next });
+  };
+  const addLevel = () => {
+    const lv = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].find((l) => !(l in c.spellSlots));
+    if (lv) void patch(id, { spellSlots: { ...c.spellSlots, [lv]: { current: 1, max: 1 } } });
+  };
 
   const toggle = (level: string, idx: number) => {
     if (!unlocked) return;
@@ -55,10 +78,34 @@ export function SpellSlots({ id }: { id: string }) {
                 <span className="ml-2 font-mono text-xs text-zinc-500">
                   {slot.current}/{slot.max}
                 </span>
+                {editMode && (
+                  <>
+                    <span className="ml-2 text-[10px] text-zinc-500">máx</span>
+                    <EditableNumber
+                      value={slot.max}
+                      min={0}
+                      onSave={(v) => setMax(lv, v)}
+                      className="h-7 w-14"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remover nível ${lv}`}
+                      onClick={() => removeLevel(lv)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           );
         })}
+        {editMode && (
+          <Button variant="outline" size="sm" onClick={addLevel}>
+            + Nível de espaço
+          </Button>
+        )}
       </CardBody>
     </Card>
   );
