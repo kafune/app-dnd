@@ -5,6 +5,7 @@ import { use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { ALIGNMENTS } from "@/lib/types";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { HpTracker } from "@/components/sheet/HpTracker";
@@ -162,10 +163,24 @@ export default function CharacterPage({
               </label>
               <label className="text-xs text-zinc-500">
                 Tendência
-                <EditableText
-                  value={character.sheet.alignment ?? ""}
-                  onSave={(v) => patchSheet(id, { alignment: v })}
-                />
+                <select
+                  className="h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  value={
+                    ALIGNMENTS.includes(
+                      (character.sheet.alignment ?? "") as (typeof ALIGNMENTS)[number],
+                    )
+                      ? character.sheet.alignment
+                      : ""
+                  }
+                  onChange={(e) => patchSheet(id, { alignment: e.target.value })}
+                >
+                  <option value="">— escolha —</option>
+                  {ALIGNMENTS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="text-xs text-zinc-500">
                 Cor

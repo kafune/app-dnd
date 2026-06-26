@@ -498,5 +498,15 @@
   "name": "Usuário de Armadura Pesada",
   "description": "+1 Con; reduz em 3 o dano de ataques não-mágicos enquanto usa armadura pesada.",
   "kind": "talento"
+ },
+ {
+  "name": "Maestria em Armas Grandes",
+  "kind": "talento",
+  "description": "Você aprende a usar todo o peso de uma arma para potencializar seus golpes. Ao acertar um crítico ou reduzir uma criatura a 0 pontos de vida com um ataque corpo a corpo, você pode fazer um ataque corpo a corpo como ação bônus. Além disso, antes de um ataque corpo a corpo com uma arma pesada com a qual seja proficiente, você pode optar por sofrer -5 na jogada de ataque para causar +10 de dano se acertar."
+ },
+ {
+  "name": "Tocado pelas Sombras",
+  "kind": "talento",
+  "description": "O toque da Sombrelha deixou sua marca em você. Aumente em 1 sua Inteligência, Sabedoria ou Carisma (máx. 20). Você aprende a magia Invisibilidade e uma magia de 1º nível de Ilusão ou Necromancia à sua escolha. Você pode conjurar cada uma dessas magias uma vez sem gastar espaço de magia, recuperando esse uso ao terminar um descanso longo (e também pode conjurá-las usando espaços de magia que possua). A habilidade de conjuração é a mesma que você aumentou com este talento."
  }
 ]

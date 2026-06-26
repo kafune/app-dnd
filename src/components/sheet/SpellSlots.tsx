@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore, useUnlocked } from "@/lib/store";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
+import { spellSlotsForClasses } from "@/lib/createCharacter";
 
 export function SpellSlots({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
@@ -33,6 +34,19 @@ export function SpellSlots({ id }: { id: string }) {
   const addLevel = () => {
     const lv = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].find((l) => !(l in c.spellSlots));
     if (lv) void patch(id, { spellSlots: { ...c.spellSlots, [lv]: { current: 1, max: 1 } } });
+  };
+  // Recalcula os espaços pela tabela 5e a partir das classes/níveis do personagem,
+  // preservando quantos espaços já foram gastos em cada nível.
+  const recalc = () => {
+    const fresh = spellSlotsForClasses(
+      c.sheet.classes.map((k) => ({ name: k.name, level: k.level })),
+    );
+    const next: typeof c.spellSlots = {};
+    for (const [lv, slot] of Object.entries(fresh)) {
+      const used = (c.spellSlots[lv]?.max ?? 0) - (c.spellSlots[lv]?.current ?? 0);
+      next[lv] = { max: slot.max, current: Math.max(0, slot.max - Math.max(0, used)) };
+    }
+    void patch(id, { spellSlots: next });
   };
 
   const toggle = (level: string, idx: number) => {
@@ -102,9 +116,19 @@ export function SpellSlots({ id }: { id: string }) {
           );
         })}
         {editMode && (
-          <Button variant="outline" size="sm" onClick={addLevel}>
-            + Nível de espaço
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={addLevel}>
+              + Nível de espaço
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={recalc}
+              title="Recalcular pela tabela 5e usando as classes e níveis do personagem"
+            >
+              Recalcular pelos níveis
+            </Button>
+          </div>
         )}
       </CardBody>
     </Card>

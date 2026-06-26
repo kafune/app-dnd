@@ -141,7 +141,9 @@ const HALF_CASTERS = new Set(["Paladino", "Patrulheiro"]);
  * em separado — se houver outras classes conjuradoras, o Pacto é omitido aqui
  * (pode ser ajustado à mão na ficha).
  */
-export function spellSlotsForClasses(classes: DraftClass[]): Record<string, { current: number; max: number }> {
+export function spellSlotsForClasses(
+  classes: { name: string; level: number }[],
+): Record<string, { current: number; max: number }> {
   let casterLevel = 0;
   let warlockLevel = 0;
   for (const c of classes) {

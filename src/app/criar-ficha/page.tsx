@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
@@ -13,6 +13,8 @@ import { SpellPicker } from "@/components/create/SpellPicker";
 import { EquipmentPicker } from "@/components/create/EquipmentPicker";
 import { TraitPicker } from "@/components/create/TraitPicker";
 import { findTrait } from "@/data/traitsCatalog";
+import { findClassFeatureDescription } from "@/data/classFeaturesCatalog";
+import { CREATURE_SIZES, ALIGNMENTS } from "@/lib/types";
 import { RACES_CATALOG, findRace } from "@/data/racesCatalog";
 import { BACKGROUNDS_CATALOG, findBackground } from "@/data/backgroundsCatalog";
 import { CLASSES_CATALOG, findClass, classFeaturesUpTo } from "@/data/classesCatalog";
@@ -198,7 +200,7 @@ export default function CriarFicha() {
           ? classFeaturesUpTo(cl.name, cl.level).map((f) => ({
               name: f.name,
               source: `${cl.name} ${f.level}`,
-              description: "",
+              description: findClassFeatureDescription(f.name),
             }))
           : [],
       );
@@ -300,11 +302,18 @@ export default function CriarFicha() {
               )}
             </Field>
             <Field label="Tendência (opcional)">
-              <Input
+              <select
+                className={selectCls}
                 value={draft.alignment ?? ""}
-                onChange={(e) => upd({ alignment: e.target.value })}
-                placeholder="Ex: Caótico e Bom"
-              />
+                onChange={(e) => upd({ alignment: e.target.value || undefined })}
+              >
+                <option value="">— escolha —</option>
+                {ALIGNMENTS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
             </Field>
             {bgMode === "catalog" && selectedBackground && (
               <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50 sm:col-span-2">
@@ -390,7 +399,17 @@ export default function CriarFicha() {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label="Tamanho">
-                <Input value={draft.size} onChange={(e) => upd({ size: e.target.value })} />
+                <select
+                  className={selectCls}
+                  value={CREATURE_SIZES.includes(draft.size as (typeof CREATURE_SIZES)[number]) ? draft.size : "Médio"}
+                  onChange={(e) => upd({ size: e.target.value })}
+                >
+                  {CREATURE_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Deslocamento (m)">
                 <Input
@@ -401,11 +420,10 @@ export default function CriarFicha() {
                 />
               </Field>
               <Field label="Idiomas (separados por vírgula)">
-                <Input
-                  value={draft.languages.join(", ")}
-                  onChange={(e) =>
-                    upd({ languages: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })
-                  }
+                <CommaListInput
+                  value={draft.languages}
+                  onChange={(languages) => upd({ languages })}
+                  placeholder="Ex: Comum, Élfico"
                 />
               </Field>
             </div>
@@ -649,6 +667,45 @@ export default function CriarFicha() {
         </div>
       </div>
     </main>
+  );
+}
+
+/**
+ * Campo de texto que edita uma lista separada por vírgulas, mas guarda o texto
+ * bruto enquanto o usuário digita — assim dá pra digitar espaços e vírgulas sem
+ * o valor "pular" (o `split/trim/filter` só roda para emitir o array ao pai).
+ */
+function CommaListInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  const [text, setText] = useState(value.join(", "));
+  const lastEmitted = useRef(value.join(", "));
+  // Re-sincroniza só quando o array muda por fora (ex.: ao trocar de raça).
+  useEffect(() => {
+    const ext = value.join(", ");
+    if (ext !== lastEmitted.current) {
+      setText(ext);
+      lastEmitted.current = ext;
+    }
+  }, [value]);
+  return (
+    <Input
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => {
+        const t = e.target.value;
+        setText(t);
+        const arr = t.split(",").map((s) => s.trim()).filter(Boolean);
+        lastEmitted.current = arr.join(", ");
+        onChange(arr);
+      }}
+    />
   );
 }
 

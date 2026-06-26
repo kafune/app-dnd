@@ -7,6 +7,8 @@ import { useStore } from "@/lib/store";
 import { ABILITY_LABELS, ABILITY_ORDER, type AbilityKey, type Spell } from "@/lib/types";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
 import { SpellPicker } from "@/components/create/SpellPicker";
+import { findClass } from "@/data/classesCatalog";
+import { spellCapacity } from "@/lib/createCharacter";
 
 const selectCls =
   "h-7 rounded-md border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -23,6 +25,16 @@ export function Spells({ id }: { id: string }) {
   const setSpells = (partial: Partial<typeof c.sheet.spells>) =>
     void patchSheet(id, { spells: { ...c.sheet.spells, ...partial } });
   const classNames = c.sheet.classes.map((k) => k.name);
+
+  // Mesmo limite de truques/magias usado na criação — assim a edição também
+  // respeita a capacidade da(s) classe(s) conjuradora(s) do personagem.
+  const casterClasses = c.sheet.classes.filter(
+    (k) => findClass(k.name)?.spellcastingAbility,
+  );
+  const caps = spellCapacity(
+    casterClasses.map((k) => ({ name: k.name, level: k.level })),
+    c.sheet.abilityScores,
+  );
 
   const byLevel = new Map<number, Spell[]>();
   for (const sp of all) {
@@ -70,6 +82,8 @@ export function Spells({ id }: { id: string }) {
             classNames={classNames}
             cantrips={cantrips}
             known={known}
+            cantripsMax={caps.cantrips}
+            spellsMax={caps.spells}
             onChange={(cantrips, known) => setSpells({ cantrips, known })}
           />
         )}

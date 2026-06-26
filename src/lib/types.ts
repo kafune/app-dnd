@@ -13,6 +13,29 @@ export const ABILITY_ORDER: AbilityKey[] = ["str", "dex", "con", "int", "wis", "
 
 export type AbilityScores = Record<AbilityKey, number>;
 
+/** Tamanhos de criatura (D&D 5e, PT-BR), do menor ao maior. */
+export const CREATURE_SIZES = [
+  "Miúdo",
+  "Pequeno",
+  "Médio",
+  "Grande",
+  "Enorme",
+  "Imenso",
+] as const;
+
+/** Tendências (alinhamentos) padrão do D&D 5e, em PT-BR. */
+export const ALIGNMENTS = [
+  "Leal e Bom",
+  "Neutro e Bom",
+  "Caótico e Bom",
+  "Leal e Neutro",
+  "Neutro",
+  "Caótico e Neutro",
+  "Leal e Mau",
+  "Neutro e Mau",
+  "Caótico e Mau",
+] as const;
+
 export type SkillName =
   | "Acrobacia"
   | "Adestrar Animais"
