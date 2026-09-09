@@ -3,19 +3,37 @@ import {
   ABILITY_ORDER,
   type AbilityKey,
   type AbilityScores,
+  type AsiDecision,
   type Character,
+  type Coins,
   type Feature,
   type Item,
+  type RaceTraitDef,
   type Sheet,
+  type Skill,
   type SkillName,
   type Spell,
 } from "./types";
+import {
+  allSpellCaps,
+  applyAbilityIncrease,
+  classFeaturesFor,
+  classResourcesFor,
+  classSkillBudget,
+  featFeature,
+  grantedSpellsFor,
+  hitDieValue,
+  proficiencyBonusForLevel,
+  spellSlotsFor,
+  totalLevelOf,
+  norm,
+} from "./progression";
+import { findBackground, backgroundSkills } from "@/data/backgroundsCatalog";
+import { findFeat } from "@/data/featsCatalog";
+import { findTrait } from "@/data/traitsCatalog";
 
-/**
- * Rascunho de criação de ficha. Carrega os campos que o usuário escolhe
- * (com autopreenchimento do catálogo, mas tudo editável). `buildCharacter`
- * monta um `Character` completo e bem-formado a partir daqui.
- */
+export { proficiencyBonusForLevel, hitDieValue, spellSlotsFor as spellSlotsForClasses };
+
 /** Uma classe dentro do rascunho (multiclasse = várias). */
 export type DraftClass = {
   name: string;
@@ -24,9 +42,15 @@ export type DraftClass = {
   hitDie: string; // ex: "d10"
   saves: AbilityKey[];
   proficiencies: string[];
-  spellcastingAbility: AbilityKey | null;
+  /** Mantido para compatibilidade com rascunhos antigos; o catálogo é a fonte atual. */
+  spellcastingAbility?: AbilityKey | null;
 };
 
+/**
+ * Rascunho de criação de ficha. Carrega as escolhas do jogador; tudo que é
+ * derivado (características, recursos, espaços, perícias fixas) é calculado em
+ * `buildCharacter` a partir dos catálogos.
+ */
 export type CharacterDraft = {
   playerName: string;
   characterName: string;
@@ -36,24 +60,41 @@ export type CharacterDraft = {
   alignment?: string;
   // Raça (catálogo ou custom)
   raceName: string;
+  subraceName?: string;
+  /** Bônus fixos da raça/sub-raça (ou digitados, na raça custom). */
   raceBonuses: Partial<Record<AbilityKey, number>>;
+  /** Atributos escolhidos para incrementos "à escolha" (ex.: Meio-elfo +1 em dois). */
+  raceChoiceBonuses: AbilityKey[];
   size: string;
   speed: number;
+  /** Idiomas fixos da raça (ou digitados). */
   languages: string[];
-  raceTraits: string[];
+  /** Idiomas adicionais escolhidos (raça + antecedente). */
+  extraLanguages: string[];
+  /** Traços raciais resolvidos (automáticos). */
+  raceTraits: Array<RaceTraitDef | string>;
+  /** Escolhas embutidas em traços (nome do traço -> opção). */
+  traitChoices: Record<string, string>;
+  /** Talento concedido pela raça (Humano variante). */
+  raceFeat?: string;
+  /** Perícias escolhidas por traços raciais (ex.: Versatilidade em Perícia). */
+  raceSkillChoices: SkillName[];
   // Classes (uma ou mais — multiclasse)
   classes: DraftClass[];
+  /** Decisões de ASI/talento nos níveis já alcançados. */
+  advancement: AsiDecision[];
   // Atributos base (antes do bônus racial)
   baseScores: AbilityScores;
-  // Perícias proficientes
+  // Perícias escolhidas (classe + escolha do antecedente)
   skills: SkillName[];
-  // Magias escolhidas (do catálogo)
+  // Magias escolhidas (do catálogo), com a classe de origem
   cantrips: Spell[];
   knownSpells: Spell[];
-  // Inventário inicial (equipamento)
+  // Inventário inicial
   inventoryItems: Item[];
-  // Características de classe (ganhas por nível) a incluir na ficha
-  extraFeatures: Feature[];
+  coins: Coins;
+  /** Características homebrew de rascunhos antigos. Na criação normal fica vazio. */
+  extraFeatures?: Feature[];
   // Overrides opcionais de derivados
   acOverride?: number;
   hpOverride?: number;
@@ -63,16 +104,7 @@ export type CharacterDraft = {
 export const POINT_BUY_BUDGET = 27;
 export const POINT_BUY_MIN = 8;
 export const POINT_BUY_MAX = 15;
-const POINT_BUY_COST: Record<number, number> = {
-  8: 0,
-  9: 1,
-  10: 2,
-  11: 3,
-  12: 4,
-  13: 5,
-  14: 7,
-  15: 9,
-};
+const POINT_BUY_COST: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
 
 /** Custo de um valor na compra de pontos (Infinity se fora de 8–15). */
 export function pointBuyCost(score: number): number {
@@ -92,178 +124,39 @@ export function pointsRemaining(scores: AbilityScores): number {
 
 /** Todos os valores estão no intervalo válido da compra de pontos? */
 export function isValidPointBuy(scores: AbilityScores): boolean {
-  const inRange = ABILITY_ORDER.every(
-    (k) => scores[k] >= POINT_BUY_MIN && scores[k] <= POINT_BUY_MAX,
-  );
+  const inRange = ABILITY_ORDER.every((k) => scores[k] >= POINT_BUY_MIN && scores[k] <= POINT_BUY_MAX);
   return inRange && pointsSpent(scores) <= POINT_BUY_BUDGET;
 }
 
-// === Espaços de magia (tabela 5e) ===
-
-/** Tabela do conjurador multiclasse (PHB): nível de conjurador -> espaços por nível 1..9. */
-const MULTICLASS_SLOTS: Record<number, number[]> = {
-  1: [2, 0, 0, 0, 0, 0, 0, 0, 0],
-  2: [3, 0, 0, 0, 0, 0, 0, 0, 0],
-  3: [4, 2, 0, 0, 0, 0, 0, 0, 0],
-  4: [4, 3, 0, 0, 0, 0, 0, 0, 0],
-  5: [4, 3, 2, 0, 0, 0, 0, 0, 0],
-  6: [4, 3, 3, 0, 0, 0, 0, 0, 0],
-  7: [4, 3, 3, 1, 0, 0, 0, 0, 0],
-  8: [4, 3, 3, 2, 0, 0, 0, 0, 0],
-  9: [4, 3, 3, 3, 1, 0, 0, 0, 0],
-  10: [4, 3, 3, 3, 2, 0, 0, 0, 0],
-  11: [4, 3, 3, 3, 2, 1, 0, 0, 0],
-  12: [4, 3, 3, 3, 2, 1, 0, 0, 0],
-  13: [4, 3, 3, 3, 2, 1, 1, 0, 0],
-  14: [4, 3, 3, 3, 2, 1, 1, 0, 0],
-  15: [4, 3, 3, 3, 2, 1, 1, 1, 0],
-  16: [4, 3, 3, 3, 2, 1, 1, 1, 0],
-  17: [4, 3, 3, 3, 2, 1, 1, 1, 1],
-  18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
-  19: [4, 3, 3, 3, 3, 2, 1, 1, 1],
-  20: [4, 3, 3, 3, 3, 2, 2, 1, 1],
-};
-
-/** Pacto Mágico do Bruxo: nível de bruxo -> [qtde de espaços, nível dos espaços]. */
-const WARLOCK_PACT: Record<number, [number, number]> = {
-  1: [1, 1], 2: [2, 1], 3: [2, 2], 4: [2, 2], 5: [2, 3], 6: [2, 3], 7: [2, 4],
-  8: [2, 4], 9: [2, 5], 10: [2, 5], 11: [3, 5], 12: [3, 5], 13: [3, 5], 14: [3, 5],
-  15: [3, 5], 16: [3, 5], 17: [4, 5], 18: [4, 5], 19: [4, 5], 20: [4, 5],
-};
-
-const FULL_CASTERS = new Set(["Bardo", "Clérigo", "Druida", "Feiticeiro", "Mago"]);
-const HALF_CASTERS = new Set(["Paladino", "Patrulheiro"]);
-
-/**
- * Calcula os espaços de magia iniciais a partir das classes (regra 5e).
- * Conjuradores plenos contam nível cheio; meio-conjuradores contam metade
- * (arredondado p/ baixo); Artífice arredonda p/ cima. O Bruxo usa Pacto Mágico
- * em separado — se houver outras classes conjuradoras, o Pacto é omitido aqui
- * (pode ser ajustado à mão na ficha).
- */
-export function spellSlotsForClasses(
-  classes: { name: string; level: number }[],
-): Record<string, { current: number; max: number }> {
-  let casterLevel = 0;
-  let warlockLevel = 0;
-  for (const c of classes) {
-    const lvl = Math.max(0, c.level || 0);
-    if (FULL_CASTERS.has(c.name)) casterLevel += lvl;
-    else if (HALF_CASTERS.has(c.name)) casterLevel += Math.floor(lvl / 2);
-    else if (c.name === "Artífice") casterLevel += Math.ceil(lvl / 2);
-    else if (c.name === "Bruxo") warlockLevel += lvl;
-  }
-
-  const slots: Record<string, { current: number; max: number }> = {};
-  if (casterLevel > 0) {
-    const row = MULTICLASS_SLOTS[Math.min(20, casterLevel)] ?? [];
-    row.forEach((max, i) => {
-      if (max > 0) slots[String(i + 1)] = { current: max, max };
-    });
-  } else if (warlockLevel > 0) {
-    const [count, level] = WARLOCK_PACT[Math.min(20, warlockLevel)] ?? [0, 0];
-    if (count > 0) slots[String(level)] = { current: count, max: count };
-  }
-  return slots;
-}
-
-// === Capacidade de magias (truques e magias conhecidas/preparadas) ===
-
-export type SpellCapacity = { cantrips: number | null; spells: number | null };
-
-/** Truques conhecidos por classe/nível (PHB). null = classe homebrew, sem limite. */
-function cantripsKnown(cls: string, level: number): number | null {
-  const t = (a: number, b: number, c: number) => (level >= 10 ? c : level >= 4 ? b : a);
-  switch (cls) {
-    case "Bardo":
-    case "Bruxo":
-    case "Druida":
-      return t(2, 3, 4);
-    case "Clérigo":
-    case "Mago":
-      return t(3, 4, 5);
-    case "Feiticeiro":
-      return t(4, 5, 6);
-    case "Paladino":
-    case "Patrulheiro":
-      return 0;
-    default:
-      return null;
-  }
-}
-
-/** Magias conhecidas (lista fixa) por classe/nível-1. */
-const SPELLS_KNOWN_TABLE: Record<string, number[]> = {
-  Bardo: [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 15, 16, 18, 19, 19, 20, 22, 22, 22],
-  Feiticeiro: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15],
-  Bruxo: [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15],
-  Patrulheiro: [0, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11],
-};
-
-/** Magias conhecidas ou preparadas por classe/nível. null = homebrew (sem limite). */
-function spellsKnownOrPrepared(cls: string, level: number, scores: AbilityScores): number | null {
-  const lv = Math.max(1, Math.min(20, level));
-  const known = SPELLS_KNOWN_TABLE[cls];
-  if (known) return known[lv - 1];
-  switch (cls) {
-    case "Clérigo":
-    case "Druida":
-      return Math.max(1, abilityMod(scores.wis) + lv);
-    case "Mago":
-      return Math.max(1, abilityMod(scores.int) + lv);
-    case "Paladino":
-      return Math.max(0, abilityMod(scores.cha) + Math.floor(lv / 2));
-    default:
-      return null;
-  }
-}
-
-/**
- * Limite de truques e de magias do personagem, somando as classes conjuradoras.
- * Se qualquer classe for homebrew (fora das tabelas), o limite vira `null`
- * (não restringe), pra não bloquear conteúdo customizado.
- */
-export function spellCapacity(
-  classes: { name: string; level: number }[],
-  scores: AbilityScores,
-): SpellCapacity {
-  let cantrips = 0;
-  let spells = 0;
-  let cantripsBounded = true;
-  let spellsBounded = true;
-  for (const c of classes) {
-    const ck = cantripsKnown(c.name, c.level);
-    if (ck === null) cantripsBounded = false;
-    else cantrips += ck;
-    const sk = spellsKnownOrPrepared(c.name, c.level, scores);
-    if (sk === null) spellsBounded = false;
-    else spells += sk;
-  }
-  return {
-    cantrips: cantripsBounded ? cantrips : null,
-    spells: spellsBounded ? spells : null,
-  };
-}
-
 // === Derivados ===
-export function proficiencyBonusForLevel(level: number): number {
-  return 2 + Math.floor((Math.max(1, level) - 1) / 4);
+
+/** Bônus raciais totais: fixos + escolhidos (+1 cada). */
+export function totalRaceBonuses(draft: Pick<CharacterDraft, "raceBonuses" | "raceChoiceBonuses">): Partial<Record<AbilityKey, number>> {
+  const out: Partial<Record<AbilityKey, number>> = { ...draft.raceBonuses };
+  for (const k of draft.raceChoiceBonuses) out[k] = (out[k] ?? 0) + 1;
+  return out;
+}
+
+function resolvedRaceTraits(traits: Array<RaceTraitDef | string>): RaceTraitDef[] {
+  return traits.map((trait) => {
+    if (typeof trait !== "string") return trait;
+    const legacy = findTrait(trait);
+    return { name: trait, description: legacy?.description ?? "" };
+  });
 }
 
 /** Soma os bônus raciais aos atributos base. */
-export function finalScores(
-  base: AbilityScores,
-  bonuses: Partial<Record<AbilityKey, number>>,
-): AbilityScores {
+export function finalScores(base: AbilityScores, bonuses: Partial<Record<AbilityKey, number>>): AbilityScores {
   const out = { ...base };
   for (const k of ABILITY_ORDER) out[k] = base[k] + (bonuses[k] ?? 0);
   return out;
 }
 
-/** Valor numérico do dado de vida ("d10" -> 10). Default d8. */
-export function hitDieValue(hitDie: string): number {
-  const m = /d(\d+)/i.exec(hitDie ?? "");
-  return m ? Number(m[1]) : 8;
+/** Atributos finais do rascunho: base + raça + decisões de ASI/talento. */
+export function draftScores(draft: CharacterDraft): AbilityScores {
+  let s = finalScores(draft.baseScores, totalRaceBonuses(draft));
+  for (const d of draft.advancement) s = applyAbilityIncrease(s, d.abilities);
+  return s;
 }
 
 /** PV médio: máximo no 1º nível + média por nível seguinte, somando mod. CON. */
@@ -279,22 +172,12 @@ export function emptyScores(): AbilityScores {
 }
 
 export function emptyClass(): DraftClass {
-  return {
-    name: "",
-    level: 1,
-    hitDie: "d8",
-    saves: [],
-    proficiencies: [],
-    spellcastingAbility: null,
-  };
+  return { name: "", level: 1, hitDie: "d8", saves: [], proficiencies: [] };
 }
 
 /** Nível total do personagem (soma das classes), mínimo 1. */
-export function totalLevel(classes: DraftClass[]): number {
-  return Math.max(
-    1,
-    classes.reduce((n, c) => n + (c.level || 0), 0),
-  );
+export function totalLevel(classes: { level: number }[]): number {
+  return Math.max(1, totalLevelOf(classes));
 }
 
 /** PV total: 1º nível do personagem usa o dado cheio; demais níveis usam a média
@@ -309,10 +192,7 @@ export function totalHp(classes: DraftClass[], conMod: number): number {
       first = false;
     }
   }
-  return hp || die1(classes) + conMod;
-}
-function die1(classes: DraftClass[]): number {
-  return hitDieValue(classes[0]?.hitDie ?? "d8");
+  return hp || hitDieValue(classes[0]?.hitDie ?? "d8") + conMod;
 }
 
 export function emptyDraft(): CharacterDraft {
@@ -323,71 +203,137 @@ export function emptyDraft(): CharacterDraft {
     background: "",
     raceName: "",
     raceBonuses: {},
+    raceChoiceBonuses: [],
     size: "Médio",
     speed: 9,
     languages: ["Comum"],
+    extraLanguages: [],
     raceTraits: [],
+    traitChoices: {},
+    raceSkillChoices: [],
     classes: [emptyClass()],
+    advancement: [],
     baseScores: emptyScores(),
     skills: [],
     cantrips: [],
     knownSpells: [],
     inventoryItems: [],
-    extraFeatures: [],
+    coins: { gp: 0, sp: 0, cp: 0 },
   };
+}
+
+/** Perícias automáticas (antecedente fixo + traços raciais) e escolhas raciais. */
+export function fixedSkills(draft: Pick<CharacterDraft, "background" | "raceTraits" | "raceSkillChoices">): SkillName[] {
+  const bg = backgroundSkills(findBackground(draft.background));
+  const race = resolvedRaceTraits(draft.raceTraits).flatMap((t) => t.skills ?? []);
+  return [...new Set([...bg.fixed, ...race, ...draft.raceSkillChoices])];
+}
+
+/**
+ * Perícias "à escolha" do rascunho: por parte (classe, multiclasse, antecedente, talentos),
+ * com o total. As fixas não entram.
+ */
+export function skillBudget(draft: Pick<CharacterDraft, "classes" | "background" | "advancement" | "raceFeat">) {
+  const parts = classSkillBudget(draft.classes.map((c) => ({ name: c.name, level: c.level, subclass: c.subclass })));
+  const bg = backgroundSkills(findBackground(draft.background));
+  if (bg.choose > 0) parts.push({ label: `Antecedente: ${draft.background}`, count: bg.choose, from: bg.from });
+  const featNames = [...draft.advancement.filter((d) => d.kind === "feat" && d.feat).map((d) => d.feat!), ...(draft.raceFeat ? [draft.raceFeat] : [])];
+  for (const f of featNames) {
+    const n = FEAT_SKILLS[norm(findFeat(f)?.name ?? f)] ?? 0;
+    if (n > 0) parts.push({ label: `Talento: ${f}`, count: n });
+  }
+  return { parts, total: parts.reduce((n, p) => n + p.count, 0) };
+}
+const FEAT_SKILLS: Record<string, number> = { talentoso: 3, "perito em aptidao": 1, "perito em pericias": 1, "perito em habilidades": 1 };
+
+/** Traços raciais viram características da ficha (com a escolha embutida no nome). */
+export function raceFeatures(draft: Pick<CharacterDraft, "raceName" | "subraceName" | "raceTraits" | "traitChoices">): Feature[] {
+  const source = draft.subraceName ? `${draft.raceName} (${draft.subraceName})` : draft.raceName || "Raça";
+  return resolvedRaceTraits(draft.raceTraits).map((t) => {
+    const choice = draft.traitChoices[t.name];
+    return {
+      name: choice ? `${t.name} (${choice})` : t.name,
+      source,
+      description: t.description,
+      origin: { kind: "race", name: draft.raceName },
+    };
+  });
 }
 
 /** Monta um `Character` completo e bem-formado a partir do rascunho. */
 export function buildCharacter(draft: CharacterDraft, id: string): Character {
-  const scores = finalScores(draft.baseScores, draft.raceBonuses);
-  const classes = draft.classes.length ? draft.classes : [emptyClass()];
+  const scores = draftScores(draft);
+  const selectedClasses = draft.classes.filter((entry) => entry.name.trim());
+  const classes = selectedClasses.length ? selectedClasses : [emptyClass()];
+  const classEntries = classes
+    .filter((c) => c.name.trim())
+    .map((c) => ({ name: c.name, ...(c.subclass ? { subclass: c.subclass } : {}), level: c.level }));
   const level = totalLevel(classes);
   const profBonus = proficiencyBonusForLevel(level);
   const dexMod = abilityMod(scores.dex);
   const conMod = abilityMod(scores.con);
   const ac = draft.acOverride ?? 10 + dexMod;
-  const hpMax = draft.hpOverride ?? totalHp(classes, conMod);
+  let hpMax = draft.hpOverride ?? totalHp(classes, conMod);
+  if (draft.hpOverride == null) {
+    // Tenacidade Anã / Robusto: +1 (ou +2) por nível
+    if (resolvedRaceTraits(draft.raceTraits).some((t) => norm(t.name) === "tenacidade ana")) hpMax += level;
+    const feats = [...draft.advancement.filter((d) => d.kind === "feat").map((d) => d.feat ?? ""), draft.raceFeat ?? ""];
+    if (feats.some((f) => norm(f) === "robusto")) hpMax += 2 * level;
+  }
 
-  // Salvaguardas vêm da 1ª classe (regra 5e); proficiências são a união das classes.
+  // Salvaguardas vêm da 1ª classe (regra 5e); proficiências são a união das classes + traços.
   const saves = classes[0]?.saves ?? [];
-  const proficiencies = [...new Set(classes.flatMap((c) => c.proficiencies))];
-  const castAbility = classes.find((c) => c.spellcastingAbility)?.spellcastingAbility ?? null;
+  const proficiencies = [
+    ...new Set([...classes.flatMap((c) => c.proficiencies), ...resolvedRaceTraits(draft.raceTraits).flatMap((t) => t.proficiencies ?? [])]),
+  ];
+
+  // Magias: classe de conjuração principal = 1ª classe conjuradora
+  const caps = allSpellCaps(classEntries, scores);
+  const castAbility = caps[0]?.profile.ability ?? null;
+  const granted = classEntries.flatMap(grantedSpellsFor);
+  const known = [...draft.knownSpells];
+  for (const g of granted) if (!known.some((s) => norm(s.name) === norm(g.name))) known.push(g);
   const spells: Sheet["spells"] = castAbility
     ? {
         saveDC: 8 + profBonus + abilityMod(scores[castAbility]),
         attackMod: profBonus + abilityMod(scores[castAbility]),
         castingAbility: castAbility,
         cantrips: draft.cantrips,
-        known: draft.knownSpells,
+        known,
       }
-    : {
-        saveDC: 8,
-        attackMod: 0,
-        castingAbility: "int",
-        cantrips: draft.cantrips,
-        known: draft.knownSpells,
-      };
+    : { saveDC: 8, attackMod: 0, castingAbility: "int", cantrips: draft.cantrips, known };
 
-  // Features = características de raça/talentos + de classe, já montadas com descrição
-  // pela página (via extraFeatures). raceTraits guarda apenas os nomes selecionados.
-  const features: Feature[] = draft.extraFeatures;
+  // Características: raça + classe/subclasse + talentos + antecedente
+  const bg = findBackground(draft.background);
+  const featFeatures: Feature[] = [
+    ...(draft.raceFeat ? [featFeature(draft.raceFeat, draft.raceName || "Raça", 1)] : []),
+    ...draft.advancement.filter((d) => d.kind === "feat" && d.feat).map((d) => featFeature(d.feat!, d.className, d.level)),
+  ];
+  const features: Feature[] = [
+    ...raceFeatures(draft),
+    ...classFeaturesFor(classEntries),
+    ...featFeatures,
+    ...(draft.extraFeatures ?? []),
+    ...(bg
+      ? [{ name: bg.feature.name, source: `Antecedente: ${bg.name}`, description: bg.feature.description, origin: { kind: "background" as const, name: bg.name } }]
+      : []),
+  ];
+
+  const skillNames = [...new Set([...fixedSkills(draft), ...draft.skills])];
+  const skills: Skill[] = skillNames.map((name) => ({ name, proficient: true }));
 
   const sheet: Sheet = {
-    species: draft.raceName,
-    classes: classes
-      .filter((c) => c.name.trim())
-      .map((c) => ({
-        name: c.name,
-        ...(c.subclass ? { subclass: c.subclass } : {}),
-        level: c.level,
-      })),
+    species: draft.subraceName ? `${draft.raceName} (${draft.subraceName})` : draft.raceName,
+    raceInfo: { race: draft.raceName, ...(draft.subraceName ? { subrace: draft.subraceName } : {}), choices: draft.traitChoices },
+    advancement: draft.advancement,
+    classes: classEntries,
     background: draft.background,
     ...(draft.alignment ? { alignment: draft.alignment } : {}),
     abilityScores: scores,
     saves,
-    skills: draft.skills.map((name) => ({ name, proficient: true })),
+    skills,
     proficiencies,
-    languages: draft.languages,
+    languages: [...new Set([...draft.languages, ...draft.extraLanguages])],
     ac,
     speed: draft.speed,
     initiativeBonus: dexMod,
@@ -395,7 +341,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     weapons: [],
     features,
     spells,
-    inventory: { coins: { gp: 0, sp: 0, cp: 0 }, items: draft.inventoryItems },
+    inventory: { coins: draft.coins, items: draft.inventoryItems },
     appearance: { size: draft.size, height: "" },
     personality: { trait: "", ideal: "", flaw: "", why: "", backstory: "" },
   };
@@ -410,8 +356,8 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     hpCurrent: hpMax,
     hpMax,
     hpTemp: 0,
-    spellSlots: spellSlotsForClasses(classes),
-    resources: [],
+    spellSlots: spellSlotsFor(classEntries),
+    resources: classResourcesFor(classEntries, scores),
   };
 }
 
@@ -424,4 +370,22 @@ export function slugifyName(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
+}
+
+/** Nomes das magias raciais (para mostrar na criação). */
+export function raceSpells(draft: Pick<CharacterDraft, "raceTraits">): string[] {
+  return resolvedRaceTraits(draft.raceTraits).flatMap((t) => t.spells ?? []);
+}
+
+/** Compatibilidade com a API antiga: soma os limites das classes conjuradoras. */
+export function spellCapacity(
+  classes: { name: string; level: number; subclass?: string }[],
+  scores: AbilityScores,
+): { cantrips: number | null; spells: number | null } {
+  const caps = allSpellCaps(classes, scores);
+  if (caps.length === 0) return { cantrips: null, spells: null };
+  return {
+    cantrips: caps.reduce((total, cap) => total + cap.cantrips, 0),
+    spells: caps.reduce((total, cap) => total + cap.spells, 0),
+  };
 }

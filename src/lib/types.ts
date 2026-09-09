@@ -87,6 +87,8 @@ export type Feature = {
   name: string;
   source: string;
   description: string;
+  /** Origem estruturada (classe/subclasse/raça/talento/antecedente) — usada pela automação de nível. */
+  origin?: FeatureOrigin;
 };
 
 export type Spell = {
@@ -101,6 +103,10 @@ export type Spell = {
   ritual?: boolean;
   concentration?: boolean;
   prepared?: boolean;
+  /** Classe pela qual a magia foi aprendida (multiclasse); ausente em fichas antigas. */
+  classSource?: string;
+  /** Magia sempre preparada concedida por subclasse/raça (não conta no limite). */
+  granted?: string;
 };
 
 /** Livro de origem de uma magia do catálogo. */
@@ -252,8 +258,31 @@ export type ClassEntry = {
   level: number;
 };
 
+/** Decisão tomada num nível de "Incremento no Valor de Habilidade": atributos ou talento. */
+export type AsiDecision = {
+  className: string;
+  level: number;
+  kind: "asi" | "feat";
+  /** kind = "asi": incrementos aplicados (ex.: { str: 2 } ou { dex: 1, con: 1 }). */
+  abilities?: Partial<Record<AbilityKey, number>>;
+  /** kind = "feat": nome do talento escolhido. */
+  feat?: string;
+};
+
+/** Escolhas feitas na raça (para reconstruir/validar a ficha). */
+export type RaceInfo = {
+  race: string;
+  subrace?: string;
+  /** Escolhas embutidas em traços (ex.: "Ancestral Dracônico" -> "Vermelho"). */
+  choices?: Record<string, string>;
+};
+
 export type Sheet = {
   species: string;
+  /** Raça/sub-raça estruturadas (fichas antigas só têm `species`). */
+  raceInfo?: RaceInfo;
+  /** Decisões de ASI/talento por nível de classe. */
+  advancement?: AsiDecision[];
   classes: ClassEntry[];
   background: string;
   alignment?: string;
@@ -349,3 +378,211 @@ export type DiceRoll = {
 export const abilityMod = (score: number) => Math.floor((score - 10) / 2);
 
 export const formatMod = (mod: number) => (mod >= 0 ? `+${mod}` : `${mod}`);
+
+// ============================================================================
+// Catálogos de regras (dados autorados a partir dos livros em PT-BR)
+// ============================================================================
+
+/** Livro de origem de um conteúdo do catálogo. */
+export type SourceBook =
+  | "PHB" // Livro do Jogador
+  | "XGtE" // Guia de Xanathar
+  | "TCoE" // Caldeirão de Tasha
+  | "VGtM" // Guia de Volo
+  | "MToF" // Tomo dos Inimigos de Mordenkainen
+  | "SCAG" // Guia da Costa da Espada
+  | "EEPC" // Elemental Evil
+  | "Homebrew";
+
+export const SOURCE_LABELS: Record<SourceBook, string> = {
+  PHB: "Livro do Jogador",
+  XGtE: "Guia de Xanathar",
+  TCoE: "Caldeirão de Tasha",
+  VGtM: "Guia de Volo",
+  MToF: "Tomo de Mordenkainen",
+  SCAG: "Costa da Espada",
+  EEPC: "Elemental Evil",
+  Homebrew: "Homebrew",
+};
+
+/** Origem estruturada de uma característica na ficha (para automação de nível). */
+export type FeatureOrigin = {
+  kind: "class" | "subclass" | "race" | "feat" | "background" | "custom";
+  /** Nome da classe/raça/talento/antecedente de origem. */
+  name: string;
+  /** Nível de classe em que foi ganha (classe/subclasse). */
+  level?: number;
+};
+
+/** Recurso rastreável concedido por uma característica (usos por descanso). */
+export type FeatureResource = {
+  /** Nome do recurso na ficha (default: nome da característica). */
+  name?: string;
+  /** Máximo de usos: número fixo ou derivado ("prof" = bônus de proficiência, "level" = nível na classe,
+   *  "cha" etc. = modificador do atributo; mínimo 1). */
+  max: number | "prof" | "level" | "str" | "dex" | "con" | "int" | "wis" | "cha";
+  recharge: "short" | "long" | "dawn";
+  /** Progressão do máximo por nível de classe, ex.: Fúria { "1": 2, "3": 3, "6": 4, "12": 5, "17": 6 }.
+   *  Vale o maior limiar <= nível atual; sobrescreve `max`. */
+  byLevel?: Record<string, number>;
+};
+
+/** Característica de classe ou subclasse, com descrição completa. */
+export type ClassFeatureDef = {
+  name: string;
+  /** Nível de classe em que é ganha (1–20). */
+  level: number;
+  description: string;
+  /** true para "Incremento no Valor de Habilidade" (abre a escolha atributos × talento). */
+  asi?: boolean;
+  /** Recurso com usos rastreáveis que a característica concede. */
+  resource?: FeatureResource;
+};
+
+/** Subclasse (caminho, colégio, domínio, círculo, origem, arquétipo, tradição, juramento, patrono). */
+export type SubclassDef = {
+  name: string;
+  source: SourceBook;
+  /** Descrição curta (1–2 frases). */
+  description: string;
+  features: ClassFeatureDef[];
+  /** Magias sempre preparadas/adicionais por nível de classe: { "1": ["Bênção", ...] } (nomes iguais ao catálogo de magias). */
+  spells?: Record<string, string[]>;
+};
+
+/** Regras de multiclasse de uma classe (PHB cap. 6). */
+export type MulticlassRule = {
+  /** Pré-requisito de atributo, ex.: "Força 13". */
+  prerequisite: string;
+  /** Proficiências ganhas ao entrar na classe por multiclasse (texto). */
+  proficiencies: string;
+  /** Quantas perícias ganha ao entrar por multiclasse (Bardo/Ladino/Patrulheiro = 1; demais = 0). */
+  skills: number;
+};
+
+/** Classe com progressão completa (níveis 1–20) e subclasses com descrição. */
+export type ClassDef = {
+  name: string;
+  source: SourceBook;
+  /** Rótulo da escolha de subclasse ("Caminho Primitivo", "Colégio de Bardo"...). */
+  subclassLabel: string;
+  /** Nível em que a subclasse é escolhida (1, 2 ou 3). */
+  subclassLevel: number;
+  /** Características da classe base em todos os níveis, incluindo os ASI (asi: true). */
+  features: ClassFeatureDef[];
+  subclasses: SubclassDef[];
+  multiclass: MulticlassRule;
+};
+
+/** Talento (feat) com descrição completa. */
+export type FeatDef = {
+  name: string;
+  source: SourceBook;
+  prerequisite?: string;
+  description: string;
+  /** Aumento de atributo embutido no talento (ex.: +1 em For ou Des). */
+  abilityIncrease?: { choose: AbilityKey[]; amount: number };
+  /** Talento racial: raças que podem escolhê-lo. */
+  races?: string[];
+};
+
+/** Traço racial com descrição e efeitos mecânicos automáticos. */
+export type RaceTraitDef = {
+  name: string;
+  description: string;
+  /** Perícias em que o traço concede proficiência. */
+  skills?: SkillName[];
+  /** Perícias à escolha concedidas pelo traço. */
+  skillChoices?: number;
+  /** Idiomas adicionais à escolha concedidos pelo traço. */
+  extraLanguages?: number;
+  /** Talento à escolha concedido pelo traço (Humano variante). */
+  feat?: boolean;
+  /** Escolha embutida no traço (ex.: Ancestral Dracônico → tipo de dragão). */
+  choice?: { label: string; options: string[] };
+  /** Truques/magias conhecidos pelo traço (nomes iguais ao catálogo de magias). */
+  spells?: string[];
+  /** Proficiências textuais (armas, armaduras, ferramentas). */
+  proficiencies?: string[];
+};
+
+export type SubraceDef = {
+  name: string;
+  source?: SourceBook;
+  description?: string;
+  abilityScoreIncrease: AbilityScoreIncrease;
+  traits: RaceTraitDef[];
+  /** Sobrescreve o deslocamento da raça. */
+  speed?: number;
+};
+
+export type RaceDef = {
+  name: string;
+  source: SourceBook;
+  /** Descrição curta (1–2 frases). */
+  description: string;
+  abilityScoreIncrease: AbilityScoreIncrease;
+  size: "Pequeno" | "Médio";
+  /** Deslocamento em metros. */
+  speed: number;
+  /** Idiomas fixos (ex.: ["Comum", "Anão"]). */
+  languages: string[];
+  /** Quantos idiomas adicionais à escolha a raça concede. */
+  extraLanguages: number;
+  traits: RaceTraitDef[];
+  subraces: SubraceDef[];
+  /** true quando é obrigatório escolher uma sub-raça. */
+  subraceRequired?: boolean;
+};
+
+/** Idiomas do PHB (padrão e exóticos) + os das raças de Volo. */
+export const LANGUAGES: readonly string[] = [
+  "Comum",
+  "Anão",
+  "Élfico",
+  "Gigante",
+  "Gnômico",
+  "Goblin",
+  "Halfling",
+  "Orc",
+  "Abissal",
+  "Celestial",
+  "Dracônico",
+  "Dialeto Subterrâneo",
+  "Infernal",
+  "Primordial",
+  "Silvestre",
+  "Subcomum",
+  "Aarakocra",
+  "Aéreo (Auran)",
+  "Aquático (Aquan)",
+  "Ígneo (Ignan)",
+  "Terrano (Terran)",
+];
+
+/** Referência a um item do equipamento inicial de uma classe. */
+export type EquipmentRef =
+  | { item: string; qty?: number }
+  | {
+      /** Coringa: o jogador escolhe um item da categoria. */
+      any:
+        | "arma simples"
+        | "arma marcial"
+        | "arma simples corpo-a-corpo"
+        | "arma marcial corpo-a-corpo"
+        | "instrumento musical"
+        | "ferramentas de artesão"
+        | "kit de jogo";
+      qty?: number;
+    };
+
+/** Uma opção "(a)/(b)" do equipamento inicial. */
+export type EquipmentOption = { label: string; items: EquipmentRef[] };
+
+/** Equipamento inicial estruturado de uma classe. */
+export type StartingEquipmentDef = {
+  choices: EquipmentOption[][];
+  fixed: EquipmentRef[];
+  /** Alternativa em ouro (PHB cap. 5), ex.: "5d4 × 10 po". */
+  gold: string;
+};
