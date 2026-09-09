@@ -61,7 +61,7 @@ export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.local/bin:/usr/local/bin:$PA
 # quem escuta numa porta TCP: "pid cmd" ou vazio
 port_owner() {
   ss -ltnpH "sport = :$1" 2>/dev/null | grep -oE 'pid=[0-9]+,fd' | head -1 | sed 's/pid=//;s/,fd//' | while read -r pid; do
-    [ -n "$pid" ] && printf '%s %s' "$pid" "$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | cut -c1-120)"
+    [ -n "$pid" ] && printf '%s %s' "$pid" "$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | cut -c1-120 | sed 's/ *$//')"
   done
   return 0
 }
@@ -402,7 +402,7 @@ phase_verify() {
   base="http://127.0.0.1:$port"
 
   detect_pm2
-  [ "$PM2_STATUS" = "online" ] && ok "pm2: online (pid $PM2_PID)" || bad "pm2: status '${PM2_STATUS:-inexistente}'"
+  [ "$PM2_STATUS" = "online" ] && ok "pm2: '$APP_NAME' online" || bad "pm2: status '${PM2_STATUS:-inexistente}'"
   case "$PM2_SCRIPT" in *server/target/release/app-dnd*) ok "pm2 executa o binário Rust" ;; *) bad "pm2 executa '$PM2_SCRIPT', não o binário Rust" ;; esac
 
   wait_http "$base/api/health" 15 && ok "GET /api/health → 200 em $base" || bad "/api/health não respondeu em 15 s (pm2 logs $APP_NAME)"
@@ -410,8 +410,10 @@ phase_verify() {
   detect_pm2
   [ "${PM2_RESTARTS:-0}" = "0" ] && [ "${PM2_UNSTABLE:-0}" = "0" ] && ok "processo estável (0 restarts após 3 s)" || bad "processo reiniciou ($PM2_RESTARTS restarts) — veja pm2 logs $APP_NAME"
 
-  local owner; owner=$(port_owner "$port")
-  case "$owner" in *app-dnd*) ok "porta $port pertence ao binário (pid ${owner%% *})" ;; *) bad "porta $port: '${owner:-ninguém}'" ;; esac
+  local owner pid; owner=$(port_owner "$port"); pid="${owner%% *}"
+  case "$owner" in *app-dnd*) ok "porta $port pertence ao binário (pid $pid)" ;; *) bad "porta $port: '${owner:-ninguém}'" ;; esac
+  # pm2 pode reportar pid 0 logo após o start; o dono da porta é a fonte confiável
+  [ -n "$pid" ] && [ "$pid" != "0" ] && PM2_PID="$pid"
   if [ "$host" = "127.0.0.1" ]; then
     ss -ltnH "sport = :$port" 2>/dev/null | grep -q '127.0.0.1' && ok "escutando só em 127.0.0.1 (atrás do nginx)" || warn "esperava bind em 127.0.0.1"
   fi
@@ -489,10 +491,21 @@ phase_rollback() {
   if [ -d "$STATE_DIR/next-old" ]; then mv "$STATE_DIR/next-old" .next; ok ".next/ restaurado"; fi
   if [ "$PKG" = "bun" ]; then bun install; else npm install --no-audit --no-fund; fi
   [ -d .next ] || { if [ "$PKG" = "bun" ]; then bun run build; else npm run build; fi; }
-  pm2 start ecosystem.config.cjs --update-env >/dev/null && pm2 save --force >/dev/null 2>&1 || true
   local port; port=$(cat "$STATE_DIR/old-port" 2>/dev/null || true); port="${port:-8080}"
-  wait_http "http://127.0.0.1:$port/" 30 && ok "Next respondendo em :$port" || bad "Next não respondeu em :$port (pm2 logs $APP_NAME)"
+  # o ecosystem antigo tem caminhos fixos (/home/paiva/...); se não bater, sobe direto
+  if ! pm2 start ecosystem.config.cjs --update-env >/dev/null 2>&1; then
+    warn "ecosystem.config.cjs antigo não subiu (caminho fixo?); iniciando '$PKG run start' direto"
+    pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+    if [ "$PKG" = "bun" ]; then
+      PORT="$port" pm2 start "$(command -v bun)" --name "$APP_NAME" --interpreter none --update-env -- run start -- --port "$port" >/dev/null
+    else
+      PORT="$port" pm2 start npm --name "$APP_NAME" --update-env -- start -- --port "$port" >/dev/null
+    fi
+  fi
+  pm2 save --force >/dev/null 2>&1 || true
+  wait_http "http://127.0.0.1:$port/" 45 && ok "Next respondendo em :$port" || bad "Next não respondeu em :$port (pm2 logs $APP_NAME)"
   info "banco não foi alterado; backups em $BACKUP_DIR"
+  info "para voltar à versão Rust depois: git checkout main && bash scripts/deploy-vps.sh deploy"
   summary "rollback"
 }
 
