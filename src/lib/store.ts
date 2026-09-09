@@ -1,5 +1,3 @@
-"use client";
-
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Character, DiceRoll, Sheet } from "./types";
@@ -195,14 +193,17 @@ export const useStore = create<Store>()(
           ]);
           const map: Record<string, Character> = {};
           for (const c of characters) map[c.id] = c;
-          for (const [id, pin] of Object.entries(get().pins)) {
-            try {
-              const { character } = await api.getCharacter(id, pin);
-              map[id] = character;
-            } catch {
-              // PIN removido/alterado no servidor: mantém só o resumo público.
-            }
-          }
+          // Fichas já destravadas neste aparelho: busca as versões completas em paralelo.
+          await Promise.all(
+            Object.entries(get().pins).map(async ([id, pin]) => {
+              try {
+                const { character } = await api.getCharacter(id, pin);
+                map[id] = character;
+              } catch {
+                // PIN removido/alterado no servidor: mantém só o resumo público.
+              }
+            }),
+          );
           set({ characters: map, rolls });
         } catch {
           // offline: mantém o estado persistido / seed
@@ -244,26 +245,38 @@ function connectSse(
         const data = JSON.parse((ev as MessageEvent).data) as {
           character: Character;
         };
-        const previous = get().characters[data.character.id];
-        set({
-          characters: { ...get().characters, [data.character.id]: data.character },
-        });
-        const pin = get().pins[data.character.id];
-        if (pin) {
+        const incoming = data.character;
+        const previous = get().characters[incoming.id];
+        const pin = get().pins[incoming.id];
+        if (pin && previous) {
+          // Ficha destravada aqui: NÃO troca pela versão pública (zeraria PV/slots na
+          // tela por um instante). Só atualiza a identidade e busca a versão completa.
+          set({
+            characters: {
+              ...get().characters,
+              [incoming.id]: {
+                ...previous,
+                playerName: incoming.playerName,
+                characterName: incoming.characterName,
+                color: incoming.color,
+              },
+            },
+          });
           void api
-            .getCharacter(data.character.id, pin)
+            .getCharacter(incoming.id, pin)
             .then(({ character }) =>
-              set({
-                characters: { ...get().characters, [character.id]: character },
-              }),
+              set({ characters: { ...get().characters, [character.id]: character } }),
             )
             .catch(() => {
-              // Se o PIN não servir mais, rebaixa para o resumo público recebido.
+              // PIN não serve mais: rebaixa para o resumo público recebido.
+              set({ characters: { ...get().characters, [incoming.id]: incoming } });
             });
+        } else {
+          set({ characters: { ...get().characters, [incoming.id]: incoming } });
         }
-        if (previous && previous.updatedAt !== data.character.updatedAt) {
+        if (previous && previous.updatedAt !== incoming.updatedAt) {
           get().pushToast({
-            title: `${data.character.characterName} foi atualizado`,
+            title: `${incoming.characterName} foi atualizado`,
             description: "Ficha sincronizada em tempo real.",
           });
         }
