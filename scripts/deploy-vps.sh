@@ -8,7 +8,8 @@
 #   bash scripts/deploy-vps.sh deploy       # fluxo completo, pede confirmação antes de mexer
 #   bash scripts/deploy-vps.sh deploy -y    # idem, sem confirmação
 #   bash scripts/deploy-vps.sh verify       # só valida o deploy Rust atual
-#   bash scripts/deploy-vps.sh cleanup      # mata resíduos do deploy antigo (systemd, Next) e valida
+#   bash scripts/deploy-vps.sh cleanup      # mata resíduos do deploy antigo (systemd, Next DESTA pasta) e valida
+#   APP_DND_PORT=8082 APP_DND_HOST=127.0.0.1 bash scripts/deploy-vps.sh restart   # troca porta/host sem rebuild
 #   bash scripts/deploy-vps.sh rollback     # volta para o deploy anterior (Next.js)
 #
 # Ordem do `deploy` (o app antigo só é derrubado depois que o novo já buildou e
@@ -364,35 +365,62 @@ stop_old_systemd() {
 # Encerra processos do Next (next start/next-server/workers). Os do próprio usuário
 # nesta pasta caem com kill; os de outro usuário (ex.: unit systemd como root) só
 # se o comando/cwd mencionar app-dnd, via sudo. O resto é listado para decisão manual.
-# Lista pids de processos Next, excluindo este script, seus ancestrais e shells que
-# só contêm o padrão na linha de comando (ex.: `bash -c '... next-server ...'`).
+# Um processo é "desta app" só se o cwd, a linha de comando ou o ambiente apontam
+# para ESTA pasta. Outros apps Next do mesmo usuário na VPS NUNCA são tocados.
+belongs_to_this_app() { # pid
+  local pid="$1" cwd cmd
+  cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+  [ "$cwd" = "$ROOT" ] && return 0
+  cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+  case "$cmd" in *"$ROOT"*) return 0 ;; esac
+  tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qE "^(PWD|APP_DND_DB|PM2_HOME_DIR)=.*$ROOT" && return 0
+  return 1
+}
+
+# Lista pids de processos Next DESTA app (cwd/cmd/ambiente nesta pasta), excluindo
+# este script e shells que só contêm o padrão na linha de comando.
 next_pids() {
   local pid cmd
   for pid in $(pgrep -f "next (start|dev)|next-server|next-router-worker" 2>/dev/null || true); do
     [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ] && continue
     cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
     case "$cmd" in *deploy-vps*|*pgrep*|"bash -c "*|"sh -c "*) continue ;; esac
-    printf '%s ' "$pid"
+    belongs_to_this_app "$pid" && printf '%s ' "$pid"
+  done
+  return 0
+}
+
+# Processos Next de OUTRAS pastas (só para informar; nunca são mortos).
+other_next_pids() {
+  local pid cmd
+  for pid in $(pgrep -f "next (start|dev)|next-server|next-router-worker" 2>/dev/null || true); do
+    [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ] && continue
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+    case "$cmd" in *deploy-vps*|*pgrep*|"bash -c "*|"sh -c "*) continue ;; esac
+    belongs_to_this_app "$pid" || printf '%s ' "$pid"
   done
   return 0
 }
 
 kill_next_processes() {
-  local pids; pids=$(next_pids)
-  if [ -z "$pids" ]; then ok "nenhum processo Next rodando"; return 0; fi
+  local others; others=$(other_next_pids)
   local pid user cwd cmd
+  for pid in $others; do
+    cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo "?")
+    info "outro Next (não é desta app, fica intacto): pid=$pid cwd=$cwd"
+  done
+  local pids; pids=$(next_pids)
+  if [ -z "$pids" ]; then ok "nenhum processo Next desta app rodando"; return 0; fi
   for pid in $pids; do
     [ -d "/proc/$pid" ] || continue
     user=$(stat -c %U "/proc/$pid" 2>/dev/null || echo "?")
     cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo "?")
     cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | cut -c1-100 || true)
-    info "next pid=$pid user=$user cwd=$cwd cmd=$cmd"
+    info "next desta app: pid=$pid user=$user cwd=$cwd cmd=$cmd"
     if [ "$user" = "$(id -un)" ]; then
       kill "$pid" 2>/dev/null || true
-    elif printf '%s %s' "$cwd" "$cmd" | grep -q "$APP_NAME"; then
-      sudo kill "$pid" 2>/dev/null || warn "não consegui matar pid $pid (user $user): sudo kill $pid"
     else
-      warn "pid $pid é de '$user' e não parece ser desta app; deixei rodando (mate à mão se for o Next antigo)"
+      sudo kill "$pid" 2>/dev/null || warn "não consegui matar pid $pid (user $user): sudo kill $pid"
     fi
   done
   sleep 2
@@ -515,7 +543,9 @@ phase_verify() {
 
   # resíduos do deploy antigo
   local leftover; leftover=$(next_pids)
-  [ -n "$leftover" ] && bad "ainda há processo Next rodando (pids: $leftover) — rode: bash scripts/deploy-vps.sh cleanup" || ok "nenhum processo Next"
+  [ -n "$leftover" ] && bad "ainda há processo Next DESTA app rodando (pids: $leftover) — rode: bash scripts/deploy-vps.sh cleanup" || ok "nenhum processo Next desta app"
+  local others; others=$(other_next_pids)
+  [ -n "$others" ] && info "outros apps Next na VPS (não são desta app): pids $others" || true
   [ -d .next ] && warn ".next/ ainda existe" || ok "sem .next/"
   detect_systemd
   [ "$SYSTEMD_ACTIVE" = "active" ] && bad "systemd $SYSTEMD_UNIT ativo em paralelo ao pm2" || ok "sem systemd concorrente"
@@ -559,11 +589,17 @@ case "$MODE" in
   verify)
     detect_js; phase_verify; summary "verify" || exit 1 ;;
   cleanup)
-    # resíduos do deploy antigo que ficaram (unit systemd, processos Next de outro usuário)
+    # resíduos do deploy antigo que ficaram (unit systemd, processos Next desta pasta)
     step "Limpeza de resíduos do deploy antigo"
     stop_old_systemd
     kill_next_processes
     detect_js; phase_verify; summary "cleanup" || exit 1 ;;
+  restart)
+    # sobe de novo o binário já compilado, com APP_DND_PORT / APP_DND_HOST novos
+    [ -x "$BIN" ] || die "binário não existe; rode o deploy"
+    pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+    phase_start
+    detect_js; phase_verify; summary "restart" || exit 1 ;;
   rollback)
     phase_rollback ;;
   deploy)
@@ -585,5 +621,5 @@ case "$MODE" in
       exit 1
     fi ;;
   *)
-    die "modo desconhecido '$MODE' (use: check | deploy [-y] | verify | cleanup | rollback)" ;;
+    die "modo desconhecido '$MODE' (use: check | deploy [-y] | verify | cleanup | restart | rollback)" ;;
 esac
