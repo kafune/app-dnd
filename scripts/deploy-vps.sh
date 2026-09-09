@@ -20,6 +20,9 @@
 # Variáveis opcionais: APP_DND_PORT (default: porta do deploy antigo ou 8080),
 #   APP_DND_HOST (default: 127.0.0.1 se há nginx na frente, senão 0.0.0.0),
 #   APP_DND_DB (default: ./data/app-dnd.sqlite)
+#   APP_DND_NGINX_SITE (domínio ou nome do arquivo do site nginx desta app — só
+#     necessário se a VPS serve VÁRIOS sites com proxy_pass e nenhum deles cita
+#     "app-dnd"/"app_dnd" no conteúdo; caso contrário a detecção acerta sozinha)
 # =============================================================================
 set -euo pipefail
 
@@ -102,20 +105,34 @@ PM2_STATUS=""; PM2_SCRIPT=""; PM2_ARGS=""; PM2_CWD=""; PM2_PID=""; PM2_RESTARTS=
 detect_pm2() {
   PM2_STATUS=""; PM2_SCRIPT=""; PM2_ARGS=""; PM2_CWD=""; PM2_PID=""; PM2_RESTARTS=""; PM2_UNSTABLE=""
   have pm2 || return 0
-  local line
-  line=$(pm2 jlist 2>/dev/null | python3 -c '
+  # Um campo por LINHA (não por tab): junção com \t já causou desalinhamento de
+  # campo em produção (uma diferença sutil no formato do jlist fazia "cwd"
+  # aparecer com o valor do pid e vice-versa). Ler linha a linha com mapfile
+  # elimina esse tipo de ambiguidade de vez.
+  local out
+  out=$(pm2 jlist 2>/dev/null | python3 -c '
 import json, sys
 try: apps = json.load(sys.stdin)
 except Exception: apps = []
 for a in apps:
-    if a.get("name") == "'"$APP_NAME"'":
-        e = a.get("pm2_env", {})
-        args = e.get("args", [])
-        if not isinstance(args, list): args = [str(args)]
-        print("\t".join(str(x) for x in [e.get("status",""), e.get("pm_exec_path",""), " ".join(args), e.get("pm_cwd",""), a.get("pid") or "", e.get("restart_time",""), e.get("unstable_restarts","")]))
-        break
-' 2>/dev/null || true)
-  if [ -z "$line" ] && ! have python3; then
+    if a.get("name") != "'"$APP_NAME"'": continue
+    e = a.get("pm2_env") or {}
+    args = e.get("args") or []
+    if not isinstance(args, list): args = [str(args)]
+    for v in [e.get("status") or "", e.get("pm_exec_path") or "",
+              " ".join(str(x) for x in args), e.get("pm_cwd") or "",
+              a.get("pid") or "", e.get("restart_time") or 0,
+              e.get("unstable_restarts") or 0]:
+        print(str(v).replace("\n", " "))
+    break
+' 2>/dev/null | tr -d '\r' || true)
+  if [ -n "$out" ]; then
+    local fields; mapfile -t fields <<<"$out"
+    PM2_STATUS="${fields[0]:-}"; PM2_SCRIPT="${fields[1]:-}"; PM2_ARGS="${fields[2]:-}"
+    PM2_CWD="${fields[3]:-}"; PM2_PID="${fields[4]:-}"; PM2_RESTARTS="${fields[5]:-0}"; PM2_UNSTABLE="${fields[6]:-0}"
+    return 0
+  fi
+  if ! have python3; then
     # sem python3: raspa a tabela do `pm2 describe`
     local desc; desc=$(pm2 describe "$APP_NAME" 2>/dev/null || true)
     printf '%s' "$desc" | grep -q 'status' || return 0
@@ -124,10 +141,7 @@ for a in apps:
     PM2_CWD=$(field 'exec cwd'); PM2_RESTARTS=$(field 'restarts'); PM2_UNSTABLE=$(field 'unstable restarts')
     [ "$PM2_ARGS" = "N/A" ] && PM2_ARGS=""
     PM2_PID=$(pm2 pid "$APP_NAME" 2>/dev/null | tail -1 | tr -d ' ' || true)
-    return 0
   fi
-  [ -n "$line" ] || return 0
-  IFS=$'\t' read -r PM2_STATUS PM2_SCRIPT PM2_ARGS PM2_CWD PM2_PID PM2_RESTARTS PM2_UNSTABLE <<<"$line"
 }
 
 SYSTEMD_UNIT=""; SYSTEMD_ACTIVE=""
@@ -142,13 +156,23 @@ detect_systemd() {
   fi
 }
 
-# Porta de um bloco `upstream NOME { server 127.0.0.1:PORTA; ... }` em qualquer
-# arquivo de config do nginx (o proxy_pass costuma apontar pro nome, não pra porta
-# direto). Conta chaves pra achar o fim do bloco; primeiro `server` com IP local vence.
-resolve_nginx_upstream_port() { # nome_do_upstream
-  awk -v name="$1" '
+# Porta de um bloco `upstream NOME { server 127.0.0.1:PORTA; ... }`. Procura
+# primeiro no arquivo onde o proxy_pass foi visto (o normal, upstream e proxy_pass
+# no mesmo site) e só cai pro resto do nginx se não achar lá. Conta chaves pra
+# achar o fim do bloco; primeiro `server` com IP local dentro dele vence.
+#
+# A linha que ABRE o bloco entra no MESMO ciclo que conta chaves e procura
+# `server` (sem `next` pra pular direto pra próxima linha): um bloco inteiro
+# escrito numa linha só (`upstream x { server 1.2.3.4:9; }`) tem abertura E
+# fechamento nessa linha — pular ela deixava `depth` sem fechar e o awk
+# continuava lendo os PRÓXIMOS ARQUIVOS do glob ainda "dentro" do bloco,
+# podendo pegar a porta do upstream de outro site inteiramente.
+resolve_nginx_upstream_port() { # nome_do_upstream [arquivo_prioritario]
+  local name="$1" primary="${2:-}" files
+  files="${primary:+$primary }$NGINX_CONF_FILES"
+  awk -v name="$name" '
     BEGIN { depth = 0; inblock = 0 }
-    inblock == 0 && $0 ~ ("upstream[ \t]+" name "([ \t]|$)") { inblock = 1; depth = 1; next }
+    inblock == 0 && $0 ~ ("upstream[ \t]+" name "([ \t]|$)") { inblock = 1 }
     inblock == 1 {
       depth += gsub(/\{/, "{")
       depth -= gsub(/\}/, "}")
@@ -158,21 +182,45 @@ resolve_nginx_upstream_port() { # nome_do_upstream
         print s
         exit
       }
-      if (depth <= 0) exit
+      if (depth <= 0) { inblock = 0 }
     }
-  ' $NGINX_CONF_FILES 2>/dev/null | head -1
+  ' $files 2>/dev/null | head -1
 }
 
-NGINX_PORT=""; NGINX_SERVER=""; NGINX_BUFFERING=""; NGINX_FILES=""
+# Numa VPS com um só app atrás do nginx, "achei um proxy_pass" já bastava. Numa
+# VPS com VÁRIOS apps (o caso real aqui: pg, djavanear, erripege, instaVerify...),
+# pegar o primeiro proxy_pass que aparece é perigoso — aponta pra porta de outro
+# projeto. Por isso os candidatos são restritos a arquivos que citam esta app:
+# APP_DND_NGINX_SITE (domínio ou nome de arquivo, se o usuário passar) ou o texto
+# "app-dnd"/"app_dnd" (o comentário e o nome do upstream do site real já têm isso).
+# Sem nenhum dos dois batendo E mais de um candidato, NÃO adivinha.
+NGINX_PORT=""; NGINX_SERVER=""; NGINX_BUFFERING=""; NGINX_FILES=""; NGINX_AMBIGUOUS=""
 detect_nginx() {
-  NGINX_PORT=""; NGINX_SERVER=""; NGINX_BUFFERING=""; NGINX_FILES=""
+  NGINX_PORT=""; NGINX_SERVER=""; NGINX_BUFFERING=""; NGINX_FILES=""; NGINX_AMBIGUOUS=""
   local dirs="${NGINX_DIRS:-/etc/nginx/sites-enabled /etc/nginx/conf.d}"
   NGINX_CONF_FILES="${NGINX_CONF_GLOB:-/etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*}"
   # -r é obrigatório: passar um DIRETÓRIO ao grep sem -r não procura dentro dele
   # (achava sempre vazio, mesmo com arquivos presentes). Segue symlink de arquivo
   # (sites-enabled/x -> sites-available/x) normalmente, só não entra em subdiretórios.
-  NGINX_FILES=$(grep -rlsE 'proxy_pass\s+http://[A-Za-z0-9_.-]+(:[0-9]+)?\s*;' $dirs 2>/dev/null | tr '\n' ' ' || true)
-  [ -n "$NGINX_FILES" ] || return 0
+  local all_files
+  all_files=$(grep -rlsE 'proxy_pass\s+http://[A-Za-z0-9_.-]+(:[0-9]+)?\s*;' $dirs 2>/dev/null || true)
+  [ -n "$all_files" ] || return 0
+
+  local candidates=""
+  if [ -n "${APP_DND_NGINX_SITE:-}" ]; then
+    candidates=$(printf '%s\n' "$all_files" | grep -iF -- "$APP_DND_NGINX_SITE" || true)
+    [ -n "$candidates" ] || candidates=$(printf '%s\n' "$all_files" | xargs -r grep -lsi -- "$APP_DND_NGINX_SITE" 2>/dev/null || true)
+  fi
+  [ -n "$candidates" ] || candidates=$(printf '%s\n' "$all_files" | xargs -r grep -lsiE 'app[_-]?dnd' 2>/dev/null || true)
+  if [ -z "$candidates" ]; then
+    if [ "$(printf '%s\n' "$all_files" | grep -c .)" -eq 1 ]; then
+      candidates="$all_files"  # só existe 1 site com proxy_pass no nginx inteiro: assume que é este
+    else
+      NGINX_AMBIGUOUS=$(printf '%s' "$all_files" | tr '\n' ' ')
+      return 0
+    fi
+  fi
+  NGINX_FILES=$(printf '%s' "$candidates" | tr '\n' ' ')
 
   # pega o alvo do primeiro proxy_pass ativo (host:porta direto, ou nome de upstream)
   local f target
@@ -182,7 +230,7 @@ detect_nginx() {
     if printf '%s' "$target" | grep -qE '^(127\.0\.0\.1|localhost):[0-9]+$'; then
       NGINX_PORT="${target##*:}"
     else
-      NGINX_PORT=$(resolve_nginx_upstream_port "$target")
+      NGINX_PORT=$(resolve_nginx_upstream_port "$target" "$f")
     fi
     [ -n "$NGINX_PORT" ] && break
   done
@@ -242,6 +290,9 @@ phase_check() {
   if [ -n "$NGINX_PORT" ]; then
     info "nginx faz proxy para 127.0.0.1:$NGINX_PORT (server_name: ${NGINX_SERVER:-?}; arquivos: $NGINX_FILES)"
     [ "$NGINX_BUFFERING" = "off" ] && ok "nginx tem proxy_buffering off (SSE ok)" || warn "nginx SEM 'proxy_buffering off' — o SSE vai atrasar; veja README"
+  elif [ -n "$NGINX_AMBIGUOUS" ]; then
+    warn "vários sites nginx com proxy_pass e nenhum menciona 'app-dnd'; não escolhi nenhum pra não apontar pra porta de outro projeto"
+    info "candidatos: $NGINX_AMBIGUOUS — rode com APP_DND_NGINX_SITE=<domínio ou nome do arquivo> pra dizer qual é o certo"
   elif [ -n "$NGINX_FILES" ]; then
     warn "achei proxy_pass em $NGINX_FILES mas não consegui resolver a porta (upstream com nome que não achei, ou sintaxe fora do comum) — confira à mão"
   else
@@ -580,6 +631,8 @@ phase_verify() {
       local https; https=$(http_code -k --resolve "$NGINX_SERVER:443:127.0.0.1" "https://$NGINX_SERVER/api/health")
       [ "$https" = "200" ] && ok "via nginx HTTPS → 200" || info "via nginx HTTPS → $https (ignorável se não há TLS local)"
     fi
+  elif [ -n "$NGINX_AMBIGUOUS" ]; then
+    info "vários sites nginx no ar, nenhum identificado como este app (candidatos: $NGINX_AMBIGUOUS) — use APP_DND_NGINX_SITE se quiser essa checagem"
   else
     info "sem nginx detectado; app acessível direto em $host:$port"
   fi
