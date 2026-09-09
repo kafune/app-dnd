@@ -33,6 +33,7 @@ git pull
 bash scripts/deploy-vps.sh check       # inventário: pm2, systemd, portas, nginx, banco, toolchain (não muda nada)
 bash scripts/deploy-vps.sh deploy      # fluxo completo, pede confirmação antes de mexer
 bash scripts/deploy-vps.sh verify      # revalida o deploy atual quando quiser
+bash scripts/deploy-vps.sh cleanup     # mata resíduos do deploy antigo (unit systemd, Next de outro usuário) e revalida
 bash scripts/deploy-vps.sh rollback    # emergência: volta o código e o Next do deploy anterior
 ```
 

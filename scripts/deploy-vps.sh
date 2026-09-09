@@ -8,6 +8,7 @@
 #   bash scripts/deploy-vps.sh deploy       # fluxo completo, pede confirmação antes de mexer
 #   bash scripts/deploy-vps.sh deploy -y    # idem, sem confirmação
 #   bash scripts/deploy-vps.sh verify       # só valida o deploy Rust atual
+#   bash scripts/deploy-vps.sh cleanup      # mata resíduos do deploy antigo (systemd, Next) e valida
 #   bash scripts/deploy-vps.sh rollback     # volta para o deploy anterior (Next.js)
 #
 # Ordem do `deploy` (o app antigo só é derrubado depois que o novo já buildou e
@@ -132,7 +133,9 @@ SYSTEMD_UNIT=""; SYSTEMD_ACTIVE=""
 detect_systemd() {
   SYSTEMD_UNIT=""; SYSTEMD_ACTIVE=""
   have systemctl || return 0
-  if systemctl list-unit-files 2>/dev/null | grep -qE "^${APP_NAME}\.service"; then
+  # captura antes de filtrar: `systemctl | grep -q` pode falhar por SIGPIPE (falso negativo)
+  local units; units=$(systemctl list-unit-files --type=service --no-legend --no-pager 2>/dev/null || true)
+  if printf '%s\n' "$units" | grep -qE "^${APP_NAME}\.service"; then
     SYSTEMD_UNIT="${APP_NAME}.service"
     SYSTEMD_ACTIVE=$(systemctl is-active "$SYSTEMD_UNIT" 2>/dev/null || true)
   fi
@@ -344,27 +347,65 @@ phase_remove() {
   fi
   echo "${OLD_PORT:-}" > "$STATE_DIR/old-port"
 
-  detect_systemd
-  if [ -n "$SYSTEMD_UNIT" ]; then
-    sudo systemctl stop "$SYSTEMD_UNIT" 2>/dev/null || true
-    sudo systemctl disable "$SYSTEMD_UNIT" 2>/dev/null || true
-    [ "$(systemctl is-active "$SYSTEMD_UNIT" 2>/dev/null || true)" = "active" ] && bad "systemd $SYSTEMD_UNIT ainda ativo" || ok "systemd $SYSTEMD_UNIT parado e desabilitado (arquivo da unit mantido)"
-  fi
+  stop_old_systemd
+  kill_next_processes
+}
 
-  # processos órfãos do Next nesta pasta
-  local pids; pids=$(pgrep -f "next (start|dev)|next-server|next-router-worker" 2>/dev/null || true)
-  if [ -n "$pids" ]; then
-    for pid in $pids; do
-      if grep -qs "$ROOT" "/proc/$pid/environ" 2>/dev/null || [ "$(readlink -f "/proc/$pid/cwd" 2>/dev/null)" = "$ROOT" ]; then
-        kill "$pid" 2>/dev/null || true
-      fi
-    done
+# Para e desabilita a unit systemd do app antigo (pede sudo). O arquivo da unit fica.
+stop_old_systemd() {
+  detect_systemd
+  [ -n "$SYSTEMD_UNIT" ] || return 0
+  info "systemd $SYSTEMD_UNIT ($SYSTEMD_ACTIVE): $(systemctl show -p ExecStart --value "$SYSTEMD_UNIT" 2>/dev/null | grep -oE 'argv\[\]=[^;]+' | head -1 || true)"
+  sudo systemctl disable --now "$SYSTEMD_UNIT" || warn "sudo systemctl disable --now $SYSTEMD_UNIT falhou (rode à mão)"
+  sleep 1
+  [ "$(systemctl is-active "$SYSTEMD_UNIT" 2>/dev/null || true)" = "active" ] && bad "systemd $SYSTEMD_UNIT ainda ativo" || ok "systemd $SYSTEMD_UNIT parado e desabilitado (arquivo da unit mantido)"
+}
+
+# Encerra processos do Next (next start/next-server/workers). Os do próprio usuário
+# nesta pasta caem com kill; os de outro usuário (ex.: unit systemd como root) só
+# se o comando/cwd mencionar app-dnd, via sudo. O resto é listado para decisão manual.
+# Lista pids de processos Next, excluindo este script, seus ancestrais e shells que
+# só contêm o padrão na linha de comando (ex.: `bash -c '... next-server ...'`).
+next_pids() {
+  local pid cmd
+  for pid in $(pgrep -f "next (start|dev)|next-server|next-router-worker" 2>/dev/null || true); do
+    [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ] && continue
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+    case "$cmd" in *deploy-vps*|*pgrep*|"bash -c "*|"sh -c "*) continue ;; esac
+    printf '%s ' "$pid"
+  done
+  return 0
+}
+
+kill_next_processes() {
+  local pids; pids=$(next_pids)
+  if [ -z "$pids" ]; then ok "nenhum processo Next rodando"; return 0; fi
+  local pid user cwd cmd
+  for pid in $pids; do
+    [ -d "/proc/$pid" ] || continue
+    user=$(stat -c %U "/proc/$pid" 2>/dev/null || echo "?")
+    cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || echo "?")
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | cut -c1-100 || true)
+    info "next pid=$pid user=$user cwd=$cwd cmd=$cmd"
+    if [ "$user" = "$(id -un)" ]; then
+      kill "$pid" 2>/dev/null || true
+    elif printf '%s %s' "$cwd" "$cmd" | grep -q "$APP_NAME"; then
+      sudo kill "$pid" 2>/dev/null || warn "não consegui matar pid $pid (user $user): sudo kill $pid"
+    else
+      warn "pid $pid é de '$user' e não parece ser desta app; deixei rodando (mate à mão se for o Next antigo)"
+    fi
+  done
+  sleep 2
+  pids=$(next_pids)
+  if [ -z "$pids" ]; then ok "processos Next encerrados"; else
+    for pid in $pids; do kill -9 "$pid" 2>/dev/null || sudo kill -9 "$pid" 2>/dev/null || true; done
     sleep 1
-    pids=$(pgrep -f "next (start|dev)|next-server" 2>/dev/null || true)
-    [ -z "$pids" ] && ok "processos Next encerrados" || warn "ainda há processos Next fora desta pasta: $pids"
-  else
-    ok "nenhum processo Next rodando"
+    pids=$(next_pids)
+    [ -z "$pids" ] && ok "processos Next encerrados (com kill -9)" || warn "ainda há processos Next: $pids"
   fi
+}
+
+phase_remove_tail() {
 
   # artefatos: guarda o .next (rollback rápido) e limpa o que sobrou
   if [ -d .next ]; then rm -rf "$STATE_DIR/next-old"; mv .next "$STATE_DIR/next-old"; ok ".next/ movido para .deploy/next-old (rollback)"; fi
@@ -473,7 +514,8 @@ phase_verify() {
   fi
 
   # resíduos do deploy antigo
-  pgrep -f "next-server|next start" >/dev/null 2>&1 && bad "ainda há processo Next rodando" || ok "nenhum processo Next"
+  local leftover; leftover=$(next_pids)
+  [ -n "$leftover" ] && bad "ainda há processo Next rodando (pids: $leftover) — rode: bash scripts/deploy-vps.sh cleanup" || ok "nenhum processo Next"
   [ -d .next ] && warn ".next/ ainda existe" || ok "sem .next/"
   detect_systemd
   [ "$SYSTEMD_ACTIVE" = "active" ] && bad "systemd $SYSTEMD_UNIT ativo em paralelo ao pm2" || ok "sem systemd concorrente"
@@ -516,6 +558,12 @@ case "$MODE" in
     phase_check; summary "check" || exit 1 ;;
   verify)
     detect_js; phase_verify; summary "verify" || exit 1 ;;
+  cleanup)
+    # resíduos do deploy antigo que ficaram (unit systemd, processos Next de outro usuário)
+    step "Limpeza de resíduos do deploy antigo"
+    stop_old_systemd
+    kill_next_processes
+    detect_js; phase_verify; summary "cleanup" || exit 1 ;;
   rollback)
     phase_rollback ;;
   deploy)
@@ -526,6 +574,7 @@ case "$MODE" in
     phase_build
     phase_backup
     phase_remove
+    phase_remove_tail
     [ "$FAILS" -eq 0 ] || { warn "houve falhas na remoção; subindo mesmo assim para não ficar sem app"; }
     phase_start
     phase_verify
@@ -536,5 +585,5 @@ case "$MODE" in
       exit 1
     fi ;;
   *)
-    die "modo desconhecido '$MODE' (use: check | deploy [-y] | verify | rollback)" ;;
+    die "modo desconhecido '$MODE' (use: check | deploy [-y] | verify | cleanup | rollback)" ;;
 esac
