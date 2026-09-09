@@ -200,7 +200,13 @@ Não vamos implementar agora, mas pensados pra evoluir:
 
 ## Status atual do app
 
-O app real já está implementado em **Next.js 16.2.4 + React 19 + Tailwind 4**, usando **SQLite local (`better-sqlite3`) + SSE** no lugar do Supabase planejado originalmente. A estrutura atual usa rotas em português (`/personagem/[id]`) e APIs locais em `/api/characters`, `/api/rolls` e `/api/events`.
+**Set/2026 — reescrita para performance.** O backend Next.js/Node foi substituído por um binário
+Rust (axum + rusqlite) que embute o frontend (agora React + Vite, sem SSR). Mesma API HTTP, mesmo
+esquema SQLite, mesmo SSE. Ganhos: ~10 MB de RAM em vez de ~200 MB, respostas em microssegundos,
+startup instantâneo, catálogo de magias (600 KB) fora do bundle inicial, assets pré-comprimidos.
+
+
+O app real está implementado em **React 19 + Vite + Tailwind 4** (frontend) e **Rust (axum) + SQLite** (backend), usando SSE no lugar do Supabase planejado originalmente. A estrutura usa rotas em português (`/personagem/:id`) e APIs em `/api/characters`, `/api/rolls` e `/api/events`.
 
 Concluído no app atual:
 - Home com cards dos 4 personagens.
@@ -215,12 +221,13 @@ Concluído no app atual:
 - Acesso à ficha completa protegido por PIN individual por personagem.
 
 Verificação mais recente:
-- `bun run lint`
-- `bun run test`
+- `bun run lint` · `bun run typecheck`
+- `bun run test` · `bun run test:server`
 - `bun run build`
 - `bun run test:smoke`
 
 Suíte reutilizável:
 - `bun run test` valida regras puras de dados, rolagem e descanso.
-- `bun run test:smoke` sobe o app em produção com SQLite temporário e valida páginas, APIs, persistência e SSE.
-- `bun run test:all` roda lint, testes unitários, build e smoke HTTP.
+- `bun run test:server` roda os testes unitários do Rust (diff do log, banco em memória).
+- `bun run test:smoke` sobe o binário com SQLite temporário e valida SPA, cache/compressão, APIs, persistência e SSE.
+- `bun run test:all` roda lint, tsc, testes unitários (TS e Rust), build e smoke HTTP.
