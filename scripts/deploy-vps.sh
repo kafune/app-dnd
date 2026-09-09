@@ -373,7 +373,10 @@ belongs_to_this_app() { # pid
   [ "$cwd" = "$ROOT" ] && return 0
   cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
   case "$cmd" in *"$ROOT"*) return 0 ;; esac
-  tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qE "^(PWD|APP_DND_DB|PM2_HOME_DIR)=.*$ROOT" && return 0
+  # "< arquivo" sem permissão de leitura falha na abertura pelo próprio bash, antes
+  # do comando rodar, e imprime no stderr do script mesmo com `2>/dev/null` no pipe
+  # (é erro de redirecionamento, não do comando) — por isso testa -r antes.
+  [ -r "/proc/$pid/environ" ] && tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qE "^(PWD|APP_DND_DB|PM2_HOME_DIR)=.*$ROOT" && return 0
   return 1
 }
 
