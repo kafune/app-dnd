@@ -54,7 +54,7 @@ export function AbilityScoresEditor({ scores, bonuses, mode, onMode, onChange }:
             onClick={() => onMode("manual")}
             className={`px-3 py-1 text-xs ${mode === "manual" ? "bg-zinc-200 dark:bg-zinc-700" : "bg-transparent"}`}
           >
-            Manual / livre
+            Valores rolados
           </button>
         </div>
         {mode === "pointbuy" && (
@@ -93,8 +93,10 @@ export function AbilityScoresEditor({ scores, bonuses, mode, onMode, onChange }:
                   type="number"
                   inputMode="numeric"
                   className="h-8 w-16"
+                  min={3}
+                  max={18}
                   value={scores[k]}
-                  onChange={(e) => set(k, Number(e.target.value) || 0)}
+                  onChange={(e) => set(k, Math.max(3, Math.min(18, Number(e.target.value) || 3)))}
                 />
               )}
 
@@ -108,8 +110,8 @@ export function AbilityScoresEditor({ scores, bonuses, mode, onMode, onChange }:
         })}
       </div>
       <p className="text-xs text-zinc-500">
-        Os bônus raciais são somados automaticamente ao valor final. No modo manual você pode usar
-        qualquer valor (homebrew).
+        Os bônus raciais são somados automaticamente ao valor final. Para atributos rolados,
+        informe valores entre 3 e 18.
       </p>
     </div>
   );

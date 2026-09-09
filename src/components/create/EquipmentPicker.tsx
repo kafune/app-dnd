@@ -1,253 +1,255 @@
 import { useMemo, useState } from "react";
-import type { Item, StartingEquipment } from "@/lib/types";
+import type { EquipmentRef, Item, StartingEquipment, StartingEquipmentDef } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
+  ARTISAN_TOOLS,
+  GAMING_SETS,
   ITEMS_CATALOG,
   ITEM_CATEGORY_ORDER,
-  SIMPLE_WEAPONS,
+  MARTIAL_MELEE_WEAPONS,
   MARTIAL_WEAPONS,
+  MUSICAL_INSTRUMENTS,
+  SIMPLE_MELEE_WEAPONS,
+  SIMPLE_WEAPONS,
+  findItem,
   type CatalogItem,
 } from "@/data/itemsCatalog";
+import { STARTING_EQUIPMENT } from "@/data/startingEquipment";
 
 const selectCls =
   "h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
 
 type Props = {
+  classNames?: string[];
+  /** Formato antigo, mantido para chamadas legadas. */
   equipment?: StartingEquipment;
   items: Item[];
   onChange: (items: Item[]) => void;
+  /** Libera catálogo geral e item livre; usado apenas pelo Mestre na ficha pronta. */
+  allowCustom?: boolean;
 };
 
-/** Detecta o coringa "qualquer arma simples/marcial" no texto do equipamento. */
-const WEAPON_PLACEHOLDER = /qualquer arma (simples|marcial)/gi;
+const ANY_OPTIONS: Record<Extract<EquipmentRef, { any: string }>["any"], string[]> = {
+  "arma simples": SIMPLE_WEAPONS,
+  "arma marcial": MARTIAL_WEAPONS,
+  "arma simples corpo-a-corpo": SIMPLE_MELEE_WEAPONS,
+  "arma marcial corpo-a-corpo": MARTIAL_MELEE_WEAPONS,
+  "instrumento musical": MUSICAL_INSTRUMENTS,
+  "ferramentas de artesão": ARTISAN_TOOLS,
+  "kit de jogo": GAMING_SETS,
+};
 
-function norm(s: string) {
-  return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+function norm(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-const DETAIL_BY_NAME = new Map(ITEMS_CATALOG.map((i) => [i.name.toLowerCase(), i.detail]));
+function itemFromName(name: string, quantity = 1): Item {
+  const catalog = findItem(name);
+  return catalog
+    ? { name: catalog.name, description: catalog.detail, quantity }
+    : { name, quantity };
+}
 
-export function EquipmentPicker({ equipment, items, onChange }: Props) {
-  const choices = equipment?.choices ?? [];
-  // o pai passa key={classe} -> o componente remonta ao trocar de classe, reiniciando a seleção
-  const [sel, setSel] = useState<number[]>(() => choices.map(() => 0));
+function addItems(existing: Item[], additions: Item[]): Item[] {
+  const next = existing.map((item) => ({ ...item }));
+  for (const addition of additions) {
+    const found = next.find((item) => norm(item.name) === norm(addition.name));
+    if (found) found.quantity = (found.quantity ?? 1) + (addition.quantity ?? 1);
+    else next.push(addition);
+  }
+  return next;
+}
+
+function refLabel(ref: EquipmentRef): string {
+  if ("any" in ref) return `Escolher ${ref.any}${(ref.qty ?? 1) > 1 ? ` ×${ref.qty}` : ""}`;
+  const item = findItem(ref.item);
+  return `${item?.name ?? ref.item}${(ref.qty ?? 1) > 1 ? ` ×${ref.qty}` : ""}${item?.detail ? ` — ${item.detail}` : ""}`;
+}
+
+function optionLabel(refs: EquipmentRef[]): string {
+  return refs.map(refLabel).join(" + ");
+}
+
+export function EquipmentPicker({ classNames = [], equipment, items, onChange, allowCustom = false }: Props) {
+  const definitions = classNames
+    .map((className) => [className, STARTING_EQUIPMENT[className]] as const)
+    .filter((entry): entry is readonly [string, StartingEquipmentDef] => !!entry[1]);
+  const [selected, setSelected] = useState<Record<string, number>>({});
+  const [anyPick, setAnyPick] = useState<Record<string, string>>({});
   const [free, setFree] = useState("");
-  // arma escolhida para cada coringa ("simples"/"marcial")
-  const [weaponPick, setWeaponPick] = useState<{ simples: string; marcial: string }>({
-    simples: SIMPLE_WEAPONS[0] ?? "",
-    marcial: MARTIAL_WEAPONS[0] ?? "",
-  });
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [presetQuery, setPresetQuery] = useState("");
 
-  // Nomes que serão adicionados com a seleção atual (para detectar coringas).
-  const pendingNames = [
-    ...choices.map((opts, i) => opts[sel[i] ?? 0]).filter(Boolean),
-    ...(equipment?.fixed ?? []),
-  ];
-  const placeholderKinds = new Set<string>();
-  for (const n of pendingNames) {
-    for (const m of n.matchAll(WEAPON_PLACEHOLDER)) placeholderKinds.add(m[1].toLowerCase());
-  }
+  const legacy = useMemo<StartingEquipmentDef | null>(() => {
+    if (!equipment || definitions.length > 0) return null;
+    return {
+      choices: equipment.choices.map((group) =>
+        group.map((label) => ({ label, items: [{ item: label }] })),
+      ),
+      fixed: equipment.fixed.map((item) => ({ item })),
+      gold: "",
+    };
+  }, [definitions.length, equipment]);
+  const allDefinitions = legacy ? [["Classe", legacy] as const] : definitions;
 
-  /** Substitui o coringa pelo nome da arma escolhida (mantém o resto do texto). */
-  function resolveName(name: string): string {
-    return name.replace(WEAPON_PLACEHOLDER, (_m, kind: string) => {
-      const k = kind.toLowerCase() as "simples" | "marcial";
-      return weaponPick[k] || `qualquer arma ${kind}`;
+  const resolveRef = (ref: EquipmentRef, key: string): Item => {
+    if ("item" in ref) return itemFromName(ref.item, ref.qty ?? 1);
+    const name = anyPick[key] || ANY_OPTIONS[ref.any][0] || ref.any;
+    return itemFromName(name, ref.qty ?? 1);
+  };
+
+  const addStarting = (className: string, definition: StartingEquipmentDef) => {
+    const refs: Array<{ ref: EquipmentRef; key: string }> = definition.fixed.map((ref, index) => ({
+      ref,
+      key: `${className}:fixed:${index}`,
+    }));
+    definition.choices.forEach((group, groupIndex) => {
+      const option = group[selected[`${className}:${groupIndex}`] ?? 0];
+      option?.items.forEach((ref, refIndex) => refs.push({
+        ref,
+        key: `${className}:${groupIndex}:${refIndex}`,
+      }));
     });
-  }
-
-  function addStarting() {
-    const existing = new Set(items.map((it) => it.name.toLowerCase()));
-    const toAdd: Item[] = [];
-    for (const raw of pendingNames) {
-      const name = resolveName(raw);
-      if (existing.has(name.toLowerCase())) continue;
-      existing.add(name.toLowerCase());
-      const detail = DETAIL_BY_NAME.get(name.toLowerCase());
-      toAdd.push(detail ? { name, description: detail, quantity: 1 } : { name, quantity: 1 });
-    }
-    if (toAdd.length) onChange([...items, ...toAdd]);
-  }
-
-  function addFree() {
-    const name = free.trim();
-    if (!name) return;
-    onChange([...items, { name, quantity: 1 }]);
-    setFree("");
-  }
-
-  function addPreset(it: CatalogItem) {
-    if (items.some((x) => x.name.toLowerCase() === it.name.toLowerCase())) return;
-    onChange([...items, { name: it.name, description: it.detail, quantity: 1 }]);
-  }
+    onChange(addItems(items, refs.map(({ ref, key }) => resolveRef(ref, key))));
+  };
 
   const presetMatches = useMemo(() => {
-    const q = norm(presetQuery.trim());
-    const list = q
-      ? ITEMS_CATALOG.filter((i) => norm(i.name).includes(q) || norm(i.detail).includes(q))
+    const query = norm(presetQuery.trim());
+    const list = query
+      ? ITEMS_CATALOG.filter((item) => norm(item.name).includes(query) || norm(item.detail).includes(query))
       : ITEMS_CATALOG;
-    return ITEM_CATEGORY_ORDER.map((cat) => ({
-      cat,
-      items: list.filter((i) => i.category === cat),
-    })).filter((g) => g.items.length > 0);
+    return ITEM_CATEGORY_ORDER.map((category) => ({
+      category,
+      items: list.filter((item) => item.category === category),
+    })).filter((group) => group.items.length > 0);
   }, [presetQuery]);
+
+  const addPreset = (item: CatalogItem) => onChange(addItems(items, [itemFromName(item.name)]));
+  const addFree = () => {
+    const name = free.trim();
+    if (!name) return;
+    onChange(addItems(items, [{ name, quantity: 1 }]));
+    setFree("");
+  };
 
   return (
     <div className="space-y-3">
-      {(choices.length > 0 || (equipment?.fixed?.length ?? 0) > 0) && (
-        <div className="space-y-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
-          <div className="text-xs font-medium text-zinc-500">Equipamento inicial da classe</div>
-          {choices.map((opts, i) => (
-            <select
-              key={i}
-              className={selectCls}
-              value={sel[i] ?? 0}
-              onChange={(e) =>
-                setSel(sel.map((v, idx) => (idx === i ? Number(e.target.value) : v)))
-              }
-            >
-              {opts.map((o, oi) => (
-                <option key={oi} value={oi}>
-                  {o}
-                </option>
-              ))}
-            </select>
-          ))}
-          {equipment?.fixed && equipment.fixed.length > 0 && (
-            <p className="text-xs text-zinc-500">
-              Inclui: {equipment.fixed.map(resolveName).join("; ")}
-            </p>
+      {allDefinitions.map(([className, definition]) => (
+        <div key={className} className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-sm font-medium">Equipamento inicial · {className}</div>
+            {definition.gold && <span className="text-xs text-zinc-500">ou {definition.gold}</span>}
+          </div>
+          {definition.choices.map((group, groupIndex) => {
+            const optionIndex = selected[`${className}:${groupIndex}`] ?? 0;
+            const option = group[optionIndex];
+            return (
+              <div key={groupIndex} className="space-y-1">
+                <select
+                  className={selectCls}
+                  value={optionIndex}
+                  onChange={(event) => setSelected((state) => ({
+                    ...state,
+                    [`${className}:${groupIndex}`]: Number(event.target.value),
+                  }))}
+                >
+                  {group.map((entry, index) => (
+                    <option key={index} value={index}>{optionLabel(entry.items)}</option>
+                  ))}
+                </select>
+                {option?.items.map((ref, refIndex) => {
+                  if (!("any" in ref)) return null;
+                  const key = `${className}:${groupIndex}:${refIndex}`;
+                  return (
+                    <select
+                      key={key}
+                      className={selectCls}
+                      value={anyPick[key] ?? ANY_OPTIONS[ref.any][0] ?? ""}
+                      onChange={(event) => setAnyPick((state) => ({ ...state, [key]: event.target.value }))}
+                    >
+                      {ANY_OPTIONS[ref.any].map((name) => {
+                        const item = findItem(name);
+                        return <option key={name} value={name}>{name}{item?.detail ? ` — ${item.detail}` : ""}</option>;
+                      })}
+                    </select>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {definition.fixed.length > 0 && (
+            <div className="space-y-1 text-xs text-zinc-500">
+              <div>Inclui: {definition.fixed.filter((ref) => "item" in ref).map(refLabel).join("; ")}</div>
+              {definition.fixed.map((ref, index) => {
+                if (!("any" in ref)) return null;
+                const key = `${className}:fixed:${index}`;
+                return (
+                  <select
+                    key={key}
+                    className={selectCls}
+                    value={anyPick[key] ?? ANY_OPTIONS[ref.any][0] ?? ""}
+                    onChange={(event) => setAnyPick((state) => ({ ...state, [key]: event.target.value }))}
+                  >
+                    {ANY_OPTIONS[ref.any].map((name) => <option key={name} value={name}>{refLabel({ item: name })}</option>)}
+                  </select>
+                );
+              })}
+            </div>
           )}
-          {/* Escolha da arma concreta para "qualquer arma simples/marcial" */}
-          {[...placeholderKinds].map((kind) => (
-            <label key={kind} className="block">
-              <span className="mb-1 block text-xs font-medium text-zinc-500">
-                Escolha a arma {kind} (de &quot;qualquer arma {kind}&quot;)
-              </span>
-              <select
-                className={selectCls}
-                value={weaponPick[kind as "simples" | "marcial"]}
-                onChange={(e) =>
-                  setWeaponPick((p) => ({ ...p, [kind]: e.target.value }))
-                }
-              >
-                {(kind === "simples" ? SIMPLE_WEAPONS : MARTIAL_WEAPONS).map((w) => (
-                  <option key={w} value={w}>
-                    {w}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-          <Button type="button" size="sm" variant="outline" onClick={addStarting}>
-            Adicionar ao inventário
+          <Button type="button" size="sm" variant="outline" onClick={() => addStarting(className, definition)}>
+            Adicionar equipamento de {className}
           </Button>
+        </div>
+      ))}
+
+      {allowCustom && (
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setPresetsOpen((open) => !open)}
+            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium"
+          >
+            <span>Catálogo e custom/homebrew</span>
+            <span className="text-xs text-zinc-500">{presetsOpen ? "▾" : "▸"}</span>
+          </button>
+          {presetsOpen && (
+            <div className="space-y-2 border-t border-zinc-100 p-2 dark:border-zinc-800">
+              <Input value={presetQuery} onChange={(event) => setPresetQuery(event.target.value)} placeholder="Buscar item…" />
+              {presetMatches.map((group) => (
+                <div key={group.category}>
+                  <div className="mb-1 text-[11px] font-semibold uppercase text-zinc-400">{group.category}</div>
+                  <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                    {group.items.map((item) => (
+                      <button key={item.name} type="button" onClick={() => addPreset(item)} className="rounded border border-zinc-200 px-2 py-1 text-left text-xs dark:border-zinc-800">
+                        <strong>{item.name}</strong> — {item.detail} · {item.price}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <Input value={free} onChange={(event) => setFree(event.target.value)} placeholder="Item custom/homebrew…" />
+                <Button type="button" variant="outline" onClick={addFree}>+</Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Presets de equipamento (armas, armaduras, escudos) */}
-      <div className="rounded-md border border-zinc-200 dark:border-zinc-800">
-        <button
-          type="button"
-          onClick={() => setPresetsOpen((o) => !o)}
-          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium"
-        >
-          <span>Presets de equipamento (armas, armaduras, escudos)</span>
-          <span className="text-xs text-zinc-500">{presetsOpen ? "▾" : "▸"}</span>
-        </button>
-        {presetsOpen && (
-          <div className="space-y-2 border-t border-zinc-100 p-2 dark:border-zinc-800">
-            <Input
-              value={presetQuery}
-              onChange={(e) => setPresetQuery(e.target.value)}
-              placeholder="Buscar item…"
-              className="max-w-xs"
-            />
-            {presetMatches.map(({ cat, items: catItems }) => (
-              <div key={cat}>
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-                  {cat}
-                </div>
-                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  {catItems.map((it) => {
-                    const added = items.some(
-                      (x) => x.name.toLowerCase() === it.name.toLowerCase(),
-                    );
-                    return (
-                      <button
-                        key={it.name}
-                        type="button"
-                        disabled={added}
-                        onClick={() => addPreset(it)}
-                        title={it.detail}
-                        className={`flex items-center justify-between gap-2 rounded border px-2 py-1 text-left text-xs ${
-                          added
-                            ? "cursor-default border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
-                            : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
-                        }`}
-                      >
-                        <span className="font-medium">{it.name}</span>
-                        <span className="shrink-0 text-zinc-500">{added ? "✓" : it.price}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div>
-        <div className="mb-1 text-xs font-medium text-zinc-500">
-          Inventário ({items.length})
-        </div>
-        {items.length > 0 && (
-          <ul className="mb-2 space-y-1">
-            {items.map((it, i) => (
-              <li
-                key={i}
-                className="flex items-center justify-between rounded border border-zinc-200 px-2 py-1 text-sm dark:border-zinc-800"
-              >
-                <span>
-                  {it.name}
-                  {it.description && (
-                    <span className="ml-1 text-xs text-zinc-500">— {it.description}</span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onChange(items.filter((_, idx) => idx !== i))}
-                  className="text-xs text-zinc-400 hover:text-red-600"
-                >
-                  remover
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="flex gap-2">
-          <Input
-            value={free}
-            onChange={(e) => setFree(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addFree();
-              }
-            }}
-            placeholder="Adicionar item livre…"
-          />
-          <Button type="button" variant="outline" onClick={addFree}>
-            +
-          </Button>
-        </div>
+        <div className="mb-1 text-xs font-medium text-zinc-500">Inventário ({items.length})</div>
+        <ul className="space-y-1">
+          {items.map((item, index) => (
+            <li key={`${item.name}:${index}`} className="flex items-start justify-between gap-2 rounded border border-zinc-200 px-2 py-1 text-sm dark:border-zinc-800">
+              <span>
+                <strong>{item.name}{(item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ""}</strong>
+                {item.description && <span className="ml-1 text-xs text-zinc-500">— {item.description}</span>}
+              </span>
+              <button type="button" onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))} className="text-xs text-zinc-400 hover:text-red-600">remover</button>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

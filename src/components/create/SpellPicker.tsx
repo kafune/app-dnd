@@ -1,21 +1,26 @@
 import { useMemo, useState } from "react";
 import { SPELLS_CATALOG } from "@/data/spellsCatalog";
 import type { CatalogSpell, Spell } from "@/lib/types";
+import type { ClassSpellCaps } from "@/lib/progression";
 import { Input } from "@/components/ui/Input";
 
 type Props = {
   classNames: string[];
+  /** Limites separados por classe, incluindo o círculo máximo. */
+  caps?: ClassSpellCaps[];
   cantrips: Spell[];
   known: Spell[];
   /** Limite de truques (null = sem limite, ex.: classe homebrew). */
   cantripsMax?: number | null;
   /** Limite de magias conhecidas/preparadas (null = sem limite). */
   spellsMax?: number | null;
+  /** Mestre: ignora classe, círculo e quantidade. */
+  unrestricted?: boolean;
   onChange: (cantrips: Spell[], known: Spell[]) => void;
 };
 
 /** Converte uma magia do catálogo para o formato guardado na ficha. */
-function toSheetSpell(c: CatalogSpell): Spell {
+function toSheetSpell(c: CatalogSpell, classSource?: string): Spell {
   return {
     name: c.name,
     level: c.level,
@@ -27,6 +32,7 @@ function toSheetSpell(c: CatalogSpell): Spell {
     description: c.description,
     ...(c.ritual ? { ritual: true } : {}),
     ...(c.concentration ? { concentration: true } : {}),
+    ...(classSource ? { classSource } : {}),
   };
 }
 
@@ -39,22 +45,34 @@ function norm(s: string) {
 
 export function SpellPicker({
   classNames,
+  caps,
   cantrips,
   known,
   cantripsMax = null,
   spellsMax = null,
+  unrestricted = false,
   onChange,
 }: Props) {
   const [query, setQuery] = useState("");
   const [openLevels, setOpenLevels] = useState<Set<number>>(new Set([0, 1]));
-
-  const atCantripCap = cantripsMax !== null && cantrips.length >= cantripsMax;
-  const atSpellCap = spellsMax !== null && known.length >= spellsMax;
+  const selected = useMemo(
+    () => new Set([...cantrips, ...known].map((spell) => spell.name.toLowerCase())),
+    [cantrips, known],
+  );
 
   const available = useMemo(
     () =>
-      SPELLS_CATALOG.filter((s) => s.classes.some((c) => classNames.includes(c))),
-    [classNames],
+      SPELLS_CATALOG.filter((spell) => {
+        if (selected.has(spell.name.toLowerCase())) return true;
+        if (unrestricted) return true;
+        if (caps?.length) {
+          return caps.some(
+            (cap) => spell.classes.includes(cap.profile.list) && spell.level <= cap.maxLevel,
+          );
+        }
+        return spell.classes.some((className) => classNames.includes(className));
+      }),
+    [caps, classNames, selected, unrestricted],
   );
 
   const byLevel = useMemo(() => {
@@ -66,24 +84,57 @@ export function SpellPicker({
     return m;
   }, [available]);
 
-  const selected = useMemo(
-    () => new Set([...cantrips, ...known].map((s) => s.name.toLowerCase())),
-    [cantrips, known],
-  );
+  const eligibleCaps = (spell: CatalogSpell) =>
+    (caps ?? []).filter(
+      (cap) => spell.classes.includes(cap.profile.list) && (unrestricted || spell.level <= cap.maxLevel),
+    );
+
+  const countFor = (cap: ClassSpellCaps, list: Spell[]) =>
+    list.filter((spell) => {
+      if (spell.granted) return false;
+      if (spell.classSource) return spell.classSource === cap.className;
+      const catalog = SPELLS_CATALOG.find((entry) => entry.name === spell.name);
+      const inferred = catalog
+        ? (caps ?? []).find((candidate) => catalog.classes.includes(candidate.profile.list))?.className
+        : caps?.[0]?.className;
+      return inferred === cap.className;
+    }).length;
+
+  const sourceFor = (spell: CatalogSpell) => {
+    const eligible = eligibleCaps(spell);
+    const list = spell.level === 0 ? cantrips : known;
+    return (
+      eligible.find((cap) => countFor(cap, list) < (spell.level === 0 ? cap.cantrips : cap.spells))?.className ??
+      eligible[0]?.className ??
+      caps?.[0]?.className ??
+      classNames[0]
+    );
+  };
 
   function disabledFor(spell: CatalogSpell) {
     if (selected.has(spell.name.toLowerCase())) return false;
-    return spell.level === 0 ? atCantripCap : atSpellCap;
+    if (unrestricted) return false;
+    if (caps?.length) {
+      const list = spell.level === 0 ? cantrips : known;
+      return !eligibleCaps(spell).some(
+        (cap) => countFor(cap, list) < (spell.level === 0 ? cap.cantrips : cap.spells),
+      );
+    }
+    return spell.level === 0
+      ? cantripsMax !== null && cantrips.length >= cantripsMax
+      : spellsMax !== null && known.filter((entry) => !entry.granted).length >= spellsMax;
   }
 
   function toggle(spell: CatalogSpell) {
     const isSel = selected.has(spell.name.toLowerCase());
+    const stored = [...cantrips, ...known].find((entry) => entry.name.toLowerCase() === spell.name.toLowerCase());
+    if (isSel && stored?.granted && !unrestricted) return;
     if (!isSel && disabledFor(spell)) return; // respeita o limite da classe
     if (spell.level === 0) {
       onChange(
         isSel
           ? cantrips.filter((s) => s.name !== spell.name)
-          : [...cantrips, toSheetSpell(spell)],
+          : [...cantrips, toSheetSpell(spell, sourceFor(spell))],
         known,
       );
     } else {
@@ -91,7 +142,7 @@ export function SpellPicker({
         cantrips,
         isSel
           ? known.filter((s) => s.name !== spell.name)
-          : [...known, toSheetSpell(spell)],
+          : [...known, toSheetSpell(spell, sourceFor(spell))],
       );
     }
   }
@@ -118,16 +169,12 @@ export function SpellPicker({
           placeholder="Buscar magia…"
           className="max-w-xs"
         />
-        <span className="shrink-0 text-xs text-zinc-500">
-          <span className={atCantripCap ? "font-medium text-amber-600" : ""}>
-            {cantrips.length}
-            {cantripsMax !== null ? `/${cantripsMax}` : ""} truques
-          </span>{" "}
-          ·{" "}
-          <span className={atSpellCap ? "font-medium text-amber-600" : ""}>
-            {known.length}
-            {spellsMax !== null ? `/${spellsMax}` : ""} magias
-          </span>
+        <span className="shrink-0 text-right text-xs text-zinc-500">
+          {unrestricted ? "Modo Mestre: sem limites" : caps?.length ? caps.map((cap) => (
+            <span key={cap.className} className="block">
+              {cap.className}: {countFor(cap, cantrips)}/{cap.cantrips} truques · {countFor(cap, known)}/{cap.spells} magias · até {cap.maxLevel}º
+            </span>
+          )) : `${cantrips.length}${cantripsMax !== null ? `/${cantripsMax}` : ""} truques · ${known.length}${spellsMax !== null ? `/${spellsMax}` : ""} magias`}
         </span>
       </div>
 

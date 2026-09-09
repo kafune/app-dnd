@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ChevronLeft } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -11,21 +11,21 @@ const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
 import { EquipmentPicker } from "@/components/create/EquipmentPicker";
-import { TraitPicker } from "@/components/create/TraitPicker";
-import { findTrait } from "@/data/traitsCatalog";
-import { findClassFeatureDescription } from "@/data/classFeaturesCatalog";
-import { CREATURE_SIZES, ALIGNMENTS } from "@/lib/types";
-import { RACES_CATALOG, findRace } from "@/data/racesCatalog";
-import { BACKGROUNDS_CATALOG, findBackground } from "@/data/backgroundsCatalog";
-import { CLASSES_CATALOG, findClass, classFeaturesUpTo } from "@/data/classesCatalog";
+import { CREATURE_SIZES, ALIGNMENTS, LANGUAGES } from "@/lib/types";
+import { RACES_CATALOG, findRace, findSubrace } from "@/data/racesCatalog";
+import { BACKGROUNDS_CATALOG, backgroundLanguages, findBackground } from "@/data/backgroundsCatalog";
+import { CLASSES_CATALOG, classFeaturesUpTo, findClass, findClassDef, subclassNames } from "@/data/classesCatalog";
+import { FEATS_CATALOG, findFeat } from "@/data/featsCatalog";
 import { SKILLS_CATALOG } from "@/data/skillsCatalog";
 import {
   buildCharacter,
+  draftScores,
   emptyDraft,
   emptyClass,
-  finalScores,
+  fixedSkills,
   proficiencyBonusForLevel,
-  spellCapacity,
+  skillBudget,
+  totalRaceBonuses,
   totalHp,
   totalLevel,
   type CharacterDraft,
@@ -37,8 +37,18 @@ import {
   abilityMod,
   formatMod,
   type AbilityKey,
+  type AbilityScores,
+  type AsiDecision,
   type SkillName,
 } from "@/lib/types";
+import {
+  allSpellCaps,
+  clampClassLevels,
+  MAX_LEVEL,
+  reachedAsis,
+  spellViolations,
+  type SkillBudgetPart,
+} from "@/lib/progression";
 
 const selectCls =
   "h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -54,34 +64,43 @@ export default function CriarFicha() {
   const [raceMode, setRaceMode] = useState<"catalog" | "custom">("catalog");
   const [bgMode, setBgMode] = useState<"catalog" | "custom">("catalog");
   const [abilityMode, setAbilityMode] = useState<AbilityMode>("pointbuy");
-  const [showAllSkills, setShowAllSkills] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const upd = (patch: Partial<CharacterDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  // Perícias se baseiam na 1ª classe (regra 5e); as demais entram via multiclasse.
-  const primaryClass = findClass(draft.classes[0]?.name ?? "");
+  const selectedRace = useMemo(() => findRace(draft.raceName), [draft.raceName]);
+  const selectedSubrace = useMemo(
+    () => findSubrace(draft.raceName, draft.subraceName ?? ""),
+    [draft.raceName, draft.subraceName],
+  );
   const selectedBackground = useMemo(
     () => (bgMode === "catalog" ? findBackground(draft.background) : undefined),
     [bgMode, draft.background],
   );
-  const skillOptions: string[] = showAllSkills
-    ? SKILLS_CATALOG.map((s) => s.name)
-    : (primaryClass?.skillProficiencies?.from ?? SKILLS_CATALOG.map((s) => s.name));
-  const skillChoose = primaryClass?.skillProficiencies?.choose ?? null;
+  const budget = skillBudget(draft);
+  const fixedSkillNames = fixedSkills(draft);
+  const allowedSkillNames = new Set(
+    budget.parts.flatMap((part) => part.from ?? SKILLS_CATALOG.map((skill) => skill.name)),
+  );
+  const skillOptions = SKILLS_CATALOG.map((skill) => skill.name).filter((name) => allowedSkillNames.has(name));
 
-  const casterClasses = draft.classes.filter((c) => c.spellcastingAbility && c.name.trim());
+  const casterClasses = draft.classes.filter((c) => c.name.trim());
   const casterClassNames = casterClasses.map((c) => c.name);
 
-  const scores = useMemo(
-    () => finalScores(draft.baseScores, draft.raceBonuses),
-    [draft.baseScores, draft.raceBonuses],
+  const scores = useMemo(() => draftScores(draft), [draft]);
+  const spellCaps = allSpellCaps(casterClasses, scores);
+  const extraLanguageMax =
+    (selectedRace?.extraLanguages ?? 0) +
+    draft.raceTraits.reduce((sum, trait) => sum + (typeof trait === "string" ? 0 : (trait.extraLanguages ?? 0)), 0) +
+    backgroundLanguages(selectedBackground);
+  const raceSkillMax = draft.raceTraits.reduce(
+    (sum, trait) => sum + (typeof trait === "string" ? 0 : (trait.skillChoices ?? 0)),
+    0,
   );
-  const spellCaps = spellCapacity(
-    casterClasses.map((c) => ({ name: c.name, level: c.level })),
-    scores,
-  );
+  const raceAbilityChoiceMax =
+    (selectedRace?.abilityScoreIncrease.choose?.count ?? 0) +
+    (selectedSubrace?.abilityScoreIncrease.choose?.count ?? 0);
   const profBonus = proficiencyBonusForLevel(totalLevel(draft.classes));
   const previewHp = draft.hpOverride ?? totalHp(draft.classes, abilityMod(scores.con));
   const previewAc = draft.acOverride ?? 10 + abilityMod(scores.dex);
@@ -89,7 +108,7 @@ export default function CriarFicha() {
   function onSelectRace(value: string) {
     if (value === CUSTOM) {
       setRaceMode("custom");
-      upd({ raceName: "", raceBonuses: {}, raceTraits: [] });
+      upd({ raceName: "", subraceName: undefined, raceBonuses: {}, raceChoiceBonuses: [], raceTraits: [], skills: [] });
       return;
     }
     setRaceMode("catalog");
@@ -103,29 +122,68 @@ export default function CriarFicha() {
     upd({
       raceName: r.name,
       raceBonuses: bonuses,
-      size: r.size || "Médio",
-      speed: r.speed ?? 9,
+      subraceName: undefined,
+      size: r.size,
+      speed: r.speed,
+      languages: r.languages,
+      extraLanguages: [],
       raceTraits: r.traits,
+      raceChoiceBonuses: [],
+      traitChoices: {},
+      raceFeat: undefined,
+      raceSkillChoices: [],
+      skills: [],
+    });
+  }
+
+  function onSelectSubrace(value: string) {
+    const race = findRace(draft.raceName);
+    const subrace = findSubrace(draft.raceName, value);
+    if (!race || !subrace) return;
+    const bonuses: Partial<Record<AbilityKey, number>> = {};
+    for (const key of ABILITY_ORDER) {
+      const amount = (race.abilityScoreIncrease[key] ?? 0) + (subrace.abilityScoreIncrease[key] ?? 0);
+      if (amount) bonuses[key] = amount;
+    }
+    upd({
+      subraceName: subrace.name,
+      raceBonuses: bonuses,
+      raceChoiceBonuses: [],
+      speed: subrace.speed ?? race.speed,
+      languages: race.languages,
+      extraLanguages: [],
+      raceTraits: [...race.traits, ...subrace.traits],
+      traitChoices: {},
+      raceFeat: undefined,
+      raceSkillChoices: [],
+      skills: [],
     });
   }
 
   function onSelectBackground(value: string) {
     if (value === CUSTOM) {
       setBgMode("custom");
-      upd({ background: "" });
+      upd({ background: "", skills: [], extraLanguages: [] });
       return;
     }
     setBgMode("catalog");
     const b = findBackground(value);
-    upd({ background: b?.name ?? value });
+    upd({ background: b?.name ?? value, skills: [], extraLanguages: [] });
   }
 
   function setClasses(next: DraftClass[]) {
-    upd({ classes: next });
+    upd({ classes: next, skills: [], cantrips: [], knownSpells: [], advancement: [] });
   }
 
   function updateClass(index: number, patch: Partial<DraftClass>) {
-    setClasses(draft.classes.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+    const next = draft.classes.map((current, i) => {
+      if (i !== index) return current;
+      const updated = { ...current, ...patch };
+      const definition = findClassDef(updated.name);
+      if (definition && updated.level < definition.subclassLevel) updated.subclass = undefined;
+      return updated;
+    });
+    setClasses(clampClassLevels(next, index));
   }
 
   function onSelectClass(index: number, value: string) {
@@ -150,6 +208,7 @@ export default function CriarFicha() {
   }
 
   function addClass() {
+    if (totalLevel(draft.classes) >= MAX_LEVEL) return;
     setClasses([...draft.classes, emptyClass()]);
   }
 
@@ -159,12 +218,12 @@ export default function CriarFicha() {
   }
 
   function toggleSkill(name: string) {
-    const has = draft.skills.includes(name as SkillName);
-    upd({
-      skills: has
-        ? draft.skills.filter((s) => s !== name)
-        : [...draft.skills, name as SkillName],
-    });
+    const skill = name as SkillName;
+    const has = draft.skills.includes(skill);
+    const next = has ? draft.skills.filter((s) => s !== skill) : [...draft.skills, skill];
+    if (!has && !skillSelectionFits(next, budget.parts)) return;
+    if (!has && next.length > budget.total) return;
+    upd({ skills: next });
   }
 
   function setCustomBonus(k: AbilityKey, value: number) {
@@ -182,46 +241,30 @@ export default function CriarFicha() {
     if (raceMode === "custom" && !draft.raceName.trim())
       return setError("Dê um nome à raça custom.");
     if (!draft.classes.some((c) => c.name.trim())) return setError("Escolha uma classe.");
+    if (totalLevel(draft.classes) > MAX_LEVEL) return setError("O nível total máximo é 20.");
+    if (selectedRace?.subraceRequired && !draft.subraceName) return setError("Escolha uma sub-raça.");
+    if (draft.raceChoiceBonuses.length !== raceAbilityChoiceMax)
+      return setError(`Escolha exatamente ${raceAbilityChoiceMax} bônus racial(is) de atributo.`);
+    if (draft.raceTraits.some((trait) => typeof trait !== "string" && trait.choice && !draft.traitChoices[trait.name]))
+      return setError("Complete as escolhas dos traços raciais.");
+    if (draft.raceTraits.some((trait) => typeof trait !== "string" && trait.feat) && !draft.raceFeat)
+      return setError("Escolha o talento concedido pela raça.");
+    if (draft.extraLanguages.length !== extraLanguageMax)
+      return setError(`Escolha exatamente ${extraLanguageMax} idioma(s) adicional(is).`);
+    if (draft.raceSkillChoices.length !== raceSkillMax)
+      return setError(`Escolha exatamente ${raceSkillMax} perícia(s) racial(is).`);
+    if (draft.skills.length !== budget.total || !skillSelectionFits(draft.skills, budget.parts))
+      return setError(`Escolha exatamente ${budget.total} perícia(s) permitida(s) pelas classes e antecedente.`);
+    if (reachedAsis(draft.classes).length !== draft.advancement.length)
+      return setError("Decida todos os aumentos de atributo/talentos da progressão.");
+    if (!draft.advancement.every((decision) => validAdvancementDecision(decision, scores)))
+      return setError("Complete cada aumento de atributo ou escolha de talento.");
+    const spellIssues = spellViolations(draft.classes, scores, draft.cantrips, draft.knownSpells);
+    if (spellIssues.length) return setError(spellIssues[0]);
 
     setSubmitting(true);
     try {
-      // Traços/talentos escolhidos -> features com descrição (do catálogo)
-      const traitFeatures = draft.raceTraits.map((name) => {
-        const t = findTrait(name);
-        return {
-          name,
-          source: t?.kind === "talento" ? "Talento" : draft.raceName || "Raça",
-          description: t?.description ?? "",
-        };
-      });
-      // Características de classe ganhas até o nível de cada classe
-      const classFeatures = draft.classes.flatMap((cl) =>
-        cl.name.trim()
-          ? classFeaturesUpTo(cl.name, cl.level).map((f) => ({
-              name: f.name,
-              source: `${cl.name} ${f.level}`,
-              description: findClassFeatureDescription(f.name),
-            }))
-          : [],
-      );
-      // Recurso do antecedente escolhido no catálogo -> feature com descrição
-      const bg = bgMode === "catalog" ? findBackground(draft.background) : undefined;
-      const backgroundFeatures = bg
-        ? [
-            {
-              name: bg.feature.name,
-              source: `Antecedente: ${bg.name}`,
-              description: bg.feature.description,
-            },
-          ]
-        : [];
-      const character = buildCharacter(
-        {
-          ...draft,
-          extraFeatures: [...traitFeatures, ...classFeatures, ...backgroundFeatures],
-        },
-        "",
-      );
+      const character = buildCharacter(draft, "");
       const id = await createCharacter(character);
       pushToast({ title: `${draft.characterName} criado!`, tone: "success" });
       navigate(`/personagem/${id}`);
@@ -290,7 +333,6 @@ export default function CriarFicha() {
                     {b.name}
                   </option>
                 ))}
-                <option value={CUSTOM}>✎ Custom (homebrew)…</option>
               </select>
               {bgMode === "custom" && (
                 <Input
@@ -364,9 +406,25 @@ export default function CriarFicha() {
                     {r.name}
                   </option>
                 ))}
-                <option value={CUSTOM}>✎ Custom (homebrew)…</option>
               </select>
             </Field>
+
+            {selectedRace?.subraces.length ? (
+              <Field label="Sub-raça">
+                <select
+                  className={selectCls}
+                  value={draft.subraceName ?? ""}
+                  onChange={(event) => onSelectSubrace(event.target.value)}
+                >
+                  <option value="">— escolha —</option>
+                  {selectedRace.subraces.map((subrace) => (
+                    <option key={subrace.name} value={subrace.name}>
+                      {subrace.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
 
             {raceMode === "custom" && (
               <>
@@ -403,6 +461,7 @@ export default function CriarFicha() {
                   className={selectCls}
                   value={CREATURE_SIZES.includes(draft.size as (typeof CREATURE_SIZES)[number]) ? draft.size : "Médio"}
                   onChange={(e) => upd({ size: e.target.value })}
+                  disabled={raceMode === "catalog" && !!selectedRace}
                 >
                   {CREATURE_SIZES.map((s) => (
                     <option key={s} value={s}>
@@ -417,26 +476,106 @@ export default function CriarFicha() {
                   inputMode="decimal"
                   value={draft.speed}
                   onChange={(e) => upd({ speed: Number(e.target.value) || 0 })}
+                  disabled={raceMode === "catalog" && !!selectedRace}
                 />
               </Field>
-              <Field label="Idiomas (separados por vírgula)">
-                <CommaListInput
-                  value={draft.languages}
-                  onChange={(languages) => upd({ languages })}
-                  placeholder="Ex: Comum, Élfico"
-                />
+              <Field label="Idiomas padrão">
+                <Input value={draft.languages.join(", ")} disabled={raceMode === "catalog"} />
               </Field>
             </div>
 
-            <div>
-              <span className="mb-1 block text-xs font-medium text-zinc-500">
-                Traços & talentos (escolha da lista — mostra a descrição)
-              </span>
-              <TraitPicker
-                selected={draft.raceTraits}
-                onChange={(raceTraits) => upd({ raceTraits })}
+            {extraLanguageMax > 0 && (
+              <ChoiceGrid
+                label={`Idiomas adicionais: escolha ${extraLanguageMax}`}
+                options={LANGUAGES.filter((language) => !draft.languages.includes(language))}
+                selected={draft.extraLanguages}
+                max={extraLanguageMax}
+                onChange={(extraLanguages) => upd({ extraLanguages })}
               />
-            </div>
+            )}
+
+            {raceAbilityChoiceMax > 0 && (
+              <div>
+                <div className="mb-1 text-xs font-medium text-zinc-500">
+                  Bônus racial à escolha ({draft.raceChoiceBonuses.length}/{raceAbilityChoiceMax})
+                </div>
+                <div className="grid grid-cols-3 gap-1 sm:grid-cols-6">
+                  {ABILITY_ORDER.map((key) => {
+                    const checked = draft.raceChoiceBonuses.includes(key);
+                    return (
+                      <label key={key} className="flex items-center gap-1.5 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!checked && draft.raceChoiceBonuses.length >= raceAbilityChoiceMax}
+                          onChange={() => upd({
+                            raceChoiceBonuses: checked
+                              ? draft.raceChoiceBonuses.filter((entry) => entry !== key)
+                              : [...draft.raceChoiceBonuses, key],
+                          })}
+                        />
+                        {ABILITY_LABELS[key].slice(0, 3)}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {raceSkillMax > 0 && (
+              <ChoiceGrid
+                label={`Perícias raciais: escolha ${raceSkillMax}`}
+                options={SKILLS_CATALOG.map((skill) => skill.name).filter((name) => !fixedSkillNames.includes(name))}
+                selected={draft.raceSkillChoices}
+                max={raceSkillMax}
+                onChange={(raceSkillChoices) => {
+                  const next = raceSkillChoices as SkillName[];
+                  upd({ raceSkillChoices: next, skills: draft.skills.filter((skill) => !next.includes(skill)) });
+                }}
+              />
+            )}
+
+            {draft.raceTraits.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-zinc-500">Traços raciais automáticos</div>
+                {draft.raceTraits.map((rawTrait) => {
+                  if (typeof rawTrait === "string") return null;
+                  const trait = rawTrait;
+                  return (
+                    <div key={trait.name} className="rounded-md border border-zinc-200 p-2 text-sm dark:border-zinc-800">
+                      <div className="font-medium">{trait.name}</div>
+                      <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{trait.description}</p>
+                      {trait.choice && (
+                        <select
+                          className={`${selectCls} mt-2`}
+                          value={draft.traitChoices[trait.name] ?? ""}
+                          onChange={(event) =>
+                            upd({ traitChoices: { ...draft.traitChoices, [trait.name]: event.target.value } })
+                          }
+                        >
+                          <option value="">— {trait.choice.label} —</option>
+                          {trait.choice.options.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      )}
+                      {trait.feat && (
+                        <select
+                          className={`${selectCls} mt-2`}
+                          value={draft.raceFeat ?? ""}
+                          onChange={(event) => upd({ raceFeat: event.target.value || undefined })}
+                        >
+                          <option value="">— escolha o talento concedido —</option>
+                          {FEATS_CATALOG.filter((feat) => !feat.races || feat.races.includes(draft.raceName)).map((feat) => (
+                            <option key={feat.name} value={feat.name}>{feat.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardBody>
         </Card>
 
@@ -450,7 +589,7 @@ export default function CriarFicha() {
           </CardHeader>
           <CardBody className="space-y-3">
             {draft.classes.map((cl, i) => {
-              const catalog = findClass(cl.name);
+              const detailedClass = findClassDef(cl.name);
               return (
                 <div
                   key={i}
@@ -480,7 +619,7 @@ export default function CriarFicha() {
                       value={cl.level}
                       onChange={(e) =>
                         updateClass(i, {
-                          level: Math.min(20, Math.max(1, Number(e.target.value) || 1)),
+                          level: Math.min(MAX_LEVEL, Math.max(1, Number(e.target.value) || 1)),
                         })
                       }
                     />
@@ -490,10 +629,10 @@ export default function CriarFicha() {
                       className={selectCls}
                       value={cl.subclass ?? ""}
                       onChange={(e) => updateClass(i, { subclass: e.target.value || undefined })}
-                      disabled={!catalog?.subclasses?.length}
+                      disabled={!detailedClass?.subclasses.length || cl.level < detailedClass.subclassLevel}
                     >
-                      <option value="">— nenhuma —</option>
-                      {catalog?.subclasses?.map((s) => (
+                      <option value="">{detailedClass && cl.level < detailedClass.subclassLevel ? `— disponível no nível ${detailedClass.subclassLevel} —` : "— nenhuma —"}</option>
+                      {subclassNames(cl.name).map((s) => (
                         <option key={s} value={s}>
                           {s}
                         </option>
@@ -516,7 +655,13 @@ export default function CriarFicha() {
                 </div>
               );
             })}
-            <Button type="button" variant="outline" size="sm" onClick={addClass}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addClass}
+              disabled={totalLevel(draft.classes) >= MAX_LEVEL || draft.classes.some((entry) => !entry.name.trim())}
+            >
               + Adicionar classe (multiclasse)
             </Button>
           </CardBody>
@@ -541,6 +686,10 @@ export default function CriarFicha() {
           </Card>
         )}
 
+        {reachedAsis(draft.classes).length > 0 && (
+          <AdvancementChoices draft={draft} onChange={(advancement) => upd({ advancement })} scores={scores} />
+        )}
+
         {/* Atributos */}
         <Card>
           <CardHeader>
@@ -549,7 +698,7 @@ export default function CriarFicha() {
           <CardBody>
             <AbilityScoresEditor
               scores={draft.baseScores}
-              bonuses={draft.raceBonuses}
+              bonuses={totalRaceBonuses(draft)}
               mode={abilityMode}
               onMode={setAbilityMode}
               onChange={(s) => upd({ baseScores: s })}
@@ -560,25 +709,15 @@ export default function CriarFicha() {
         {/* Perícias */}
         <Card>
           <CardHeader>
-            <div className="flex items-baseline justify-between">
-              <CardTitle>Perícias</CardTitle>
-              <label className="flex items-center gap-1 text-xs text-zinc-500">
-                <input
-                  type="checkbox"
-                  checked={showAllSkills}
-                  onChange={(e) => setShowAllSkills(e.target.checked)}
-                />
-                todas (homebrew)
-              </label>
-            </div>
+            <CardTitle>Perícias</CardTitle>
           </CardHeader>
           <CardBody>
-            {skillChoose != null && (
-              <p className="mb-2 text-xs text-zinc-500">
-                {primaryClass?.name}: escolha <strong>{skillChoose}</strong> — selecionadas:{" "}
-                {draft.skills.length}
-              </p>
-            )}
+            <p className="mb-2 text-xs text-zinc-500">
+              Escolha <strong>{budget.total}</strong> — selecionadas: {draft.skills.length}. Fixas: {fixedSkillNames.join(", ") || "nenhuma"}.
+            </p>
+            <div className="mb-2 space-y-0.5 text-[11px] text-zinc-500">
+              {budget.parts.map((part) => <div key={part.label}>{part.label}: {part.count}</div>)}
+            </div>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
               {skillOptions.map((name) => (
                 <label key={name} className="flex items-center gap-1.5 text-sm">
@@ -586,6 +725,7 @@ export default function CriarFicha() {
                     type="checkbox"
                     checked={draft.skills.includes(name as SkillName)}
                     onChange={() => toggleSkill(name)}
+                    disabled={fixedSkillNames.includes(name as SkillName)}
                   />
                   {name}
                 </label>
@@ -604,10 +744,9 @@ export default function CriarFicha() {
               <Suspense fallback={<p className="text-sm text-zinc-500">Carregando catálogo de magias…</p>}>
                 <SpellPicker
                   classNames={casterClassNames}
+                  caps={spellCaps}
                   cantrips={draft.cantrips}
                   known={draft.knownSpells}
-                  cantripsMax={spellCaps.cantrips}
-                  spellsMax={spellCaps.spells}
                   onChange={(cantrips, knownSpells) => upd({ cantrips, knownSpells })}
                 />
               </Suspense>
@@ -622,36 +761,34 @@ export default function CriarFicha() {
           </CardHeader>
           <CardBody>
             <EquipmentPicker
-              key={draft.classes[0]?.name ?? "none"}
-              equipment={primaryClass?.startingEquipment}
+              key={draft.classes.map((entry) => entry.name).join("|")}
+              classNames={draft.classes.map((entry) => entry.name).filter(Boolean)}
               items={draft.inventoryItems}
               onChange={(inventoryItems) => upd({ inventoryItems })}
             />
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {(["gp", "sp", "cp"] as const).map((coin) => (
+                <Field key={coin} label={coin === "gp" ? "Ouro (po)" : coin === "sp" ? "Prata (pp)" : "Cobre (pc)"}>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={draft.coins[coin]}
+                    onChange={(event) => upd({ coins: { ...draft.coins, [coin]: Math.max(0, Number(event.target.value) || 0) } })}
+                  />
+                </Field>
+              ))}
+            </div>
           </CardBody>
         </Card>
 
         {/* Derivados */}
         <Card>
           <CardHeader>
-            <CardTitle>Combate (auto-calculado, editável)</CardTitle>
+            <CardTitle>Combate (auto-calculado)</CardTitle>
           </CardHeader>
           <CardBody className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Field label="PV máximo">
-              <Input
-                type="number"
-                inputMode="numeric"
-                value={previewHp}
-                onChange={(e) => upd({ hpOverride: Number(e.target.value) || 0 })}
-              />
-            </Field>
-            <Field label="CA">
-              <Input
-                type="number"
-                inputMode="numeric"
-                value={previewAc}
-                onChange={(e) => upd({ acOverride: Number(e.target.value) || 0 })}
-              />
-            </Field>
+            <Stat label="PV máximo" value={String(previewHp)} />
+            <Stat label="CA" value={String(previewAc)} />
             <Stat label="Iniciativa" value={formatMod(abilityMod(scores.dex))} />
             <Stat label="Bônus de prof." value={formatMod(profBonus)} />
           </CardBody>
@@ -672,42 +809,189 @@ export default function CriarFicha() {
   );
 }
 
-/**
- * Campo de texto que edita uma lista separada por vírgulas, mas guarda o texto
- * bruto enquanto o usuário digita — assim dá pra digitar espaços e vírgulas sem
- * o valor "pular" (o `split/trim/filter` só roda para emitir o array ao pai).
- */
-function CommaListInput({
-  value,
+function ChoiceGrid({
+  label,
+  options,
+  selected,
+  max,
   onChange,
-  placeholder,
 }: {
-  value: string[];
-  onChange: (v: string[]) => void;
-  placeholder?: string;
+  label: string;
+  options: readonly string[];
+  selected: string[];
+  max: number;
+  onChange: (next: string[]) => void;
 }) {
-  const [text, setText] = useState(value.join(", "));
-  const lastEmitted = useRef(value.join(", "));
-  // Re-sincroniza só quando o array muda por fora (ex.: ao trocar de raça).
-  useEffect(() => {
-    const ext = value.join(", ");
-    if (ext !== lastEmitted.current) {
-      setText(ext);
-      lastEmitted.current = ext;
-    }
-  }, [value]);
   return (
-    <Input
-      value={text}
-      placeholder={placeholder}
-      onChange={(e) => {
-        const t = e.target.value;
-        setText(t);
-        const arr = t.split(",").map((s) => s.trim()).filter(Boolean);
-        lastEmitted.current = arr.join(", ");
-        onChange(arr);
-      }}
-    />
+    <div>
+      <div className="mb-1 text-xs font-medium text-zinc-500">
+        {label} ({selected.length}/{max})
+      </div>
+      <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+        {options.map((option) => {
+          const checked = selected.includes(option);
+          return (
+            <label key={option} className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={!checked && selected.length >= max}
+                onChange={() => onChange(checked ? selected.filter((value) => value !== option) : [...selected, option])}
+              />
+              {option}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function skillSelectionFits(selected: SkillName[], parts: SkillBudgetPart[]): boolean {
+  if (selected.length > parts.reduce((total, part) => total + part.count, 0)) return false;
+  const slots = parts.flatMap((part) =>
+    Array.from({ length: part.count }, () => new Set(part.from ?? SKILLS_CATALOG.map((skill) => skill.name))),
+  );
+  const ordered = [...selected].sort(
+    (a, b) => slots.filter((slot) => slot.has(a)).length - slots.filter((slot) => slot.has(b)).length,
+  );
+  const used = new Set<number>();
+  const place = (index: number): boolean => {
+    if (index >= ordered.length) return true;
+    for (let slot = 0; slot < slots.length; slot += 1) {
+      if (used.has(slot) || !slots[slot].has(ordered[index])) continue;
+      used.add(slot);
+      if (place(index + 1)) return true;
+      used.delete(slot);
+    }
+    return false;
+  };
+  return place(0);
+}
+
+function decisionPicks(decision: AsiDecision | undefined): AbilityKey[] {
+  if (decision?.kind !== "asi") return [];
+  return ABILITY_ORDER.flatMap((key) => Array.from({ length: decision.abilities?.[key] ?? 0 }, () => key));
+}
+
+function validAdvancementDecision(decision: AsiDecision, scores: AbilityScores): boolean {
+  if (decision.kind === "feat") {
+    if (!decision.feat) return false;
+    const feat = findFeat(decision.feat);
+    if (!feat?.abilityIncrease) return true;
+    return ABILITY_ORDER.some(
+      (key) => (decision.abilities?.[key] ?? 0) === feat.abilityIncrease!.amount && scores[key] <= 20,
+    );
+  }
+  return ABILITY_ORDER.reduce((sum, key) => sum + (decision.abilities?.[key] ?? 0), 0) === 2;
+}
+
+function AdvancementChoices({
+  draft,
+  scores,
+  onChange,
+}: {
+  draft: CharacterDraft;
+  scores: AbilityScores;
+  onChange: (next: AsiDecision[]) => void;
+}) {
+  const slots = reachedAsis(draft.classes);
+  const update = (slot: { className: string; level: number }, next: AsiDecision) => {
+    onChange([
+      ...draft.advancement.filter(
+        (decision) => !(decision.className === slot.className && decision.level === slot.level),
+      ),
+      next,
+    ]);
+  };
+  return (
+    <Card>
+      <CardHeader><CardTitle>Aumentos de atributo ou talentos</CardTitle></CardHeader>
+      <CardBody className="space-y-3">
+        {slots.map((slot) => {
+          const decision = draft.advancement.find(
+            (entry) => entry.className === slot.className && entry.level === slot.level,
+          );
+          const picks = decisionPicks(decision);
+          const feat = decision?.feat ? findFeat(decision.feat) : undefined;
+          return (
+            <div key={`${slot.className}:${slot.level}`} className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+              <div className="mb-2 text-sm font-medium">{slot.className} · nível {slot.level}</div>
+              <select
+                className={selectCls}
+                value={decision?.kind ?? ""}
+                onChange={(event) => {
+                  const kind = event.target.value as "asi" | "feat";
+                  if (!kind) {
+                    onChange(draft.advancement.filter((entry) => !(entry.className === slot.className && entry.level === slot.level)));
+                  } else {
+                    update(slot, { className: slot.className, level: slot.level, kind, ...(kind === "asi" ? { abilities: {} } : {}) });
+                  }
+                }}
+              >
+                <option value="">— decidir —</option>
+                <option value="asi">Aumentar atributos (+2 ou +1/+1)</option>
+                <option value="feat">Escolher um talento</option>
+              </select>
+              {decision?.kind === "asi" && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {[0, 1].map((index) => (
+                    <select
+                      key={index}
+                      className={selectCls}
+                      value={picks[index] ?? ""}
+                      onChange={(event) => {
+                        const nextPicks = [...picks];
+                        nextPicks[index] = event.target.value as AbilityKey;
+                        const abilities: Partial<Record<AbilityKey, number>> = {};
+                        for (const key of nextPicks.filter(Boolean)) abilities[key] = (abilities[key] ?? 0) + 1;
+                        update(slot, { ...decision, abilities });
+                      }}
+                    >
+                      <option value="">— atributo +1 —</option>
+                      {ABILITY_ORDER.map((key) => (
+                        <option key={key} value={key} disabled={scores[key] + (picks.filter((pick) => pick === key).length || 1) > 20}>
+                          {ABILITY_LABELS[key]}
+                        </option>
+                      ))}
+                    </select>
+                  ))}
+                </div>
+              )}
+              {decision?.kind === "feat" && (
+                <div className="mt-2 space-y-2">
+                  <select
+                    className={selectCls}
+                    value={decision.feat ?? ""}
+                    onChange={(event) => update(slot, { ...decision, feat: event.target.value, abilities: undefined })}
+                  >
+                    <option value="">— talento —</option>
+                    {FEATS_CATALOG.filter((entry) => !entry.races || entry.races.includes(draft.raceName)).map((entry) => (
+                      <option key={entry.name} value={entry.name}>
+                        {entry.name}{entry.prerequisite ? ` — pré-requisito: ${entry.prerequisite}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {feat?.abilityIncrease && (
+                    <select
+                      className={selectCls}
+                      value={ABILITY_ORDER.find((key) => (decision.abilities?.[key] ?? 0) > 0) ?? ""}
+                      onChange={(event) => update(slot, { ...decision, abilities: { [event.target.value]: feat.abilityIncrease!.amount } })}
+                    >
+                      <option value="">— atributo do talento —</option>
+                      {feat.abilityIncrease.choose.map((key) => (
+                        <option key={key} value={key} disabled={scores[key] >= 20}>{ABILITY_LABELS[key]}</option>
+                      ))}
+                    </select>
+                  )}
+                  {feat && <p className="text-xs text-zinc-600 dark:text-zinc-300">{feat.description}</p>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </CardBody>
+    </Card>
   );
 }
 
