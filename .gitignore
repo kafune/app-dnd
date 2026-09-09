@@ -50,3 +50,6 @@ yarn-error.log*
 # estado do scripts/deploy-vps.sh (deploy anterior, backups)
 /.deploy
 /backup
+
+# livros/manuais em PDF (fonte de consulta local, não versionar)
+*.pdf
