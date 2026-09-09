@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ALIGNMENTS } from "@/lib/types";
+import { ABILITY_LABELS, ABILITY_ORDER, ALIGNMENTS, type AbilityKey, type AsiDecision } from "@/lib/types";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { HpTracker } from "@/components/sheet/HpTracker";
@@ -25,7 +26,17 @@ import { EditableText, EditableNumber } from "@/components/sheet/edit/EditContro
 import { DiceRoller } from "@/components/dice/DiceRoller";
 import { RollHistory } from "@/components/dice/RollHistory";
 import { ChangeLog } from "@/components/sheet/ChangeLog";
-import { useUnlocked } from "@/lib/store";
+import { useIsMaster, useUnlocked } from "@/lib/store";
+import { CLASSES_CATALOG, findClassDef, subclassNames } from "@/data/classesCatalog";
+import { FEATS_CATALOG, findFeat } from "@/data/featsCatalog";
+import {
+  applyAsiDecision,
+  applyClassChange,
+  clampClassLevels,
+  MAX_LEVEL,
+  pendingAsis,
+  totalLevelOf,
+} from "@/lib/progression";
 
 export default function CharacterPage() {
   const { id = "" } = useParams<{ id: string }>();
@@ -39,6 +50,7 @@ export default function CharacterPage() {
   const patchCharacter = useStore((s) => s.patchCharacter);
   const patchSheet = useStore((s) => s.patchSheet);
   const unlocked = useUnlocked(id);
+  const isMaster = useIsMaster(id);
 
   const limparHistorico = (scope: "player" | "mesa") => {
     const msg =
@@ -82,9 +94,48 @@ export default function CharacterPage() {
     .join(" / ");
 
   const classes = character.sheet.classes;
-  const setClasses = (next: typeof classes) => void patchSheet(id, { classes: next });
-  const updateClassEntry = (i: number, patch: Partial<(typeof classes)[number]>) =>
-    setClasses(classes.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const setClasses = async (raw: typeof classes, changed = Math.max(0, raw.length - 1)) => {
+    const next = isMaster ? raw : clampClassLevels(raw, Math.min(changed, raw.length - 1));
+    const result = applyClassChange(character, next);
+    const ok = await patchCharacter(id, {
+      sheet: result.character.sheet,
+      hpCurrent: result.character.hpCurrent,
+      hpMax: result.character.hpMax,
+      spellSlots: result.character.spellSlots,
+      resources: result.character.resources,
+    });
+    if (!ok) return;
+    const gained = result.summary.gained.map((feature) => feature.name);
+    const spellNews = result.summary.spells
+      .filter((spell) => spell.deltaCantrips > 0 || spell.deltaSpells > 0)
+      .map((spell) => `${spell.className}: +${spell.deltaCantrips} truque(s), +${spell.deltaSpells} magia(s), até ${spell.maxLevel}º`);
+    pushToast({
+      title: `Nível total ${result.summary.prevLevel} → ${result.summary.nextLevel}`,
+      description: [
+        gained.length ? `Ganhou: ${gained.join(", ")}.` : "",
+        spellNews.join(" "),
+        result.summary.pendingAsi.length ? `${result.summary.pendingAsi.length} aumento(s) de atributo/talento pendente(s).` : "",
+        result.summary.warnings.join(" "),
+      ].filter(Boolean).join(" ") || "Progressão recalculada.",
+      tone: result.summary.warnings.length ? "danger" : "success",
+    });
+  };
+  const updateClassEntry = (i: number, patch: Partial<(typeof classes)[number]>) => {
+    const next = classes.map((current, index) => {
+      if (index !== i) return current;
+      const updated = { ...current, ...patch };
+      const definition = findClassDef(updated.name);
+      if (!isMaster && definition && updated.level < definition.subclassLevel) updated.subclass = undefined;
+      return updated;
+    });
+    void setClasses(next, i);
+  };
+
+  const saveAdvancement = async (decision: AsiDecision) => {
+    const next = applyAsiDecision(character, decision);
+    const ok = await patchCharacter(id, { sheet: next.sheet });
+    if (ok) pushToast({ title: decision.kind === "feat" ? `Talento ${decision.feat} adicionado` : "Atributos aumentados", tone: "success" });
+  };
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -142,17 +193,19 @@ export default function CharacterPage() {
               </label>
               <label className="text-xs text-zinc-500">
                 Espécie/Raça
-                <EditableText
-                  value={character.sheet.species}
-                  onSave={(v) => patchSheet(id, { species: v })}
-                />
+                {isMaster ? (
+                  <EditableText value={character.sheet.species} onSave={(v) => patchSheet(id, { species: v })} />
+                ) : (
+                  <span className="block py-2 text-sm text-zinc-800 dark:text-zinc-200">{character.sheet.species}</span>
+                )}
               </label>
               <label className="text-xs text-zinc-500">
                 Antecedente
-                <EditableText
-                  value={character.sheet.background}
-                  onSave={(v) => patchSheet(id, { background: v })}
-                />
+                {isMaster ? (
+                  <EditableText value={character.sheet.background} onSave={(v) => patchSheet(id, { background: v })} />
+                ) : (
+                  <span className="block py-2 text-sm text-zinc-800 dark:text-zinc-200">{character.sheet.background}</span>
+                )}
               </label>
               <label className="text-xs text-zinc-500">
                 Tendência
@@ -188,20 +241,34 @@ export default function CharacterPage() {
             {/* Classes */}
             <div>
               <div className="mb-1 text-xs text-zinc-500">Classes</div>
+              <div className="mb-2 text-xs text-zinc-500">Nível total: {totalLevelOf(classes)}/{isMaster ? "∞ (Mestre)" : MAX_LEVEL}</div>
               <div className="space-y-1">
                 {classes.map((c, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-1">
-                    <EditableText
-                      value={c.name}
-                      onSave={(v) => updateClassEntry(i, { name: v })}
-                      className="w-36"
-                    />
-                    <EditableText
-                      value={c.subclass ?? ""}
-                      onSave={(v) => updateClassEntry(i, { subclass: v || undefined })}
-                      placeholder="subclasse"
-                      className="w-40"
-                    />
+                    {isMaster ? (
+                      <EditableText value={c.name} onSave={(v) => updateClassEntry(i, { name: v })} className="w-36" />
+                    ) : (
+                      <select
+                        className="h-9 w-36 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        value={c.name}
+                        onChange={(event) => updateClassEntry(i, { name: event.target.value, subclass: undefined })}
+                      >
+                        {CLASSES_CATALOG.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}
+                      </select>
+                    )}
+                    {isMaster ? (
+                      <EditableText value={c.subclass ?? ""} onSave={(v) => updateClassEntry(i, { subclass: v || undefined })} placeholder="subclasse" className="w-40" />
+                    ) : (
+                      <select
+                        className="h-9 w-40 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        value={c.subclass ?? ""}
+                        disabled={!findClassDef(c.name)?.subclasses.length || c.level < (findClassDef(c.name)?.subclassLevel ?? 1)}
+                        onChange={(event) => updateClassEntry(i, { subclass: event.target.value || undefined })}
+                      >
+                        <option value="">— subclasse —</option>
+                        {subclassNames(c.name).map((name) => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    )}
                     <EditableNumber
                       value={c.level}
                       min={1}
@@ -213,7 +280,8 @@ export default function CharacterPage() {
                       variant="ghost"
                       size="icon"
                       aria-label="Remover classe"
-                      onClick={() => setClasses(classes.filter((_, idx) => idx !== i))}
+                      disabled={classes.length <= 1}
+                      onClick={() => void setClasses(classes.filter((_, idx) => idx !== i), Math.max(0, i - 1))}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
@@ -224,11 +292,15 @@ export default function CharacterPage() {
                 variant="outline"
                 size="sm"
                 className="mt-1"
-                onClick={() => setClasses([...classes, { name: "Classe", level: 1 }])}
+                disabled={!isMaster && totalLevelOf(classes) >= MAX_LEVEL}
+                onClick={() => void setClasses([...classes, { name: isMaster ? "Classe custom" : CLASSES_CATALOG[0].name, level: 1 }])}
               >
                 + Classe
               </Button>
             </div>
+            {pendingAsis(classes, character.sheet.advancement).length > 0 && (
+              <PendingAdvancement characterId={id} onSave={saveAdvancement} />
+            )}
           </div>
         ) : (
           <>
@@ -322,5 +394,131 @@ export default function CharacterPage() {
         </aside>
       </div>
     </main>
+  );
+}
+
+type PendingChoice = {
+  kind: "asi" | "feat";
+  first?: AbilityKey;
+  second?: AbilityKey;
+  feat?: string;
+  featAbility?: AbilityKey;
+};
+
+function PendingAdvancement({
+  characterId,
+  onSave,
+}: {
+  characterId: string;
+  onSave: (decision: AsiDecision) => Promise<void>;
+}) {
+  const character = useStore((state) => state.characters[characterId]);
+  const [choices, setChoices] = useState<Record<string, PendingChoice>>({});
+  if (!character) return null;
+  const pending = pendingAsis(character.sheet.classes, character.sheet.advancement);
+  return (
+    <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
+      <div className="text-sm font-medium">Progressão pendente</div>
+      {pending.map((slot) => {
+        const key = `${slot.className}:${slot.level}`;
+        const choice = choices[key] ?? { kind: "asi" };
+        const feat = choice.feat ? findFeat(choice.feat) : undefined;
+        const setChoice = (patch: Partial<PendingChoice>) =>
+          setChoices((state) => ({ ...state, [key]: { ...choice, ...patch } }));
+        const valid = choice.kind === "asi"
+          ? !!choice.first && !!choice.second
+          : !!choice.feat && (!feat?.abilityIncrease || !!choice.featAbility);
+        return (
+          <div key={key} className="space-y-2 rounded border border-amber-200 bg-white p-2 dark:border-amber-900 dark:bg-zinc-900">
+            <div className="text-xs font-medium">{slot.className} · nível {slot.level}</div>
+            <select
+              className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              value={choice.kind}
+              onChange={(event) => setChoice({ kind: event.target.value as "asi" | "feat", first: undefined, second: undefined, feat: undefined, featAbility: undefined })}
+            >
+              <option value="asi">Aumentar atributos</option>
+              <option value="feat">Ganhar talento</option>
+            </select>
+            {choice.kind === "asi" ? (
+              <div className="grid grid-cols-2 gap-2">
+                {(["first", "second"] as const).map((field) => (
+                  <select
+                    key={field}
+                    className="h-8 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                    value={choice[field] ?? ""}
+                    onChange={(event) => setChoice({ [field]: event.target.value as AbilityKey })}
+                  >
+                    <option value="">— atributo +1 —</option>
+                    {ABILITY_ORDER.map((ability) => (
+                      <option
+                        key={ability}
+                        value={ability}
+                        disabled={
+                          character.sheet.abilityScores[ability] >= 20 ||
+                          (field === "second" && choice.first === ability && character.sheet.abilityScores[ability] >= 19)
+                        }
+                      >
+                        {ABILITY_LABELS[ability]}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <select
+                  className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                  value={choice.feat ?? ""}
+                  onChange={(event) => setChoice({ feat: event.target.value, featAbility: undefined })}
+                >
+                  <option value="">— talento —</option>
+                  {FEATS_CATALOG.filter((entry) => !entry.races || entry.races.includes(character.sheet.raceInfo?.race ?? character.sheet.species)).map((entry) => (
+                    <option key={entry.name} value={entry.name}>
+                      {entry.name}{entry.prerequisite ? ` — pré-requisito: ${entry.prerequisite}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {feat?.abilityIncrease && (
+                  <select
+                    className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                    value={choice.featAbility ?? ""}
+                    onChange={(event) => setChoice({ featAbility: event.target.value as AbilityKey })}
+                  >
+                    <option value="">— atributo do talento —</option>
+                    {feat.abilityIncrease.choose.map((ability) => (
+                      <option key={ability} value={ability} disabled={character.sheet.abilityScores[ability] >= 20}>
+                        {ABILITY_LABELS[ability]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+            <Button
+              size="sm"
+              disabled={!valid}
+              onClick={() => {
+                const abilities: Partial<Record<AbilityKey, number>> = {};
+                if (choice.kind === "asi") {
+                  if (choice.first) abilities[choice.first] = (abilities[choice.first] ?? 0) + 1;
+                  if (choice.second) abilities[choice.second] = (abilities[choice.second] ?? 0) + 1;
+                } else if (feat?.abilityIncrease && choice.featAbility) {
+                  abilities[choice.featAbility] = feat.abilityIncrease.amount;
+                }
+                void onSave({
+                  className: slot.className,
+                  level: slot.level,
+                  kind: choice.kind,
+                  ...(choice.kind === "feat" ? { feat: choice.feat } : {}),
+                  ...(Object.keys(abilities).length ? { abilities } : {}),
+                });
+              }}
+            >
+              Aplicar escolha
+            </Button>
+          </div>
+        );
+      })}
+    </div>
   );
 }

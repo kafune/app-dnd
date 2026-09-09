@@ -1,15 +1,14 @@
 import { lazy, Suspense, useState } from "react";
 import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useStore } from "@/lib/store";
+import { useIsMaster, useStore } from "@/lib/store";
 import { ABILITY_LABELS, ABILITY_ORDER, type AbilityKey, type Spell } from "@/lib/types";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
 // Catálogo de magias (600 KB) só entra na rede quando o modo de edição abre.
 const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
-import { findClass } from "@/data/classesCatalog";
-import { spellCapacity } from "@/lib/createCharacter";
+import { allSpellCaps } from "@/lib/progression";
 
 const selectCls =
   "h-7 rounded-md border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -17,6 +16,7 @@ const selectCls =
 export function Spells({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
   const { cantrips, known, saveDC, attackMod, castingAbility } = c.sheet.spells;
@@ -29,13 +29,7 @@ export function Spells({ id }: { id: string }) {
 
   // Mesmo limite de truques/magias usado na criação — assim a edição também
   // respeita a capacidade da(s) classe(s) conjuradora(s) do personagem.
-  const casterClasses = c.sheet.classes.filter(
-    (k) => findClass(k.name)?.spellcastingAbility,
-  );
-  const caps = spellCapacity(
-    casterClasses.map((k) => ({ name: k.name, level: k.level })),
-    c.sheet.abilityScores,
-  );
+  const caps = allSpellCaps(c.sheet.classes, c.sheet.abilityScores);
 
   const byLevel = new Map<number, Spell[]>();
   for (const sp of all) {
@@ -52,7 +46,7 @@ export function Spells({ id }: { id: string }) {
             <Sparkles className="mr-1 inline h-3.5 w-3.5" />
             Magias
           </CardTitle>
-          {editMode ? (
+          {editMode && isMaster ? (
             <div className="flex items-center gap-1 text-xs text-zinc-500">
               CD
               <EditableNumber value={saveDC} onSave={(v) => setSpells({ saveDC: v })} className="h-7 w-12" />
@@ -82,10 +76,10 @@ export function Spells({ id }: { id: string }) {
           <Suspense fallback={<p className="text-xs text-zinc-500">Carregando catálogo de magias…</p>}>
             <SpellPicker
               classNames={classNames}
+              caps={caps}
               cantrips={cantrips}
               known={known}
-              cantripsMax={caps.cantrips}
-              spellsMax={caps.spells}
+              unrestricted={isMaster}
               onChange={(cantrips, known) => setSpells({ cantrips, known })}
             />
           </Suspense>

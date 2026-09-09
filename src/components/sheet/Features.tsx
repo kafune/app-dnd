@@ -2,13 +2,14 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useStore } from "@/lib/store";
+import { useIsMaster, useStore } from "@/lib/store";
 import { EditableText } from "@/components/sheet/edit/EditControls";
 import type { Feature } from "@/lib/types";
 
 export function Features({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!c) return null;
@@ -18,7 +19,7 @@ export function Features({ id }: { id: string }) {
   const updateFeature = (i: number, p: Partial<Feature>) =>
     void patchSheet(id, { features: features.map((f, idx) => (idx === i ? { ...f, ...p } : f)) });
 
-  if (editMode) {
+  if (editMode && isMaster) {
     return (
       <Card>
         <CardHeader>
@@ -45,7 +46,7 @@ export function Features({ id }: { id: string }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void patchSheet(id, { features: [...features, { name: "Característica", source: "", description: "" }] })}
+            onClick={() => void patchSheet(id, { features: [...features, { name: "Característica homebrew", source: "Mestre", description: "", origin: { kind: "custom", name: "Mestre" } }] })}
           >
             + Característica
           </Button>
@@ -58,6 +59,7 @@ export function Features({ id }: { id: string }) {
     <Card>
       <CardHeader>
         <CardTitle>Habilidades & Passivas</CardTitle>
+        {editMode && !isMaster && <span className="text-[10px] text-zinc-500">automáticas pela progressão</span>}
       </CardHeader>
       <CardBody className="space-y-1">
         {c.sheet.features.map((f) => {

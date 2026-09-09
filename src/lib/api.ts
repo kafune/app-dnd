@@ -15,24 +15,28 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Papel de quem abriu a ficha, informado pelo servidor conforme o PIN usado. */
+export type AccessRole = "mestre" | "jogador";
+type Authorized = { character: Character; role?: AccessRole };
+
 export const api = {
   listCharacters: () =>
     jsonFetch<{ characters: Character[] }>("/api/characters", { cache: "no-store" }),
 
   createCharacter: (character: Character) =>
-    jsonFetch<{ character: Character }>("/api/characters", {
+    jsonFetch<Authorized>("/api/characters", {
       method: "POST",
       body: JSON.stringify({ character }),
     }),
 
   patchCharacter: (id: string, patch: Partial<Character>, pin?: string) =>
-    jsonFetch<{ character: Character }>(`/api/characters/${id}`, {
+    jsonFetch<Authorized>(`/api/characters/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ patch, pin }),
     }),
 
   getCharacter: (id: string, pin: string) =>
-    jsonFetch<{ character: Character }>(`/api/characters/${id}`, {
+    jsonFetch<Authorized>(`/api/characters/${id}`, {
       cache: "no-store",
       headers: { "x-character-pin": pin },
     }),

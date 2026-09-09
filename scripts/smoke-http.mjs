@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 const port = Number(process.env.SMOKE_PORT ?? "3100");
 const baseUrl = `http://127.0.0.1:${port}`;
 const JOAO_PIN = "7429";
-const MASTER_PIN = "670076";
+const MASTER_PIN = "670067";
 const tmpDir = mkdtempSync(join(tmpdir(), "app-dnd-smoke-"));
 const dbPath = join(tmpDir, "app-dnd.sqlite");
 
@@ -162,6 +162,7 @@ async function assertCharacterPatch() {
   assert.equal(getWithPin.status, 200, "GET da ficha com PIN deve responder 200");
   const original = await getWithPin.json();
   assert.equal(original.character.hpCurrent, 18);
+  assert.equal(original.role, "jogador", "PIN da ficha deve receber papel de jogador");
   assert.equal(original.character.pin, undefined, "GET autorizado não deve expor PIN");
 
   const patchResponse = await fetch(`${baseUrl}/api/characters/joao-lindao`, {
@@ -202,6 +203,7 @@ async function assertCharacterPatch() {
     headers: { "x-character-pin": MASTER_PIN },
   });
   assert.equal(master.status, 200, "chave mestra deve abrir qualquer ficha");
+  assert.equal((await master.json()).role, "mestre", "chave mestra deve receber papel de mestre");
 }
 
 async function assertCreateAndDelete() {
@@ -231,6 +233,7 @@ async function assertCreateAndDelete() {
   });
   assert.equal(created.status, 201, "POST deve criar a ficha");
   const body = await created.json();
+  assert.equal(body.role, "jogador", "criador entra como jogador");
   assert.equal(body.character.id, "edson-cao", "id deve ser o slug do nome");
   assert.equal(body.character.pin, undefined, "POST não deve devolver o PIN");
   assert.equal(body.character.protected, true);

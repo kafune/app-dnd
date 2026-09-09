@@ -1,5 +1,5 @@
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useStore } from "@/lib/store";
+import { useIsMaster, useStore } from "@/lib/store";
 import {
   ABILITY_LABELS,
   abilityMod,
@@ -8,6 +8,9 @@ import {
   type SkillName,
 } from "@/lib/types";
 import { roll } from "@/lib/dice";
+import { backgroundSkills, findBackground } from "@/data/backgroundsCatalog";
+import { findRace, findSubrace } from "@/data/racesCatalog";
+import { classSkillBudget, featSkillChoices } from "@/lib/progression";
 
 const ALL_SKILLS = Object.keys(SKILL_TO_ABILITY) as SkillName[];
 
@@ -15,14 +18,35 @@ export function Skills({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const addRoll = useStore((s) => s.addRoll);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
 
   const profMap = new Map(c.sheet.skills.map((s) => [s.name, s]));
+  const background = backgroundSkills(findBackground(c.sheet.background));
+  const race = findRace(c.sheet.raceInfo?.race ?? c.sheet.species);
+  const subrace = findSubrace(race?.name ?? "", c.sheet.raceInfo?.subrace ?? "");
+  const raceTraits = [...(race?.traits ?? []), ...(subrace?.traits ?? [])];
+  const fixed = new Set<SkillName>([
+    ...background.fixed,
+    ...raceTraits.flatMap((trait) => trait.skills ?? []),
+  ]);
+  const parts = classSkillBudget(c.sheet.classes);
+  const raceChoices = raceTraits.reduce((sum, trait) => sum + (trait.skillChoices ?? 0), 0);
+  const freeChoices = raceChoices + featSkillChoices(c.sheet.features);
+  const maximum = fixed.size + background.choose + parts.reduce((sum, part) => sum + part.count, 0) + freeChoices;
+  const allowed = new Set<SkillName>(fixed);
+  for (const part of parts) for (const skill of part.from ?? ALL_SKILLS) allowed.add(skill);
+  for (const skill of background.from) allowed.add(skill);
+  if (freeChoices > 0) for (const skill of ALL_SKILLS) allowed.add(skill);
 
   // ciclo: nenhuma -> proficiente -> especialista -> nenhuma
   const cycleSkill = (name: SkillName) => {
     const cur = profMap.get(name);
+    if (!isMaster && !cur?.proficient) {
+      const selected = c.sheet.skills.filter((skill) => skill.proficient).length;
+      if (!allowed.has(name) || selected >= maximum) return;
+    }
     const others = c.sheet.skills.filter((s) => s.name !== name);
     const next = !cur?.proficient
       ? { name, proficient: true }
@@ -58,7 +82,10 @@ export function Skills({ id }: { id: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Perícias</CardTitle>
+        <div className="flex items-baseline justify-between">
+          <CardTitle>Perícias</CardTitle>
+          {editMode && !isMaster && <span className="text-xs text-zinc-500">{c.sheet.skills.filter((skill) => skill.proficient).length}/{maximum}</span>}
+        </div>
       </CardHeader>
       <CardBody className="grid grid-cols-1 gap-1 sm:grid-cols-2">
         {ALL_SKILLS.map((name) => {

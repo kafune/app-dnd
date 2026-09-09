@@ -2,9 +2,10 @@ import { useState } from "react";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useStore } from "@/lib/store";
+import { useIsMaster, useStore } from "@/lib/store";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 import { CREATURE_SIZES, type Item } from "@/lib/types";
+import { ITEMS_CATALOG, findItem } from "@/data/itemsCatalog";
 
 const splitList = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -40,9 +41,10 @@ function fileToCompressedDataUrl(file: File, maxDim = 640, quality = 0.8): Promi
 export function ProficienciesAndLanguages({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
-  if (editMode) {
+  if (editMode && isMaster) {
     return (
       <Card>
         <CardHeader>
@@ -94,6 +96,7 @@ export function ProficienciesAndLanguages({ id }: { id: string }) {
 export function Inventory({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
   const inv = c.sheet.inventory;
@@ -119,13 +122,15 @@ export function Inventory({ id }: { id: string }) {
             </div>
             {inv.items.map((it, i) => (
               <div key={i} className="flex items-center gap-1">
-                <EditableText value={it.name} onSave={(v) => updateItem(i, { name: v })} placeholder="item" className="w-40" />
-                <EditableText
-                  value={it.description ?? ""}
-                  onSave={(v) => updateItem(i, { description: v || undefined })}
-                  placeholder="descrição"
-                  className="flex-1"
-                />
+                {isMaster ? (
+                  <>
+                    <EditableText value={it.name} onSave={(v) => updateItem(i, { name: v })} placeholder="item" className="w-40" />
+                    <EditableText value={it.description ?? ""} onSave={(v) => updateItem(i, { description: v || undefined })} placeholder="descrição" className="flex-1" />
+                  </>
+                ) : (
+                  <span className="flex-1"><strong>{it.name}</strong>{it.description ? <span className="ml-1 text-xs text-zinc-500">— {it.description}</span> : null}</span>
+                )}
+                <EditableNumber value={it.quantity ?? 1} min={0} onSave={(v) => updateItem(i, { quantity: v })} className="h-7 w-14" />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -136,13 +141,12 @@ export function Inventory({ id }: { id: string }) {
                 </Button>
               </div>
             ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setInv({ items: [...inv.items, { name: "Item", quantity: 1 }] })}
-            >
-              + Item
-            </Button>
+            <InventoryCatalogAdd items={inv.items} onChange={(items) => setInv({ items })} />
+            {isMaster && (
+              <Button variant="outline" size="sm" onClick={() => setInv({ items: [...inv.items, { name: "Item homebrew", quantity: 1 }] })}>
+                + Item custom/homebrew
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -163,6 +167,28 @@ export function Inventory({ id }: { id: string }) {
         )}
       </CardBody>
     </Card>
+  );
+}
+
+function InventoryCatalogAdd({ items, onChange }: { items: Item[]; onChange: (items: Item[]) => void }) {
+  const [name, setName] = useState(ITEMS_CATALOG[0]?.name ?? "");
+  const add = () => {
+    const catalog = findItem(name);
+    if (!catalog) return;
+    const existing = items.find((item) => item.name === catalog.name);
+    if (existing) {
+      onChange(items.map((item) => item === existing ? { ...item, quantity: (item.quantity ?? 1) + 1 } : item));
+    } else {
+      onChange([...items, { name: catalog.name, description: catalog.detail, quantity: 1 }]);
+    }
+  };
+  return (
+    <div className="flex gap-2">
+      <select className="h-8 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900" value={name} onChange={(event) => setName(event.target.value)}>
+        {ITEMS_CATALOG.map((item) => <option key={item.name} value={item.name}>{item.name} — {item.detail}</option>)}
+      </select>
+      <Button variant="outline" size="sm" onClick={add}>Adicionar</Button>
+    </div>
   );
 }
 

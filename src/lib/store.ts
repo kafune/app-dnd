@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Character, DiceRoll, Sheet } from "./types";
 import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
-import { api } from "./api";
+import { api, type AccessRole } from "./api";
 
 export type AppToast = {
   id: string;
@@ -17,6 +17,8 @@ type Store = {
   toasts: AppToast[];
   // PIN guardado por device por personagem; usado para mandar nas requests
   pins: Record<string, string>;
+  /** Papel com que cada ficha foi destravada neste aparelho (mestre × jogador). */
+  roles: Record<string, AccessRole>;
   hydrated: boolean;
   realtimeReady: boolean;
   patchError: string | null;
@@ -45,6 +47,7 @@ export const useStore = create<Store>()(
       rolls: [],
       toasts: [],
       pins: {},
+      roles: {},
       hydrated: false,
       realtimeReady: false,
       patchError: null,
@@ -56,11 +59,12 @@ export const useStore = create<Store>()(
         set((s) => ({ characters: { ...s.characters, [c.id]: c } })),
 
       createCharacter: async (character) => {
-        const { character: saved } = await api.createCharacter(character);
+        const { character: saved, role } = await api.createCharacter(character);
         set((s) => ({
           characters: { ...s.characters, [saved.id]: saved },
           // O criador já fica destravado com o PIN que digitou.
           pins: character.pin ? { ...s.pins, [saved.id]: character.pin } : s.pins,
+          roles: character.pin ? { ...s.roles, [saved.id]: role ?? "jogador" } : s.roles,
         }));
         return saved.id;
       },
@@ -73,8 +77,12 @@ export const useStore = create<Store>()(
           set((s) => ({ characters: { ...s.characters, [id]: { ...prev, ...patch } } }));
         }
         try {
-          const { character } = await api.patchCharacter(id, patch, pin);
-          set((s) => ({ characters: { ...s.characters, [id]: character }, patchError: null }));
+          const { character, role } = await api.patchCharacter(id, patch, pin);
+          set((s) => ({
+            characters: { ...s.characters, [id]: character },
+            roles: role ? { ...s.roles, [id]: role } : s.roles,
+            patchError: null,
+          }));
           return true;
         } catch (e) {
           // rollback se falhou
@@ -95,9 +103,12 @@ export const useStore = create<Store>()(
             delete characters[id];
             const pins = { ...s.pins };
             delete pins[id];
+            const roles = { ...s.roles };
+            delete roles[id];
             return {
               characters,
               pins,
+              roles,
               rolls: s.rolls.filter((r) => r.characterId !== id),
             };
           });
@@ -121,10 +132,11 @@ export const useStore = create<Store>()(
 
       unlock: async (id, pin) => {
         try {
-          const { character } = await api.getCharacter(id, pin);
+          const { character, role } = await api.getCharacter(id, pin);
           set((s) => ({
             characters: { ...s.characters, [id]: character },
             pins: { ...s.pins, [id]: pin },
+            roles: { ...s.roles, [id]: role ?? "jogador" },
           }));
           return true;
         } catch {
@@ -136,12 +148,15 @@ export const useStore = create<Store>()(
         set((s) => {
           const next = { ...s.pins };
           delete next[id];
+          const roles = { ...s.roles };
+          delete roles[id];
           return {
             characters: {
               ...s.characters,
               ...(PUBLIC_CHARACTER_MAP[id] ? { [id]: PUBLIC_CHARACTER_MAP[id] } : {}),
             },
             pins: next,
+            roles,
           };
         }),
 
@@ -207,8 +222,9 @@ export const useStore = create<Store>()(
           await Promise.all(
             Object.entries(get().pins).map(async ([id, pin]) => {
               try {
-                const { character } = await api.getCharacter(id, pin);
+                const { character, role } = await api.getCharacter(id, pin);
                 map[id] = character;
+                if (role) set((s) => ({ roles: { ...s.roles, [id]: role } }));
               } catch {
                 // PIN removido/alterado no servidor: mantém só o resumo público.
               }
@@ -226,6 +242,7 @@ export const useStore = create<Store>()(
       name: "app-dnd-store",
       partialize: (s) => ({
         pins: s.pins,
+        roles: s.roles,
         // characters/rolls vem do servidor; persistimos só pins por device
       }),
     },
@@ -356,6 +373,9 @@ function cryptoRandomId(): string {
 }
 
 export const useCharacter = (id: string) => useStore((s) => s.characters[id]);
+
+/** A ficha foi destravada com a chave mestra neste aparelho? */
+export const useIsMaster = (id: string) => useStore((s) => s.roles[id] === "mestre");
 
 export const useUnlocked = (id: string) =>
   useStore((s) => {

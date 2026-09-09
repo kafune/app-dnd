@@ -54,7 +54,7 @@ struct Pins {
 
 impl Pins {
     fn from_env() -> Pins {
-        let master = std::env::var("APP_DND_MASTER_PIN").unwrap_or_else(|_| "670076".into());
+        let master = std::env::var("APP_DND_MASTER_PIN").unwrap_or_else(|_| "670067".into());
         let fixed_raw = std::env::var("APP_DND_CHARACTER_PINS").unwrap_or_else(|_| {
             "joao-lindao:7429,camargo-fofo:3816,vinicius-fofo:9052,ruda-felpudo:6148".into()
         });
@@ -140,6 +140,14 @@ fn error(status: StatusCode, code: &str) -> Response {
 fn db_error(e: rusqlite::Error) -> Response {
     eprintln!("[db] erro: {e}");
     error(StatusCode::INTERNAL_SERVER_ERROR, "db_error")
+}
+
+/// Resposta autorizada: a ficha completa + o papel de quem a abriu ("mestre" com a
+/// chave mestra, "jogador" com o PIN da ficha). O cliente usa o papel para liberar
+/// as opções homebrew e ignorar os limites de regra.
+fn authorized(st: &AppState, c: CharMap, pin: Option<&str>) -> Value {
+    let role = if st.pins.is_master(pin) { "mestre" } else { "jogador" };
+    json!({ "character": to_authorized(c), "role": role })
 }
 
 fn header_pin(headers: &HeaderMap) -> Option<String> {
@@ -242,7 +250,8 @@ async fn create_character(
 
     st.invalidate();
     st.publish("character", json!({ "character": to_public(&saved) }));
-    (StatusCode::CREATED, Json(json!({ "character": to_authorized(saved) }))).into_response()
+    let pin = payload.get("pin").and_then(Value::as_str);
+    (StatusCode::CREATED, Json(authorized(&st, saved, pin))).into_response()
 }
 
 async fn get_character(
@@ -268,7 +277,7 @@ async fn get_character(
             Err(e) => db_error(e),
         };
     }
-    Json(json!({ "character": to_authorized(stored) })).into_response()
+    Json(authorized(&st, stored, pin.as_deref())).into_response()
 }
 
 async fn patch_character(
@@ -307,7 +316,7 @@ async fn patch_character(
 
     st.invalidate();
     st.publish("character", json!({ "character": to_public(&next) }));
-    Json(json!({ "character": to_authorized(next) })).into_response()
+    Json(authorized(&st, next, pin.as_deref())).into_response()
 }
 
 async fn delete_character(
