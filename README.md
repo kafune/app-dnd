@@ -1,46 +1,79 @@
 # Mesa Pankleos — D&D companion
 
-Webapp de fichas para uma mesa de D&D 5e (BR). Roda inteiro num único processo Node — backend SQLite + Server-Sent Events para sync em tempo real entre os celulares da galera.
+Webapp de fichas para uma mesa de D&D 5e (BR). Roda inteiro num **único binário Rust**
+(~10 MB de RAM, sobe em milissegundos): API + SQLite + Server-Sent Events + frontend
+embutido, servindo tudo da memória com Brotli pré-comprimido.
 
 ## Stack
 
-- Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4
-- Zustand no cliente
-- **better-sqlite3** pra persistência (arquivo único `data/app-dnd.sqlite`)
-- **Server-Sent Events** (`/api/events`) pra propagar mudanças de ficha e rolagens em tempo real
+- **Frontend**: React 19 · Vite 7 · TypeScript · Tailwind v4 · Zustand · react-router
+- **Backend**: Rust (axum + tokio) · SQLite via rusqlite (embutido, sem lib do sistema)
+- **Realtime**: Server-Sent Events (`/api/events`) — broadcast em memória, um processo
+- **Deploy**: um binário (`server/target/release/app-dnd`) + a pasta `data/` com o SQLite
 
-## Rodar localmente
+O frontend (`dist/`) é embutido no binário na compilação: não precisa de Node, `node_modules`
+nem nginx servindo arquivos estáticos em produção.
+
+## Rodar localmente (dev)
+
+Requisitos: [Bun](https://bun.sh) (ou Node 20+) e [Rust](https://rustup.rs) estável.
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev:server   # API + SSE em http://127.0.0.1:8080 (cria ./data/app-dnd.sqlite e popula o seed)
+bun run dev          # Vite em http://localhost:3000 com proxy de /api para o servidor
 ```
 
-Abre em [http://localhost:3000](http://localhost:3000). O SQLite é criado em `./data/app-dnd.sqlite` na primeira request e populado com as 4 fichas.
+## Deploy na VPS com o script (recomendado)
 
-## Deploy em VPS
-
-Requisitos: Node 20+ e build-essentials (`apt install build-essential` no Debian/Ubuntu — better-sqlite3 compila um módulo nativo).
+Na VPS, dentro do repositório já clonado (onde o Next rodava):
 
 ```bash
-# clonar
+git pull
+bash scripts/deploy-vps.sh check       # inventário: pm2, systemd, portas, nginx, banco, toolchain (não muda nada)
+bash scripts/deploy-vps.sh deploy      # fluxo completo, pede confirmação antes de mexer
+bash scripts/deploy-vps.sh verify      # revalida o deploy atual quando quiser
+bash scripts/deploy-vps.sh rollback    # emergência: volta o código e o Next do deploy anterior
+```
+
+O `deploy` só derruba o app antigo depois que a versão Rust já compilou e passou no smoke test
+numa porta temporária. Ordem: inventário → toolchain (instala rustup/pm2 se faltar) → build →
+smoke → backup do banco em `backup/` → remove pm2/systemd/processos do Next → sobe o binário
+no pm2 → bateria de verificações (API, contagem de fichas igual ao banco, brotli/ETag, rota do
+SPA, SSE, memória, porta do nginx, resíduos do deploy antigo). Reutiliza a porta em que o app
+antigo escutava; para forçar, `APP_DND_PORT=8080 APP_DND_HOST=127.0.0.1 bash scripts/deploy-vps.sh deploy`.
+
+## Build e deploy manual em VPS
+
+Requisitos na VPS: Rust estável (`curl https://sh.rustup.rs -sSf | sh`) e um compilador C
+(`apt install build-essential`, para compilar o SQLite embutido). Bun/Node só para o build do frontend.
+
+```bash
 git clone <repo> app-dnd && cd app-dnd
-
-# instalar e buildar
-npm ci
-npm run build
-
-# rodar
-npm start  # ou: PORT=8080 npm start
+bun install
+bun run build        # vite build + pré-compressão br/gz + cargo build --release (embute o dist/)
+bun run start        # = ./server/target/release/app-dnd  (porta 8080)
 ```
 
-### Com pm2 (processo permanente)
+Variáveis de ambiente (todas opcionais):
+
+| Variável | Default | O que faz |
+| --- | --- | --- |
+| `APP_DND_DB` | `./data/app-dnd.sqlite` | caminho do banco |
+| `PORT` / `HOST` | `8080` / `0.0.0.0` | porta e interface (atrás do nginx use `HOST=127.0.0.1`) |
+| `APP_DND_BIND` | — | `host:porta` completo, sobrescreve os dois acima |
+| `APP_DND_MASTER_PIN` | (ver `CHARACTER_PINS.md`) | chave mestra do Mestre |
+| `APP_DND_CHARACTER_PINS` | (ver `CHARACTER_PINS.md`) | `id:pin,id:pin` das fichas fixas do seed |
+
+Só é preciso copiar para a VPS o binário e manter a pasta `data/`. Para atualizar:
+`git pull && bun run build && pm2 restart app-dnd`.
+
+### Com pm2
 
 ```bash
-npm install -g pm2
-pm2 start npm --name app-dnd -- start
+pm2 start ecosystem.config.cjs
 pm2 save
-pm2 startup     # gera linha do systemd pra rodar no boot
+pm2 startup
 ```
 
 ### Com systemd
@@ -49,16 +82,17 @@ pm2 startup     # gera linha do systemd pra rodar no boot
 
 ```ini
 [Unit]
-Description=Mesa do Pierre (app-dnd)
+Description=Mesa Pankleos (app-dnd)
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/srv/app-dnd
-ExecStart=/usr/bin/node /srv/app-dnd/node_modules/.bin/next start -p 3000
+ExecStart=/srv/app-dnd/server/target/release/app-dnd
 Restart=always
 User=app
-Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
 Environment=APP_DND_DB=/srv/app-dnd/data/app-dnd.sqlite
 
 [Install]
@@ -71,7 +105,8 @@ systemctl enable --now app-dnd
 
 ### Nginx reverse proxy (com SSE)
 
-Importante: SSE precisa de `proxy_buffering off` e timeouts longos.
+O binário já entrega assets com Brotli/gzip, ETag e `Cache-Control: immutable`; o nginx só
+precisa fazer TLS e repassar. Importante: SSE precisa de `proxy_buffering off` e timeouts longos.
 
 ```nginx
 server {
@@ -80,7 +115,7 @@ server {
   # ... certificados ssl ...
 
   location / {
-    proxy_pass http://127.0.0.1:3000;
+    proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -91,17 +126,27 @@ server {
     proxy_buffering off;
     proxy_cache off;
     proxy_read_timeout 24h;
-    chunked_transfer_encoding off;
   }
 }
 ```
 
 ### Backup do banco
 
-O SQLite é um arquivo só. Backup é `cp data/app-dnd.sqlite backup/`. Em runtime, use:
+O SQLite é um arquivo só. Em runtime, use:
 
 ```bash
 sqlite3 data/app-dnd.sqlite ".backup 'backup/app-dnd-$(date +%F).sqlite'"
+```
+
+## Testes
+
+```bash
+bun run lint          # eslint
+bun run typecheck     # tsc
+bun run test          # regras puras (dados, descanso, criação de ficha, seed)
+bun run test:server   # testes unitários do Rust (diff do log, banco em memória)
+bun run test:smoke    # sobe o binário com SQLite temporário e valida SPA, APIs, cache, SSE
+bun run test:all      # tudo acima + build
 ```
 
 ## Atalhos da ficha
@@ -114,28 +159,28 @@ sqlite3 data/app-dnd.sqlite ".backup 'backup/app-dnd-$(date +%F).sqlite'"
 
 ## Modelo de dados
 
-Tudo num arquivo `app-dnd.sqlite`:
+Tudo num arquivo `app-dnd.sqlite` (mesmo esquema da versão anterior em Node):
 
 - `characters (id PK, data JSON blob, updated_at)` — a ficha inteira como JSON
-- `rolls (id PK, character_id, label, expression, result, detail JSON, created_at)` — histórico (mantém últimas 200)
+- `rolls (id PK, character_id, character_name, label, expression, result, detail JSON, created_at)` — mantém as 200 últimas
+- `character_log (id PK, character_id, by, changes JSON, created_at)` — log de modificações, 100 por ficha
 
-PINs são armazenados na ficha (`Character.pin`). Sem PIN, a ficha é editável por qualquer cliente. Com PIN, o cliente precisa ter feito "destravar" (que passa a validar o PIN nas requisições).
+PINs das fichas do seed vêm de `APP_DND_CHARACTER_PINS`; fichas criadas no app guardam o PIN
+no próprio registro (`Character.pin`). Sem PIN, a ficha é aberta. As APIs nunca devolvem o PIN.
 
 ## Arquitetura
 
 ```
-Cliente (Zustand)
-   ↓ fetch
-   ↓ EventSource('/api/events')   ← SSE para receber updates
-   ↓
-Next.js Route Handlers (Node runtime)
-   ↓
-SQLite (better-sqlite3, WAL)
-   ↑
-EventBus (in-memory) → broadcast SSE pra todos os clientes
+Cliente (React SPA, Zustand)
+   ↓ fetch /api/*                  ↓ EventSource('/api/events')
+Binário Rust (axum)
+   ├─ /assets/* servidos da memória (br/gz pré-comprimidos, ETag, immutable)
+   ├─ rotas JSON (compressão on-the-fly) ─→ SQLite (rusqlite, WAL, um Mutex)
+   └─ SSE ←─ broadcast em memória (cada evento serializado uma vez para todos)
 ```
 
-Como o EventBus é in-memory por processo, **não escale para múltiplas instâncias** (a sincronização realtime quebraria entre processos). Para a mesa, um Node único basta.
+O broadcast é in-memory por processo: **não escale para múltiplas instâncias**. Para a mesa,
+um processo sobra (cada request custa microssegundos).
 
 ## Personagens
 
