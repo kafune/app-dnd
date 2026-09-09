@@ -142,13 +142,51 @@ detect_systemd() {
   fi
 }
 
+# Porta de um bloco `upstream NOME { server 127.0.0.1:PORTA; ... }` em qualquer
+# arquivo de config do nginx (o proxy_pass costuma apontar pro nome, não pra porta
+# direto). Conta chaves pra achar o fim do bloco; primeiro `server` com IP local vence.
+resolve_nginx_upstream_port() { # nome_do_upstream
+  awk -v name="$1" '
+    BEGIN { depth = 0; inblock = 0 }
+    inblock == 0 && $0 ~ ("upstream[ \t]+" name "([ \t]|$)") { inblock = 1; depth = 1; next }
+    inblock == 1 {
+      depth += gsub(/\{/, "{")
+      depth -= gsub(/\}/, "}")
+      if (match($0, /server[ \t]+(127\.0\.0\.1|localhost):[0-9]+/)) {
+        s = substr($0, RSTART, RLENGTH)
+        sub(/^.*:/, "", s)
+        print s
+        exit
+      }
+      if (depth <= 0) exit
+    }
+  ' $NGINX_CONF_FILES 2>/dev/null | head -1
+}
+
 NGINX_PORT=""; NGINX_SERVER=""; NGINX_BUFFERING=""; NGINX_FILES=""
 detect_nginx() {
   NGINX_PORT=""; NGINX_SERVER=""; NGINX_BUFFERING=""; NGINX_FILES=""
-  local dirs="/etc/nginx/sites-enabled /etc/nginx/conf.d"
-  NGINX_FILES=$(grep -lsE 'proxy_pass\s+http://(127\.0\.0\.1|localhost):[0-9]+' $dirs 2>/dev/null | tr '\n' ' ' || true)
+  local dirs="${NGINX_DIRS:-/etc/nginx/sites-enabled /etc/nginx/conf.d}"
+  NGINX_CONF_FILES="${NGINX_CONF_GLOB:-/etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*}"
+  # -r é obrigatório: passar um DIRETÓRIO ao grep sem -r não procura dentro dele
+  # (achava sempre vazio, mesmo com arquivos presentes). Segue symlink de arquivo
+  # (sites-enabled/x -> sites-available/x) normalmente, só não entra em subdiretórios.
+  NGINX_FILES=$(grep -rlsE 'proxy_pass\s+http://[A-Za-z0-9_.-]+(:[0-9]+)?\s*;' $dirs 2>/dev/null | tr '\n' ' ' || true)
   [ -n "$NGINX_FILES" ] || return 0
-  NGINX_PORT=$(grep -hoE 'proxy_pass\s+http://(127\.0\.0\.1|localhost):[0-9]+' $NGINX_FILES 2>/dev/null | grep -oE '[0-9]+$' | sort | uniq -c | sort -rn | awk 'NR==1{print $2}' || true)
+
+  # pega o alvo do primeiro proxy_pass ativo (host:porta direto, ou nome de upstream)
+  local f target
+  for f in $NGINX_FILES; do
+    target=$(grep -hoE 'proxy_pass\s+http://[A-Za-z0-9_.-]+(:[0-9]+)?' "$f" 2>/dev/null | head -1 | sed -E 's#^proxy_pass[ \t]+http://##') || true
+    [ -n "$target" ] || continue
+    if printf '%s' "$target" | grep -qE '^(127\.0\.0\.1|localhost):[0-9]+$'; then
+      NGINX_PORT="${target##*:}"
+    else
+      NGINX_PORT=$(resolve_nginx_upstream_port "$target")
+    fi
+    [ -n "$NGINX_PORT" ] && break
+  done
+
   NGINX_SERVER=$(grep -hoE 'server_name\s+[^;]+' $NGINX_FILES 2>/dev/null | head -1 | awk '{print $2}' || true)
   if grep -qsE 'proxy_buffering\s+off' $NGINX_FILES 2>/dev/null; then NGINX_BUFFERING="off"; else NGINX_BUFFERING="on"; fi
 }
@@ -204,8 +242,10 @@ phase_check() {
   if [ -n "$NGINX_PORT" ]; then
     info "nginx faz proxy para 127.0.0.1:$NGINX_PORT (server_name: ${NGINX_SERVER:-?}; arquivos: $NGINX_FILES)"
     [ "$NGINX_BUFFERING" = "off" ] && ok "nginx tem proxy_buffering off (SSE ok)" || warn "nginx SEM 'proxy_buffering off' — o SSE vai atrasar; veja README"
+  elif [ -n "$NGINX_FILES" ]; then
+    warn "achei proxy_pass em $NGINX_FILES mas não consegui resolver a porta (upstream com nome que não achei, ou sintaxe fora do comum) — confira à mão"
   else
-    info "nenhum proxy_pass do nginx encontrado (ou sem permissão de leitura em /etc/nginx)"
+    info "nenhum proxy_pass do nginx encontrado em sites-enabled/conf.d (ou sem permissão de leitura em /etc/nginx)"
   fi
 
   info "--- artefatos antigos"
