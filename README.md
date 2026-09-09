@@ -37,6 +37,28 @@ bash scripts/deploy-vps.sh cleanup     # mata resíduos do deploy antigo (unit s
 bash scripts/deploy-vps.sh rollback    # emergência: volta o código e o Next do deploy anterior
 ```
 
+## Atualizar a VPS quando o código muda (redeploy)
+
+Depois que o app Rust já está no ar, o dia a dia é outro script — mais curto e com
+rollback rápido:
+
+```bash
+bash scripts/redeploy-vps.sh             # pull + build + smoke + restart + verificação
+bash scripts/redeploy-vps.sh -y          # sem confirmação (para colar num alias)
+bash scripts/redeploy-vps.sh --no-pull   # builda o código que já está na VPS
+bash scripts/redeploy-vps.sh --force     # rebuilda mesmo sem mudanças
+bash scripts/redeploy-vps.sh rollback    # volta o binário anterior em segundos
+```
+
+Ordem: guardas (recusa rodar como root/sudo) → `git pull --ff-only` → build →
+**smoke test numa porta livre com SQLite temporário** → backup do banco → `pm2 restart`
+na mesma porta/host/banco de antes → verificação completa (reusa o `verify` do
+`deploy-vps.sh`). O app só é reiniciado depois que a versão nova compilou e passou no
+smoke; se a verificação falhar, o binário anterior (guardado em `.deploy/app-dnd.prev`)
+volta sozinho. Se nada mudou desde o último build, ele avisa e só revalida o que está no ar.
+
+## Build e deploy manual em VPS (detalhes)
+
 O `deploy` só derruba o app antigo depois que a versão Rust já compilou e passou no smoke test
 numa porta temporária. Ordem: inventário → toolchain (instala rustup/pm2 se faltar) → build →
 smoke → backup do banco em `backup/` → remove pm2/systemd/processos do Next → sobe o binário
