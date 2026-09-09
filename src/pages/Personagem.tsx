@@ -45,7 +45,8 @@ export default function CharacterPage() {
       scope === "mesa"
         ? "Limpar TODAS as rolagens da mesa? Isso afeta todos os jogadores."
         : "Limpar as rolagens desta ficha?";
-    if (window.confirm(msg)) void clearRolls(scope === "mesa" ? undefined : id);
+    // O PIN desta ficha autoriza os dois casos: a própria e a mesa toda.
+    if (window.confirm(msg)) void clearRolls(scope === "mesa" ? undefined : id, id);
   };
 
   const onDelete = async () => {

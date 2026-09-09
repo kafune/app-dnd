@@ -150,6 +150,22 @@ impl Db {
         st.exists([id])
     }
 
+    /// Existe alguma ficha cujo PIN seja exatamente este? Autoriza as ações que
+    /// afetam a mesa inteira (limpar todo o histórico) sem exigir a chave mestra.
+    /// A mesa tem meia dúzia de linhas: varrer e comparar em Rust sai mais barato
+    /// que depender do JSON1 do SQLite.
+    pub fn pin_matches_any(&self, pin: &str) -> rusqlite::Result<bool> {
+        let mut st = self.conn.prepare_cached("SELECT data FROM characters")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        for data in rows {
+            let Ok(stored) = serde_json::from_str::<CharMap>(&data?) else { continue };
+            if stored.get("pin").and_then(Value::as_str) == Some(pin) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Insere ou substitui a ficha inteira; devolve a ficha com `updatedAt` novo.
     pub fn upsert(&self, mut c: CharMap) -> rusqlite::Result<CharMap> {
         let now = now_iso();
@@ -464,6 +480,9 @@ mod tests {
         assert_eq!(next["pin"], "1");
         assert_eq!(next["hpCurrent"], 5);
         assert_eq!(db.list_log("a", 50).unwrap().len(), 1);
+        assert!(db.pin_matches_any("1").unwrap());
+        assert!(!db.pin_matches_any("nope").unwrap());
+        assert!(!db.pin_matches_any("").unwrap());
 
         let roll = DiceRoll {
             id: "r1".into(),

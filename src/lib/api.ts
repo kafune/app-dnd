@@ -52,15 +52,18 @@ export const api = {
   listRolls: (limit = 50) =>
     jsonFetch<{ rolls: DiceRoll[] }>(`/api/rolls?limit=${limit}`, { cache: "no-store" }),
 
-  postRoll: (roll: DiceRoll) =>
+  // Escrever no histórico exige o PIN da ficha (ou a chave mestra), no mesmo
+  // header usado pelas rotas de ficha.
+  postRoll: (roll: DiceRoll, pin?: string) =>
     jsonFetch<{ roll: DiceRoll }>("/api/rolls", {
       method: "POST",
+      headers: pin ? { "x-character-pin": pin } : {},
       body: JSON.stringify({ roll }),
     }),
 
-  clearRolls: (characterId?: string) =>
+  clearRolls: (characterId?: string, pin?: string) =>
     jsonFetch<{ ok: true; removed: number }>(
       `/api/rolls${characterId ? `?characterId=${encodeURIComponent(characterId)}` : ""}`,
-      { method: "DELETE" },
+      { method: "DELETE", headers: pin ? { "x-character-pin": pin } : {} },
     ),
 };

@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 const port = Number(process.env.SMOKE_PORT ?? "3100");
 const baseUrl = `http://127.0.0.1:${port}`;
 const JOAO_PIN = "7429";
+const MASTER_PIN = "670076";
 const tmpDir = mkdtempSync(join(tmpdir(), "app-dnd-smoke-"));
 const dbPath = join(tmpDir, "app-dnd.sqlite");
 
@@ -31,6 +32,10 @@ const server = spawn(binary, [], {
     ...process.env,
     APP_DND_DB: dbPath,
     APP_DND_BIND: `127.0.0.1:${port}`,
+    // Fixa os PINs: na VPS o ambiente pode ter APP_DND_MASTER_PIN/APP_DND_CHARACTER_PINS
+    // próprios, e as asserções de autorização abaixo esperam os defaults.
+    APP_DND_MASTER_PIN: MASTER_PIN,
+    APP_DND_CHARACTER_PINS: `joao-lindao:${JOAO_PIN},camargo-fofo:3816,vinicius-fofo:9052,ruda-felpudo:6148`,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -194,7 +199,7 @@ async function assertCharacterPatch() {
   assert.deepEqual(hpChange, { field: "PV atual", from: "18", to: "13" });
 
   const master = await fetch(`${baseUrl}/api/characters/joao-lindao`, {
-    headers: { "x-character-pin": "670076" },
+    headers: { "x-character-pin": MASTER_PIN },
   });
   assert.equal(master.status, 200, "chave mestra deve abrir qualquer ficha");
 }
@@ -256,7 +261,7 @@ async function assertCreateAndDelete() {
 }
 
 async function assertRollsApi() {
-  const roll = {
+  const novaRolagem = () => ({
     id: randomUUID(),
     characterId: "joao-lindao",
     characterName: "Zorrilho Pabrantes",
@@ -265,27 +270,83 @@ async function assertRollsApi() {
     result: 18,
     detail: { rolls: [12], modifier: 6 },
     createdAt: new Date().toISOString(),
-  };
-
-  const postResponse = await fetch(`${baseUrl}/api/rolls`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roll }),
   });
-  assert.equal(postResponse.status, 200, "POST de rolagem deve responder 200");
+  const post = (roll, pin) =>
+    fetch(`${baseUrl}/api/rolls`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(pin ? { "x-character-pin": pin } : {}),
+      },
+      body: JSON.stringify({ roll }),
+    });
+  const del = (query, pin) =>
+    fetch(`${baseUrl}/api/rolls${query}`, {
+      method: "DELETE",
+      headers: pin ? { "x-character-pin": pin } : {},
+    });
+
+  // --- escrita sem autorização não entra no histórico
+  const semPin = await post(novaRolagem());
+  assert.equal(semPin.status, 403, "POST sem PIN deve ser negado");
+  assert.deepEqual(await semPin.json(), { error: "bad_pin" });
+
+  const pinErrado = await post(novaRolagem(), "0000");
+  assert.equal(pinErrado.status, 403, "POST com PIN errado deve ser negado");
+
+  const fichaFantasma = await post({ ...novaRolagem(), characterId: "nao-existe" }, JOAO_PIN);
+  assert.equal(fichaFantasma.status, 404, "POST para ficha inexistente deve dar 404");
+
+  const avulsa = await post({ ...novaRolagem(), characterId: null, characterName: undefined });
+  assert.equal(avulsa.status, 403, "rolagem sem ficha exige a chave mestra");
+
+  const vazio = await fetch(`${baseUrl}/api/rolls?limit=5`).then((r) => r.json());
+  assert.equal(vazio.rolls.length, 0, "nada recusado pode ter entrado no histórico");
+
+  // --- escrita autorizada
+  const minha = novaRolagem();
+  const postResponse = await post(minha, JOAO_PIN);
+  assert.equal(postResponse.status, 200, "POST com o PIN da ficha deve responder 200");
   const posted = await postResponse.json();
-  assert.deepEqual(posted.roll, roll, "POST deve devolver a rolagem intacta");
+  assert.deepEqual(posted.roll, minha, "POST deve devolver a rolagem intacta");
+
+  const doMestre = await post(
+    { ...novaRolagem(), characterId: null, characterName: undefined },
+    MASTER_PIN,
+  );
+  assert.equal(doMestre.status, 200, "chave mestra pode rolar sem ficha");
+
+  const falsificada = await post(
+    { ...novaRolagem(), characterName: "Mestre dos Magos" },
+    JOAO_PIN,
+  ).then((r) => r.json());
+  assert.equal(
+    falsificada.roll.characterName,
+    "Zorrilho Pabrantes",
+    "o nome exibido vem do servidor, não do cliente",
+  );
 
   const listResponse = await fetch(`${baseUrl}/api/rolls?limit=5`);
   assert.equal(listResponse.status, 200, "GET de rolagens deve responder 200");
   const body = await listResponse.json();
   assert.ok(
-    body.rolls.some((storedRoll) => storedRoll.id === roll.id && storedRoll.result === 18),
+    body.rolls.some((storedRoll) => storedRoll.id === minha.id && storedRoll.result === 18),
     "rolagem criada deve aparecer no histórico",
   );
 
-  const cleared = await fetch(`${baseUrl}/api/rolls?characterId=joao-lindao`, { method: "DELETE" });
-  assert.deepEqual(await cleared.json(), { ok: true, removed: 1 });
+  // --- limpeza também exige PIN
+  const limparSemPin = await del("?characterId=joao-lindao");
+  assert.equal(limparSemPin.status, 403, "DELETE de uma ficha sem PIN deve ser negado");
+
+  const limparMesaSemPin = await del("");
+  assert.equal(limparMesaSemPin.status, 403, "DELETE da mesa toda sem PIN deve ser negado");
+
+  const daFicha = await del("?characterId=joao-lindao", JOAO_PIN).then((r) => r.json());
+  assert.deepEqual(daFicha, { ok: true, removed: 2 }, "só saem as rolagens da ficha");
+
+  // Limpar a mesa inteira é destrutivo para todos, mas qualquer PIN da mesa serve.
+  const daMesa = await del("", JOAO_PIN).then((r) => r.json());
+  assert.deepEqual(daMesa, { ok: true, removed: 1 }, "PIN de jogador limpa a mesa toda");
 }
 
 async function assertEventsApi() {
@@ -321,7 +382,7 @@ async function assertEventsApi() {
     const t0 = performance.now();
     await fetch(`${baseUrl}/api/rolls`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-character-pin": MASTER_PIN },
       body: JSON.stringify({ roll }),
     });
     while (!text.includes(roll.id)) {

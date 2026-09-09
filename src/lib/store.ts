@@ -31,7 +31,8 @@ type Store = {
   unlock: (id: string, pin: string) => Promise<boolean>;
   lock: (id: string) => void;
   addRoll: (r: DiceRoll) => Promise<void>;
-  clearRolls: (characterId?: string) => Promise<void>;
+  /** `actorId`: de quem é o PIN usado para autorizar (default: `characterId`). */
+  clearRolls: (characterId?: string, actorId?: string) => Promise<void>;
   pushToast: (toast: Omit<AppToast, "id">) => void;
   dismissToast: (id: string) => void;
   hydrate: () => Promise<void>;
@@ -145,22 +146,31 @@ export const useStore = create<Store>()(
         }),
 
       addRoll: async (r) => {
+        const pin = r.characterId ? get().pins[r.characterId] : undefined;
         set((s) => ({ rolls: [r, ...s.rolls].slice(0, 50) }));
         try {
-          await api.postRoll(r);
+          await api.postRoll(r, pin);
         } catch {
-          // se falhou, mantém local
+          // Não chegou na mesa (PIN recusado ou sem rede): tira da tela em vez de
+          // deixar uma rolagem que só existe aqui e some no próximo carregamento.
+          set((s) => ({ rolls: s.rolls.filter((x) => x.id !== r.id) }));
+          get().pushToast({
+            title: "A rolagem não foi para a mesa",
+            description: "Sem conexão ou PIN recusado — nada foi registrado.",
+            tone: "danger",
+          });
         }
       },
 
-      clearRolls: async (characterId) => {
+      clearRolls: async (characterId, actorId) => {
+        const pin = get().pins[actorId ?? characterId ?? ""];
         const prev = get().rolls;
         // update otimista
         set({
           rolls: characterId ? prev.filter((r) => r.characterId !== characterId) : [],
         });
         try {
-          await api.clearRolls(characterId);
+          await api.clearRolls(characterId, pin);
         } catch (e) {
           set({ rolls: prev }); // rollback
           get().pushToast({

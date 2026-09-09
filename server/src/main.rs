@@ -72,6 +72,22 @@ impl Pins {
         pin.map(str::trim) == Some(self.master.as_str())
     }
 
+    /// O PIN pertence a alguém da mesa (chave mestra, PIN fixo do seed ou PIN de
+    /// uma ficha criada)? Usado nas ações que afetam a mesa inteira, onde não há
+    /// uma ficha específica para conferir.
+    fn any_member(&self, db: &Db, pin: Option<&str>) -> rusqlite::Result<bool> {
+        if self.is_master(pin) {
+            return Ok(true);
+        }
+        let Some(pin) = pin.map(str::trim).filter(|p| !p.is_empty()) else {
+            return Ok(false);
+        };
+        if self.fixed.values().any(|p| p == pin) {
+            return Ok(true);
+        }
+        db.pin_matches_any(pin)
+    }
+
     /// Fichas do seed usam o PIN fixo; fichas criadas guardam o PIN no registro.
     /// Sem PIN nenhum => ficha aberta.
     fn ok(&self, stored: &CharMap, pin: Option<&str>) -> bool {
@@ -336,8 +352,12 @@ async fn list_rolls(
     }
 }
 
+/// Rolar em nome de uma ficha exige o PIN dela (ou a chave mestra); rolagem
+/// avulsa, sem ficha, é coisa de Mestre. O histórico guarda só as 200 mais
+/// recentes, então POST aberto também era um jeito de apagar a mesa dos outros.
 async fn post_roll(
     State(st): State<Shared>,
+    headers: HeaderMap,
     body: Result<Json<Value>, JsonRejection>,
 ) -> Response {
     let Ok(Json(body)) = body else { return error(StatusCode::BAD_REQUEST, "bad_json") };
@@ -345,10 +365,37 @@ async fn post_roll(
     if !roll.get("id").map(Value::is_string).unwrap_or(false) {
         return error(StatusCode::BAD_REQUEST, "bad_request");
     }
-    let roll: DiceRoll = match serde_json::from_value(roll) {
+    let mut roll: DiceRoll = match serde_json::from_value(roll) {
         Ok(r) => r,
         Err(_) => return error(StatusCode::BAD_REQUEST, "bad_request"),
     };
+    let pin = header_pin(&headers);
+
+    {
+        let db = st.db();
+        match roll.character_id.as_deref() {
+            Some(id) => match db.get_stored(id) {
+                Ok(Some(stored)) => {
+                    if !st.pins.ok(&stored, pin.as_deref()) {
+                        return error(StatusCode::FORBIDDEN, "bad_pin");
+                    }
+                    // O nome exibido vem do servidor: ninguém rola fingindo ser outro.
+                    roll.character_name = stored
+                        .get("characterName")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
+                Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+                Err(e) => return db_error(e),
+            },
+            None => {
+                if !st.pins.is_master(pin.as_deref()) {
+                    return error(StatusCode::FORBIDDEN, "bad_pin");
+                }
+            }
+        }
+    }
+
     if let Err(e) = st.db().insert_roll(&roll) {
         return db_error(e);
     }
@@ -356,11 +403,35 @@ async fn post_roll(
     Json(json!({ "roll": roll })).into_response()
 }
 
+/// Limpar o histórico de uma ficha exige o PIN dela; limpar o da mesa inteira
+/// exige um PIN válido de qualquer ficha da mesa (é destrutivo para todos, mas
+/// sempre foi uma ação de jogador — não vamos trancar no Mestre).
 async fn delete_rolls(
     State(st): State<Shared>,
     Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> Response {
+    let pin = header_pin(&headers);
     let character_id = q.get("characterId").filter(|s| !s.is_empty()).cloned();
+
+    {
+        let db = st.db();
+        let allowed = match character_id.as_deref() {
+            Some(id) => match db.get_stored(id) {
+                Ok(Some(stored)) => st.pins.ok(&stored, pin.as_deref()),
+                Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+                Err(e) => return db_error(e),
+            },
+            None => match st.pins.any_member(&db, pin.as_deref()) {
+                Ok(v) => v,
+                Err(e) => return db_error(e),
+            },
+        };
+        if !allowed {
+            return error(StatusCode::FORBIDDEN, "bad_pin");
+        }
+    }
+
     let removed = match st.db().clear_rolls(character_id.as_deref()) {
         Ok(n) => n,
         Err(e) => return db_error(e),
