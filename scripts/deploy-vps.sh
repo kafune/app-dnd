@@ -464,10 +464,13 @@ belongs_to_this_app() { # pid
   [ "$cwd" = "$ROOT" ] && return 0
   cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
   case "$cmd" in *"$ROOT"*) return 0 ;; esac
-  # "< arquivo" sem permissão de leitura falha na abertura pelo próprio bash, antes
-  # do comando rodar, e imprime no stderr do script mesmo com `2>/dev/null` no pipe
-  # (é erro de redirecionamento, não do comando) — por isso testa -r antes.
-  [ -r "/proc/$pid/environ" ] && tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qE "^(PWD|APP_DND_DB|PM2_HOME_DIR)=.*$ROOT" && return 0
+  # "< arquivo" é redirecionamento do BASH: quando o open falha, quem imprime o erro
+  # é o shell, antes do comando rodar, e `2>/dev/null` no pipe não cala. E o `-r` que
+  # havia aqui não basta: mesmo com o processo sendo do MESMO usuário, o kernel exige
+  # permissão de ptrace para abrir `environ` (Yama ptrace_scope), então access(2) diz
+  # "pode" e open(2) devolve EACCES. Lendo via `cat`, cujo stderr é redirecionável de
+  # verdade, os dois casos ficam silenciosos.
+  cat "/proc/$pid/environ" 2>/dev/null | tr '\0' '\n' | grep -qE "^(PWD|APP_DND_DB|PM2_HOME_DIR)=.*$ROOT" && return 0
   return 1
 }
 
@@ -567,11 +570,26 @@ phase_verify() {
   detect_pm2
   [ "$PM2_STATUS" = "online" ] && ok "pm2: '$APP_NAME' online" || bad "pm2: status '${PM2_STATUS:-inexistente}'"
   case "$PM2_SCRIPT" in *server/target/release/app-dnd*) ok "pm2 executa o binário Rust" ;; *) bad "pm2 executa '$PM2_SCRIPT', não o binário Rust" ;; esac
+  local restarts_antes="${PM2_RESTARTS:-0}"
 
   wait_http "$base/api/health" 15 && ok "GET /api/health → 200 em $base" || bad "/api/health não respondeu em 15 s (pm2 logs $APP_NAME)"
   sleep 3
   detect_pm2
-  [ "${PM2_RESTARTS:-0}" = "0" ] && [ "${PM2_UNSTABLE:-0}" = "0" ] && ok "processo estável (0 restarts após 3 s)" || bad "processo reiniciou ($PM2_RESTARTS restarts) — veja pm2 logs $APP_NAME"
+  # `restart_time` do pm2 é ACUMULADO na entrada, não recente: depois de um
+  # `pm2 restart` (redeploy-vps.sh) ele vale 1 com o app perfeito, e exigir 0 aqui
+  # transformava todo redeploy bem-sucedido em falha. O que importa é se reiniciou
+  # DURANTE a observação — um crash-loop incrementa o contador nesses 3 s.
+  # o fallback sem python3 raspa a tabela do `pm2 describe` e pode trazer texto
+  local antes agora
+  antes=$(printf '%s' "${restarts_antes:-0}" | tr -cd '0-9'); antes="${antes:-0}"
+  agora=$(printf '%s' "${PM2_RESTARTS:-0}" | tr -cd '0-9'); agora="${agora:-0}"
+  if [ "$agora" -gt "$antes" ]; then
+    bad "processo reiniciou durante a verificação ($antes → $agora) — veja pm2 logs $APP_NAME"
+  elif [ "${PM2_UNSTABLE:-0}" != "0" ]; then
+    bad "pm2 registra ${PM2_UNSTABLE} restarts instáveis — veja pm2 logs $APP_NAME"
+  else
+    ok "processo estável (nenhum restart nos 3 s de observação; acumulado: $agora)"
+  fi
 
   local owner pid; owner=$(port_owner "$port"); pid="${owner%% *}"
   case "$owner" in *app-dnd*) ok "porta $port pertence ao binário (pid $pid)" ;; *) bad "porta $port: '${owner:-ninguém}'" ;; esac
