@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { TRAITS_CATALOG } from "@/data/traitsCatalog";
 import type { CatalogTrait } from "@/lib/types";

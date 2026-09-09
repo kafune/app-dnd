@@ -1,5 +1,3 @@
-"use client";
-
 import type { Character, CharacterLogEntry, DiceRoll } from "./types";
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {

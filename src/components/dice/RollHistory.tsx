@@ -1,5 +1,3 @@
-"use client";
-
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/lib/store";
 import { formatRollDetail } from "@/lib/dice";

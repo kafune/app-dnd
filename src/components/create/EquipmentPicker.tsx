@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import type { Item, StartingEquipment } from "@/lib/types";
 import { Button } from "@/components/ui/Button";

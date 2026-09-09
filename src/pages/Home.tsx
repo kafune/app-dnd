@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/lib/store";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -21,7 +19,7 @@ export default function Home() {
             </p>
           </div>
           <Link
-            href="/criar-ficha"
+            to="/criar-ficha"
             className="shrink-0 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
           >
             + Criar ficha
@@ -46,7 +44,7 @@ export default function Home() {
             .map((k) => `${k.name}${k.subclass ? ` (${k.subclass})` : ""} ${k.level}`)
             .join(" / ");
           return (
-            <Link key={c.id} href={`/personagem/${c.id}`} className="block">
+            <Link key={c.id} to={`/personagem/${c.id}`} className="block">
               <Card
                 className="transition hover:scale-[1.01] hover:shadow-md"
                 style={{ borderTopColor: c.color, borderTopWidth: 4 }}

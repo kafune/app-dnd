@@ -1,5 +1,3 @@
-"use client";
-
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useStore } from "@/lib/store";

@@ -1,5 +1,3 @@
-"use client";
-
 import {
   ABILITY_LABELS,
   ABILITY_ORDER,

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -234,7 +232,6 @@ export function Personality({ id }: { id: string }) {
       </CardHeader>
       <CardBody className="space-y-2 text-sm">
         {ap.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={ap.imageUrl}
             alt={`Aparência de ${c.characterName}`}
@@ -291,7 +288,6 @@ function AppearanceImageEditor({ id }: { id: string }) {
   return (
     <div className="space-y-2">
       {ap.imageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={ap.imageUrl}
           alt="Aparência"

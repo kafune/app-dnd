@@ -1,15 +1,15 @@
-"use client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { ChevronLeft } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { AbilityScoresEditor, type AbilityMode } from "@/components/create/AbilityScoresEditor";
-import { SpellPicker } from "@/components/create/SpellPicker";
+// O catálogo de magias (600 KB) só é baixado quando a ficha tem classe conjuradora.
+const SpellPicker = lazy(() =>
+  import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
+);
 import { EquipmentPicker } from "@/components/create/EquipmentPicker";
 import { TraitPicker } from "@/components/create/TraitPicker";
 import { findTrait } from "@/data/traitsCatalog";
@@ -46,7 +46,7 @@ const selectCls =
 const CUSTOM = "__custom__";
 
 export default function CriarFicha() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const createCharacter = useStore((s) => s.createCharacter);
   const pushToast = useStore((s) => s.pushToast);
 
@@ -224,7 +224,7 @@ export default function CriarFicha() {
       );
       const id = await createCharacter(character);
       pushToast({ title: `${draft.characterName} criado!`, tone: "success" });
-      router.push(`/personagem/${id}`);
+      navigate(`/personagem/${id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao criar a ficha.");
       setSubmitting(false);
@@ -234,7 +234,7 @@ export default function CriarFicha() {
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <Link
-        href="/"
+        to="/"
         className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
       >
         <ChevronLeft className="h-4 w-4" /> Voltar
@@ -601,14 +601,16 @@ export default function CriarFicha() {
               <CardTitle>Magias</CardTitle>
             </CardHeader>
             <CardBody>
-              <SpellPicker
-                classNames={casterClassNames}
-                cantrips={draft.cantrips}
-                known={draft.knownSpells}
-                cantripsMax={spellCaps.cantrips}
-                spellsMax={spellCaps.spells}
-                onChange={(cantrips, knownSpells) => upd({ cantrips, knownSpells })}
-              />
+              <Suspense fallback={<p className="text-sm text-zinc-500">Carregando catálogo de magias…</p>}>
+                <SpellPicker
+                  classNames={casterClassNames}
+                  cantrips={draft.cantrips}
+                  known={draft.knownSpells}
+                  cantripsMax={spellCaps.cantrips}
+                  spellsMax={spellCaps.spells}
+                  onChange={(cantrips, knownSpells) => upd({ cantrips, knownSpells })}
+                />
+              </Suspense>
             </CardBody>
           </Card>
         )}
@@ -658,7 +660,7 @@ export default function CriarFicha() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => router.push("/")} disabled={submitting}>
+          <Button variant="outline" onClick={() => navigate("/")} disabled={submitting}>
             Cancelar
           </Button>
           <Button variant="success" onClick={onSubmit} disabled={submitting}>

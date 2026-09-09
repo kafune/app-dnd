@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router";
 import { useState } from "react";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -20,7 +18,7 @@ export function CharacterAccessGate({ id }: { id: string }) {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10">
       <Link
-        href="/"
+        to="/"
         className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
         <ArrowLeft className="h-3 w-3" /> Mundo Pankleos

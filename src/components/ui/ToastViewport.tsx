@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { useStore, type AppToast } from "@/lib/store";

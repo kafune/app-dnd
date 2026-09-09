@@ -1,8 +1,4 @@
-"use client";
-
-import Link from "next/link";
-import { use } from "react";
-import { useRouter } from "next/navigation";
+import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ALIGNMENTS } from "@/lib/types";
@@ -31,13 +27,9 @@ import { RollHistory } from "@/components/dice/RollHistory";
 import { ChangeLog } from "@/components/sheet/ChangeLog";
 import { useUnlocked } from "@/lib/store";
 
-export default function CharacterPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
-  const router = useRouter();
+export default function CharacterPage() {
+  const { id = "" } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const character = useStore((s) => s.characters[id]);
   const clearRolls = useStore((s) => s.clearRolls);
   const deleteCharacter = useStore((s) => s.deleteCharacter);
@@ -65,14 +57,14 @@ export default function CharacterPage({
     const ok = await deleteCharacter(id);
     if (ok) {
       pushToast({ title: `${name} foi deletado.`, tone: "success" });
-      router.push("/");
+      navigate("/");
     }
   };
 
   if (!character) {
     return (
       <main className="mx-auto w-full max-w-3xl px-4 py-10">
-        <Link href="/" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900">
+        <Link to="/" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900">
           <ArrowLeft className="h-3 w-3" /> Voltar
         </Link>
         <p className="mt-6 text-zinc-500">Personagem não encontrado.</p>
@@ -96,7 +88,7 @@ export default function CharacterPage({
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="mb-4 flex items-center gap-3">
-        <Link href="/">
+        <Link to="/">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-3 w-3" /> Mesa
           </Button>

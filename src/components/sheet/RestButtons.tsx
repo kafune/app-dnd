@@ -1,5 +1,3 @@
-"use client";
-
 import { Bed, Coffee } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useStore, useUnlocked } from "@/lib/store";

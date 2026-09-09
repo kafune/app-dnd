@@ -1,12 +1,13 @@
-"use client";
-
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore } from "@/lib/store";
 import { ABILITY_LABELS, ABILITY_ORDER, type AbilityKey, type Spell } from "@/lib/types";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
-import { SpellPicker } from "@/components/create/SpellPicker";
+// Catálogo de magias (600 KB) só entra na rede quando o modo de edição abre.
+const SpellPicker = lazy(() =>
+  import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
+);
 import { findClass } from "@/data/classesCatalog";
 import { spellCapacity } from "@/lib/createCharacter";
 
@@ -78,14 +79,16 @@ export function Spells({ id }: { id: string }) {
       </CardHeader>
       <CardBody className="space-y-3">
         {editMode && (
-          <SpellPicker
-            classNames={classNames}
-            cantrips={cantrips}
-            known={known}
-            cantripsMax={caps.cantrips}
-            spellsMax={caps.spells}
-            onChange={(cantrips, known) => setSpells({ cantrips, known })}
-          />
+          <Suspense fallback={<p className="text-xs text-zinc-500">Carregando catálogo de magias…</p>}>
+            <SpellPicker
+              classNames={classNames}
+              cantrips={cantrips}
+              known={known}
+              cantripsMax={caps.cantrips}
+              spellsMax={caps.spells}
+              onChange={(cantrips, known) => setSpells({ cantrips, known })}
+            />
+          </Suspense>
         )}
         {!editMode &&
           sortedLevels.map((lvl) => (

@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { SPELLS_CATALOG } from "@/data/spellsCatalog";
 import type { CatalogSpell, Spell } from "@/lib/types";
