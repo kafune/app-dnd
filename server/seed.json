@@ -1,0 +1,1228 @@
+[
+ {
+  "id": "joao-lindao",
+  "playerName": "João",
+  "characterName": "Zorrilho Pabrantes",
+  "color": "#7c3aed",
+  "hpCurrent": 18,
+  "hpMax": 18,
+  "hpTemp": 0,
+  "spellSlots": {
+   "1": {
+    "current": 2,
+    "max": 2
+   }
+  },
+  "resources": [
+   {
+    "name": "Graça da Rainha Corvo",
+    "current": 2,
+    "max": 2,
+    "recharge": "long",
+    "description": "Ação bônus para teleportar até 9m. Ganha resistência a todo dano até o início do próximo turno."
+   }
+  ],
+  "sheet": {
+   "species": "Shadar-Kai",
+   "classes": [
+    {
+     "name": "Ladino",
+     "subclass": "Trapaceiro Arcano",
+     "level": 3
+    }
+   ],
+   "background": "Viajante Distante",
+   "abilityScores": {
+    "str": 12,
+    "dex": 18,
+    "con": 11,
+    "int": 14,
+    "wis": 11,
+    "cha": 13
+   },
+   "saves": [
+    "dex",
+    "int"
+   ],
+   "skills": [
+    {
+     "name": "Furtividade",
+     "proficient": true
+    },
+    {
+     "name": "Atletismo",
+     "proficient": true
+    },
+    {
+     "name": "Enganação",
+     "proficient": true
+    },
+    {
+     "name": "Persuasão",
+     "proficient": true
+    },
+    {
+     "name": "Intuição",
+     "proficient": true
+    },
+    {
+     "name": "Percepção",
+     "proficient": true
+    }
+   ],
+   "proficiencies": [
+    "Armas Simples",
+    "Besta de Mão",
+    "Espadas Longas e Curtas",
+    "Rapieiras",
+    "Escudo Leve (Trance)",
+    "Besta de Mão (Trance)"
+   ],
+   "languages": [
+    "Comum",
+    "Élfico"
+   ],
+   "ac": 17,
+   "speed": 9,
+   "initiativeBonus": 4,
+   "proficiencyBonus": 2,
+   "weapons": [
+    {
+     "name": "Espada Curta",
+     "damage": "1d6+4",
+     "damageType": "perfurante",
+     "attackBonus": 6,
+     "properties": [
+      "Acuidade",
+      "Leve"
+     ]
+    },
+    {
+     "name": "Rapieira",
+     "damage": "1d8+4",
+     "damageType": "perfurante",
+     "attackBonus": 6,
+     "properties": [
+      "Acuidade"
+     ]
+    }
+   ],
+   "features": [
+    {
+     "name": "Ataque Furtivo (1/turno)",
+     "source": "Ladino",
+     "description": "Uma vez por turno adiciono 2d6 nas jogadas de dano contra qualquer criatura que eu acertar, desde que tenha vantagem nas jogadas de ataque (com arma de acuidade ou distância). Não preciso ter vantagem se estiver a 1,5m do inimigo, desde que ele não esteja incapacitado e que eu não tenha desvantagem."
+    },
+    {
+     "name": "Graça da Rainha Corvo",
+     "source": "Shadar-Kai",
+     "description": "Como ação bônus posso teleportar para qualquer quadrado em 9 metros que eu possa ver. Ganho resistência a todo tipo de dano até o início do meu próximo turno. Enquanto resistente, fico parecendo um fantasma translúcido."
+    },
+    {
+     "name": "Gíria de Ladrão",
+     "source": "Ladino",
+     "description": "Conheço gírias e sinais secretos para passar mensagens disfarçadas em conversa normal. Leva 4× mais tempo que falar diretamente."
+    },
+    {
+     "name": "Ação Ardilosa",
+     "source": "Ladino",
+     "description": "Ganho uma ação bônus em todos os meus turnos, mas só pode ser usada para Disparada, Desengajar ou Esconder."
+    },
+    {
+     "name": "Mãos Mágicas Malabaristas",
+     "source": "Trapaceiro Arcano",
+     "description": "Quando conjurar Mãos Mágicas posso: guardar/recuperar objeto em recipiente vestido por outra criatura; usar Ferramentas de Ladrão à distância. Posso fazer essas ações furtivamente com teste de Destreza (Prestidigitação) vs Sabedoria (Percepção). Posso usar a ação bônus de Ação Ardilosa para controlar a mão."
+    },
+    {
+     "name": "Visão no Escuro",
+     "source": "Shadar-Kai",
+     "description": "Em até 18 metros vejo penumbra como luz plena e escuridão como penumbra. Apenas tons de cinza."
+    },
+    {
+     "name": "Ancestralidade Fey",
+     "source": "Shadar-Kai",
+     "description": "Vantagem em rolagens contra ficar enfeitiçado ou para sair do estado enfeitiçado."
+    },
+    {
+     "name": "Resistência a Dano Necrótico",
+     "source": "Shadar-Kai",
+     "description": "Tomo metade do dano necrótico."
+    },
+    {
+     "name": "Trance",
+     "source": "Shadar-Kai",
+     "description": "Não durmo e magias não me botam para dormir. Termino descanso longo em 4 horas em meditação consciente. Ao acabar o trance ganho duas proficiências/perícias que eu não tenho até o próximo descanso longo."
+    },
+    {
+     "name": "Olhos em Você",
+     "source": "Antecedente: Viajante Distante",
+     "description": "Meu sotaque, maneirismo e aparência me marcam como estrangeiro. Atrai pessoas curiosas (nobres, escolásticos) com sua história exótica."
+    }
+   ],
+   "spells": {
+    "saveDC": 12,
+    "attackMod": 4,
+    "castingAbility": "int",
+    "cantrips": [
+     {
+      "name": "Mãos Mágicas",
+      "level": 0,
+      "school": "Conjuração",
+      "castingTime": "1 ação",
+      "range": "9 metros",
+      "components": "V, S",
+      "duration": "1 minuto",
+      "description": "Crio uma mão espectral que dura 1 minuto. Posso usar minha ação para controlar — pode manipular objeto, abrir porta destrancada, guardar/pegar item de recipiente aberto, derramar conteúdo de frasco. Move até 9m por uso. Não pode atacar, usar itens mágicos ou carregar mais de 5kg."
+     },
+     {
+      "name": "Toque Chocante",
+      "level": 0,
+      "school": "Conjuração",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Instantânea",
+      "description": "Faça um ataque corpo-a-corpo com magia. Vantagem se o alvo estiver com armadura de metal. Se atingir, 1d8 de dano elétrico e o alvo não pode usar reações até o início do próximo turno dele."
+     },
+     {
+      "name": "Ilusão Menor",
+      "level": 0,
+      "school": "Conjuração",
+      "castingTime": "1 ação",
+      "range": "9 metros",
+      "components": "V",
+      "duration": "1 minuto",
+      "description": "Crio som ou imagem de um objeto. Som varia de sussurro a grito. Imagem até 1,5 metro cúbico, sem som/luz/cheiro. Investigação contra a CD para discernir."
+     }
+    ],
+    "known": [
+     {
+      "name": "Imagem Silenciosa",
+      "level": 1,
+      "school": "Ilusão",
+      "castingTime": "1 ação",
+      "range": "18 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 10 minutos",
+      "concentration": true,
+      "description": "Crio imagem de objeto, criatura ou fenômeno visual até 4,5 metros cúbicos. Posso usar minha ação para mover. Investigação CD vence."
+     },
+     {
+      "name": "Leque Cromático",
+      "level": 1,
+      "school": "Ilusão",
+      "castingTime": "1 ação",
+      "range": "Pessoal (Cone de 4,5m)",
+      "components": "V, S, M",
+      "duration": "1 rodada",
+      "description": "Rolo 6d10; total = HP de criaturas afetadas em ordem ascendente. Cada criatura afetada fica cega até o fim da magia. Em níveis superiores: +2d10 por nível acima do 1°."
+     },
+     {
+      "name": "Névoa Obscurecente",
+      "level": 1,
+      "school": "Conjuração",
+      "castingTime": "1 ação",
+      "range": "36 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 1 hora",
+      "concentration": true,
+      "description": "Esfera de 6m de raio de névoa = escuridão densa. Vento moderado dispersa. Em níveis superiores: +6m de raio por nível."
+     }
+    ]
+   },
+   "inventory": {
+    "coins": {
+     "gp": 75,
+     "sp": 0,
+     "cp": 0
+    },
+    "items": [
+     {
+      "name": "Armadura de Couro Batido",
+      "description": "CA 12 + mod Des. 6,5 kg."
+     },
+     {
+      "name": "Escudo Buckler",
+      "description": "+1 CA. 1 kg."
+     },
+     {
+      "name": "Kit de Ferramentas de Ladrão",
+      "description": "Adiciona bônus de proficiência ao teste de Destreza para destrancar portas ou desarmar armadilhas."
+     },
+     {
+      "name": "Instrumento Musical",
+      "description": "Um instrumento de minha escolha."
+     }
+    ]
+   },
+   "appearance": {
+    "size": "Médio",
+    "height": "1,67m"
+   },
+   "personality": {
+    "trait": "Um homem que tenta fazer piada com tudo, não levando situações a sério, e irritando bastante as pessoas à minha volta.",
+    "ideal": "Tenho um ego alto, com um senso de justiça absurdamente alto.",
+    "flaw": "Sempre vai pensar o pior de si mesmo, e muito teimoso.",
+    "why": "Tentar recomeçar sem o sentimento de culpa e vergonha.",
+    "backstory": "Nasci em uma vila de elfos nas Cordilheiras de Rumtor. Minha infância foi muito simples porém feliz, com a constante presença da minha irmã mais velha. Tínhamos uma dança: 'Jogar de ladinho'. Tudo mudou quando uma guerra começou por uma briga territorial. Minha irmã foi convocada e morreu de fome — não lutando. Isso me despertou uma vontade de fazer algo, mas meus pais me proibiram. Lidei com o luto rindo e fazendo piadas. Os líderes da vila procuraram voluntários para roubar mantimentos e fui sem pensar duas vezes, criando um conflito familiar enorme. Consegui roubar pouco até que a guerra acabou — perdemos. Não querendo enfrentar meus pais, decidi fugir sem rumo por vergonha."
+   }
+  }
+ },
+ {
+  "id": "camargo-fofo",
+  "playerName": "Camargo",
+  "characterName": "Xopscoch ReiVahn",
+  "color": "#0ea5e9",
+  "hpCurrent": 25,
+  "hpMax": 25,
+  "hpTemp": 0,
+  "spellSlots": {
+   "1": {
+    "current": 4,
+    "max": 4
+   },
+   "2": {
+    "current": 2,
+    "max": 2
+   }
+  },
+  "resources": [
+   {
+    "name": "Inspiração de Bardo",
+    "current": 3,
+    "max": 3,
+    "recharge": "long",
+    "description": "Ação bônus para dar a um aliado em até 18m um d6 que ele pode somar a teste/ataque/save. Ou (Palavras Desconcertantes) gastar para fazer um inimigo subtrair o d6 do próximo save dele."
+   },
+   {
+    "name": "Lembrança Kenku",
+    "current": 2,
+    "max": 2,
+    "recharge": "long",
+    "description": "Posso me dar vantagem antes de rolar o d20 em algum teste no qual eu tenho proficiência."
+   }
+  ],
+  "sheet": {
+   "species": "Kenku",
+   "classes": [
+    {
+     "name": "Bardo",
+     "subclass": "Colégio da Eloquência",
+     "level": 3
+    }
+   ],
+   "background": "Pirata",
+   "abilityScores": {
+    "str": 13,
+    "dex": 15,
+    "con": 12,
+    "int": 14,
+    "wis": 11,
+    "cha": 17
+   },
+   "saves": [
+    "dex",
+    "cha"
+   ],
+   "skills": [
+    {
+     "name": "Atletismo",
+     "proficient": true
+    },
+    {
+     "name": "Percepção",
+     "proficient": true
+    },
+    {
+     "name": "Enganação",
+     "proficient": true
+    },
+    {
+     "name": "Atuação",
+     "proficient": true
+    },
+    {
+     "name": "Acrobacia",
+     "proficient": true
+    }
+   ],
+   "proficiencies": [
+    "Armadura Leve",
+    "Armas Simples",
+    "Bestas de Mão",
+    "Espadas Longas e Curtas",
+    "Rapieiras",
+    "Pistola",
+    "Escudos"
+   ],
+   "languages": [
+    "Comum",
+    "Aquan"
+   ],
+   "ac": 14,
+   "speed": 9,
+   "initiativeBonus": 2,
+   "proficiencyBonus": 2,
+   "weapons": [
+    {
+     "name": "Clava",
+     "damage": "1d8+1",
+     "damageType": "concussão",
+     "attackBonus": 3,
+     "properties": []
+    },
+    {
+     "name": "Rapieira",
+     "damage": "1d8+2",
+     "damageType": "perfurante",
+     "attackBonus": 4,
+     "properties": [
+      "Acuidade"
+     ]
+    },
+    {
+     "name": "Pistola",
+     "damage": "2d6+2",
+     "damageType": "perfurante",
+     "attackBonus": 4,
+     "properties": [
+      "Distância 4,5m / 12m",
+      "14 munições"
+     ]
+    }
+   ],
+   "features": [
+    {
+     "name": "Inspiração de Bardo (3/longo)",
+     "source": "Bardo",
+     "description": "Ação bônus para escolher uma criatura em até 18m que possa me ouvir. Ela ganha um d6 que pode somar a um teste/ataque/save em até 10 minutos."
+    },
+    {
+     "name": "Palavras Desconcertantes",
+     "source": "Colégio da Eloquência",
+     "description": "Como ação bônus, gasto Inspiração de Bardo para escolher uma criatura em até 18m. Rolo o dado e ela subtrai o valor do próximo save antes do meu próximo turno."
+    },
+    {
+     "name": "Versatilidade",
+     "source": "Bardo",
+     "description": "Adiciono metade do bônus de proficiência em qualquer teste sem proficiência."
+    },
+    {
+     "name": "Canção do Descanso",
+     "source": "Bardo",
+     "description": "Aliados que me ouvirem e gastarem Dados de Vida em descanso curto recuperam +1d6 PV adicionais."
+    },
+    {
+     "name": "Fonte de Inspiração",
+     "source": "Colégio da Eloquência",
+     "description": "Recupero todos os usos de Inspiração de Bardo após descanso curto ou longo."
+    },
+    {
+     "name": "Língua Prateada",
+     "source": "Colégio da Eloquência",
+     "description": "Em testes de Persuasão ou Enganação, trato 9 ou menos no d20 como 10."
+    },
+    {
+     "name": "Lembrança Kenku (2/longo)",
+     "source": "Kenku",
+     "description": "Posso me dar vantagem antes de rolar o d20 em algum teste no qual eu tenho proficiência."
+    },
+    {
+     "name": "Expert em Duplicação",
+     "source": "Kenku",
+     "description": "Vantagem em testes para produzir cópia exata de escrita ou trabalho."
+    },
+    {
+     "name": "Mimicry",
+     "source": "Kenku",
+     "description": "Imito sons e vozes que tenha escutado. Intuição CD 8 + prof + mod Car (= 13) para perceber."
+    },
+    {
+     "name": "Reputação Ruim",
+     "source": "Antecedente: Pirata",
+     "description": "As pessoas têm medo da minha reputação. Em terras civilizadas escapo de ofensas menores (não pagar bebida, briga) — a maioria não tem coragem de me entregar."
+    }
+   ],
+   "spells": {
+    "saveDC": 13,
+    "attackMod": 5,
+    "castingAbility": "cha",
+    "cantrips": [
+     {
+      "name": "Luz",
+      "level": 0,
+      "school": "Evocação",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, M (vaga-lume ou musgo fosforescente)",
+      "duration": "1 hora",
+      "description": "Toco objeto até 3m em qualquer dimensão. Emite luz plena em 6m e penumbra em mais 6m."
+     },
+     {
+      "name": "Orientação",
+      "level": 0,
+      "school": "Adivinhação",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Concentração, até 1 minuto",
+      "concentration": true,
+      "description": "O alvo voluntário pode rolar 1d4 e adicionar a um teste de habilidade à escolha dele, antes ou depois."
+     }
+    ],
+    "known": [
+     {
+      "name": "Infringir Ferimentos",
+      "level": 1,
+      "school": "Necromancia",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Instantânea",
+      "description": "Ataque corpo-a-corpo com magia. Se atingir, 3d10 de dano necrótico. +1d10 por nível acima."
+     },
+     {
+      "name": "Curar Ferimentos",
+      "level": 1,
+      "school": "Evocação",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Instantânea",
+      "description": "Criatura tocada recupera 1d8 + mod conjuração de PV. Não funciona em mortos-vivos/constructos. +1d8 por nível acima."
+     },
+     {
+      "name": "Coroa da Loucura",
+      "level": 2,
+      "school": "Encantamento",
+      "castingTime": "1 ação",
+      "range": "36 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 1 minuto",
+      "concentration": true,
+      "description": "Humanoide deve passar em save de Sabedoria ou ficar enfeitiçado. Deve atacar uma criatura que eu escolher mentalmente. Repete save no fim de cada turno."
+     },
+     {
+      "name": "Despedaçar",
+      "level": 2,
+      "school": "Evocação",
+      "castingTime": "1 ação",
+      "range": "18 metros",
+      "components": "V, S, M (lasca de mica)",
+      "duration": "Instantânea",
+      "description": "Esfera de 3m de raio. Save de Constituição: 3d8 de dano trovejante (metade no sucesso). Material inorgânico tem desvantagem. +1d8 por nível acima do 2°."
+     },
+     {
+      "name": "Zona da Verdade",
+      "level": 2,
+      "school": "Encantamento",
+      "castingTime": "1 ação",
+      "range": "18 metros",
+      "components": "V, S",
+      "duration": "10 minutos",
+      "description": "Esfera de 4,5m de raio. Save de Carisma: criatura que falhar não pode mentir deliberadamente. Sei quem passou ou falhou."
+     },
+     {
+      "name": "Silêncio",
+      "level": 2,
+      "school": "Ilusão",
+      "castingTime": "1 ação",
+      "range": "36 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 10 minutos",
+      "concentration": true,
+      "ritual": true,
+      "description": "Esfera de 6m de raio. Nenhum som dentro/atravessa. Imune a dano trovejante, criaturas surdas. Sem componentes verbais possíveis."
+     }
+    ]
+   },
+   "inventory": {
+    "coins": {
+     "gp": 67,
+     "sp": 0,
+     "cp": 0
+    },
+    "items": [
+     {
+      "name": "Armadura de Couro",
+      "description": "CA 11 + mod Des. 5 kg."
+     },
+     {
+      "name": "Escudo Buckler",
+      "description": "+1 CA. 1 kg."
+     },
+     {
+      "name": "Ferramentas de Navegação",
+      "description": "Adiciona bônus de proficiência em testes para evitar se perder no mar."
+     },
+     {
+      "name": "Corda de Seda (15m)"
+     },
+     {
+      "name": "Flauta"
+     },
+     {
+      "name": "Alaúde"
+     },
+     {
+      "name": "Xilofone Colorido"
+     },
+     {
+      "name": "Pacote de Artista",
+      "description": "Mochila, saco de dormir, 2 fantasias, 5 velas, ração para 5 dias, odre de água, kit de disfarce."
+     }
+    ]
+   },
+   "appearance": {
+    "size": "Médio",
+    "height": "1,78m"
+   },
+   "personality": {
+    "trait": "Engraçado (comentarista) e bem vaidoso.",
+    "ideal": "—",
+    "flaw": "Muito folgado e MEGA supersticioso.",
+    "why": "—",
+    "backstory": "Criado pela mãe Swanna ReiVahn e irmãs gêmeas Roxxiy e Moxie. Pai ausente, morto por um shadow goblin. Mãe cigana, cultura vibrante. Após a morte do pai mudaram para o Reino de Solus, onde tocava alaúde nas ruas (odiava) enquanto as irmãs faziam furtos. As irmãs foram pegas por um shadow goblin. Matriculou-se no Colégio da Eloquência. Recrutado pelo capitão orc Lags-Ostar e tripulação Pedra de Chão; subiu de cargo, ficou próximo da tiefling Estêniah. Planejou roubar o tesouro de emergência com Estêniah — ela foi enforcada após ser entregue por um shadow goblin. Fugiu com a grana. Antes de partir entregou o dinheiro à mãe, recebeu um anel de rubi. Cruzou um canal de ninfas, caiu na água, esfaqueou uma ninfa vermelha com a faca de Estêniah — a faca ficou eternamente vermelha e ele jura ouvir a ninfa. Hoje conhecido como 'Mendigo do Alaúde'."
+   }
+  }
+ },
+ {
+  "id": "vinicius-fofo",
+  "playerName": "Vinicíus",
+  "characterName": "Holg Smough",
+  "color": "#16a34a",
+  "hpCurrent": 16,
+  "hpMax": 24,
+  "hpTemp": 0,
+  "spellSlots": {
+   "1": {
+    "current": 4,
+    "max": 4
+   },
+   "2": {
+    "current": 2,
+    "max": 2
+   }
+  },
+  "resources": [
+   {
+    "name": "Forma Selvagem",
+    "current": 2,
+    "max": 2,
+    "recharge": "short",
+    "description": "Ação para virar criatura ND ≤ 1/4 (não nada nem voa por enquanto). Duração: metade do nível de druida em horas. Próximo upgrade no nível 4."
+   },
+   {
+    "name": "Recuperação Natural",
+    "current": 1,
+    "max": 1,
+    "recharge": "long",
+    "description": "Em descanso curto, recupero espaços de magia até nível ≤ metade do meu nível de druida (e nunca de 6° ou mais)."
+   },
+   {
+    "name": "Resistência Implacável",
+    "current": 1,
+    "max": 1,
+    "recharge": "long",
+    "description": "Quando for derrubado a 0 PV, posso voltar para 1 PV."
+   }
+  ],
+  "sheet": {
+   "species": "Meio-Orc",
+   "classes": [
+    {
+     "name": "Druida",
+     "subclass": "Círculo da Terra (Ártico)",
+     "level": 3
+    }
+   ],
+   "background": "Eremita",
+   "abilityScores": {
+    "str": 16,
+    "dex": 10,
+    "con": 16,
+    "int": 12,
+    "wis": 15,
+    "cha": 11
+   },
+   "saves": [
+    "int",
+    "wis"
+   ],
+   "skills": [
+    {
+     "name": "Intimidação",
+     "proficient": true
+    },
+    {
+     "name": "Natureza",
+     "proficient": true
+    },
+    {
+     "name": "Sobrevivência",
+     "proficient": true
+    },
+    {
+     "name": "Medicina",
+     "proficient": true
+    },
+    {
+     "name": "Religião",
+     "proficient": true
+    }
+   ],
+   "proficiencies": [
+    "Escudos (não-metal)",
+    "Clavas",
+    "Adagas",
+    "Dardos",
+    "Azagaias",
+    "Maças",
+    "Bordões",
+    "Cimitarra",
+    "Foices",
+    "Funda",
+    "Lanças",
+    "Kit de Herbalismo",
+    "Armaduras Leves e Médias (não-metal)"
+   ],
+   "languages": [
+    "Comum",
+    "Orc",
+    "Anão",
+    "Druídico"
+   ],
+   "ac": 12,
+   "speed": 9,
+   "initiativeBonus": 0,
+   "proficiencyBonus": 2,
+   "weapons": [
+    {
+     "name": "Lança de Camélia",
+     "damage": "1d6+3",
+     "damageType": "perfurante",
+     "attackBonus": 5,
+     "properties": [
+      "Arremesso 6m",
+      "Versátil 1d8"
+     ]
+    },
+    {
+     "name": "Bordão Místico (Lança)",
+     "damage": "1d8+2",
+     "damageType": "perfurante",
+     "attackBonus": 4,
+     "properties": [
+      "Usa Sab para ataque/dano",
+      "Arma mágica",
+      "Concentração 1 min"
+     ]
+    }
+   ],
+   "features": [
+    {
+     "name": "Resistência Implacável (1/longo)",
+     "source": "Meio-Orc",
+     "description": "Quando for derrubado a 0 PV posso voltar para 1 PV."
+    },
+    {
+     "name": "Forma Selvagem (2/curto)",
+     "source": "Druida",
+     "description": "Tomo a forma de criatura ND ≤ 1/4 que tenha visto. Limites atuais: não nada, não voa. Mantenho Int/Sab/Car. Vida vira a da criatura. Volto automaticamente a 0 PV. Sem magias enquanto transformado."
+    },
+    {
+     "name": "Recuperação Natural (1/longo)",
+     "source": "Druida",
+     "description": "Em descanso curto recupero espaços de magia até nível ≤ metade do meu nível de druida (não recupera 6° ou mais)."
+    },
+    {
+     "name": "Druídico",
+     "source": "Druida",
+     "description": "Conheço o idioma secreto dos druidas. Mensagens escondidas: outros precisam de Sabedoria (Percepção) CD 15 para perceber."
+    },
+    {
+     "name": "Planta Sagrada (Camélia)",
+     "source": "Círculo da Terra (Ártico)",
+     "description": "Camélia: associada a coragem, honra e longevidade. Minhas armas são feitas dela. Cultuo a planta como sagrada."
+    },
+    {
+     "name": "Visão no Escuro",
+     "source": "Meio-Orc",
+     "description": "Em até 18m, na penumbra enxergo como luz plena, na escuridão como penumbra. Apenas tons de cinza."
+    },
+    {
+     "name": "Ataques Selvagens",
+     "source": "Meio-Orc",
+     "description": "Em crítico rolo um dado de dano a mais e adiciono como dano extra."
+    },
+    {
+     "name": "Não pode usar metal",
+     "source": "Druida",
+     "description": "Não posso usar armaduras ou escudos de metal."
+    }
+   ],
+   "spells": {
+    "saveDC": 12,
+    "attackMod": 4,
+    "castingAbility": "wis",
+    "cantrips": [
+     {
+      "name": "Orientação",
+      "level": 0,
+      "school": "Adivinhação",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Concentração, 1 minuto",
+      "concentration": true,
+      "description": "Alvo voluntário pode rolar 1d4 e adicionar a um teste de habilidade, antes ou depois."
+     },
+     {
+      "name": "Bordão Místico",
+      "level": 0,
+      "school": "Transmutação",
+      "castingTime": "1 ação bônus",
+      "range": "Toque",
+      "components": "V, S, M (lasca de árvore)",
+      "duration": "1 minuto",
+      "description": "Lasca da arma é imbuída pela natureza. Uso Sab no lugar de For para ataque/dano corpo-a-corpo, dado de dano vira d8. Arma se torna mágica."
+     },
+     {
+      "name": "Rajada de Veneno",
+      "level": 0,
+      "school": "Conjuração",
+      "castingTime": "1 ação",
+      "range": "3 metros",
+      "components": "V, S",
+      "duration": "Instantânea",
+      "description": "Save de Constituição. Falha: 1d12 de dano de veneno. +1d12 nos níveis 5/11/17."
+     }
+    ],
+    "known": [
+     {
+      "name": "Curar Ferimentos",
+      "level": 1,
+      "school": "Evocação",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Instantânea",
+      "description": "Criatura tocada recupera 1d8 + mod Sab de PV. +1d8 por nível acima."
+     },
+     {
+      "name": "Onda Trovejante",
+      "level": 1,
+      "school": "Evocação",
+      "castingTime": "1 ação",
+      "range": "Pessoal (cubo de 4,5m)",
+      "components": "V, S",
+      "duration": "Instantânea",
+      "description": "Save de Constituição. Falha: 2d8 trovejante e empurrado 3m. Sucesso: metade, sem empurrão. Objetos não vestidos também tomam dano."
+     },
+     {
+      "name": "Criar/Destruir Água",
+      "level": 1,
+      "school": "Transmutação",
+      "castingTime": "1 ação",
+      "range": "9 metros",
+      "components": "V, S, M (1 gota de água ou pitada de areia)",
+      "duration": "Instantânea",
+      "description": "Crio até 38L de água ou destruo a mesma quantidade. Pode também ser nuvem de chuva ou nevoa."
+     },
+     {
+      "name": "Névoa Obscurecente",
+      "level": 1,
+      "school": "Conjuração",
+      "castingTime": "1 ação",
+      "range": "36 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 1 hora",
+      "concentration": true,
+      "description": "Esfera de 6m de raio de névoa = escuridão densa. Vento moderado dispersa. +6m de raio por nível acima."
+     },
+     {
+      "name": "Imobilizar Pessoa (Magia de Círculo)",
+      "level": 2,
+      "school": "Encantamento",
+      "castingTime": "1 ação",
+      "range": "18 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 1 minuto",
+      "concentration": true,
+      "description": "Humanoide deve passar em save de Sabedoria ou fica paralisado. Repete save a cada turno. Não funciona em mortos-vivos."
+     },
+     {
+      "name": "Crescer Espinhos (Magia de Círculo)",
+      "level": 2,
+      "school": "Transmutação",
+      "castingTime": "1 ação",
+      "range": "45 metros",
+      "components": "V, S",
+      "duration": "Concentração, até 10 minutos",
+      "concentration": true,
+      "description": "Solos em até 6m do ponto criam espinhos: terreno difícil, 2d4 de dano por 1,5m atravessado. Camuflado como normal — Percepção para reconhecer."
+     }
+    ]
+   },
+   "inventory": {
+    "coins": {
+     "gp": 100,
+     "sp": 0,
+     "cp": 0
+    },
+    "items": [
+     {
+      "name": "Escudo de Madeira de Camélia",
+      "description": "+2 CA. 2,7 kg. (já contado na CA)"
+     },
+     {
+      "name": "Ramo de Camélia",
+      "description": "Foco druídico para conjurar magias."
+     },
+     {
+      "name": "Kit de Herbalismo",
+      "description": "Identificar, coletar e processar plantas para criar remédios. 1,5 kg."
+     }
+    ]
+   },
+   "appearance": {
+    "size": "Médio",
+    "height": "1,95m"
+   },
+   "personality": {
+    "trait": "—",
+    "ideal": "—",
+    "flaw": "—",
+    "why": "—",
+    "backstory": "Quando tinha 10~11 anos, minha tribo havia sido banida e buscou refúgio em local de temperaturas baixíssimas. Descobriram a camélia, planta resistente a frios extremos, que fez a tribo prosperar e a maioria aprender druidismo. Um exército de civilização vizinha atacou; lembro apenas de ter apagado quando arrombaram a porta de casa, e acordei perto do Reino de Solus do lado do corpo frio do Presa, meu lobo do ártico, que se sacrificou para me salvar. Jurei proteger até o fim os restos de camélia que tinha comigo. Durante anos me isolei melhorando minha conexão com a planta a ponto de criar armas com ela, e melhorei minhas habilidades druídicas conseguindo me transformar em mais animais."
+   }
+  }
+ },
+ {
+  "id": "ruda-felpudo",
+  "playerName": "Rudá",
+  "characterName": "Edson Manoel Fagundes Peixoto",
+  "color": "#dc2626",
+  "hpCurrent": 35,
+  "hpMax": 35,
+  "hpTemp": 0,
+  "spellSlots": {
+   "1": {
+    "current": 3,
+    "max": 3
+   }
+  },
+  "resources": [
+   {
+    "name": "Cura pelas Mãos (pool)",
+    "current": 15,
+    "max": 15,
+    "recharge": "long",
+    "description": "Toco uma criatura e distribuo cura até 15 PV. Posso gastar 5 PV do pool para curar veneno ou doença (não funciona em morto-vivo/constructo)."
+   },
+   {
+    "name": "Sentido Divino",
+    "current": 4,
+    "max": 4,
+    "recharge": "long",
+    "description": "Localiza morto-vivo, celestial ou corruptor em 18m sem cobertura total. Detecta locais consagrados/conspurcados também."
+   },
+   {
+    "name": "Canalização Divina",
+    "current": 1,
+    "max": 1,
+    "recharge": "short",
+    "description": "Abjurar Inimigo (ação): criatura em 18m faz save de Sab. Falha: amedrontada 1 min. Sucesso: deslocamento metade por 1 min. Voto de Inimizade (ação bônus): vantagem em todos os ataques contra alvo em 3m por 1 min."
+   },
+   {
+    "name": "Drenagem de Vida",
+    "current": 1,
+    "max": 1,
+    "recharge": "short",
+    "description": "Quando dou dano, posso adicionar meu nível como dano necrótico. Se o alvo for thri-kreen, ganho esse dano como vida temporária."
+   },
+   {
+    "name": "Carne Fantasmagórica",
+    "current": 1,
+    "max": 1,
+    "recharge": "long",
+    "description": "Ação. Aparência translúcida, ar gelado. Ganho 9m de fly speed, resistência a perfurante/cortante/concussão não-mágico (não-prata) e vantagem em resistir a agarrar. Atravesso criaturas/objetos como terreno difícil. 1 minuto."
+   }
+  ],
+  "sheet": {
+   "species": "Shade (Thri-kreen)",
+   "classes": [
+    {
+     "name": "Paladino",
+     "subclass": "Juramento de Vingança",
+     "level": 3
+    }
+   ],
+   "background": "Mercante Falho",
+   "abilityScores": {
+    "str": 17,
+    "dex": 10,
+    "con": 14,
+    "int": 11,
+    "wis": 13,
+    "cha": 16
+   },
+   "saves": [
+    "wis",
+    "cha"
+   ],
+   "skills": [
+    {
+     "name": "Atletismo",
+     "proficient": true
+    },
+    {
+     "name": "Intuição",
+     "proficient": true
+    },
+    {
+     "name": "Investigação",
+     "proficient": true
+    },
+    {
+     "name": "Persuasão",
+     "proficient": true
+    }
+   ],
+   "proficiencies": [
+    "Todas as armaduras",
+    "Escudos",
+    "Armas Simples e Marciais",
+    "Ferramentas de Entalhador"
+   ],
+   "languages": [
+    "Comum",
+    "Goblin",
+    "Subcomum"
+   ],
+   "ac": 18,
+   "speed": 9,
+   "initiativeBonus": 0,
+   "proficiencyBonus": 2,
+   "weapons": [
+    {
+     "name": "Espada Grande",
+     "damage": "2d6+3",
+     "damageType": "cortante",
+     "attackBonus": 5,
+     "properties": [
+      "Pesada",
+      "Duas mãos"
+     ]
+    },
+    {
+     "name": "Machado Grande",
+     "damage": "1d12+3",
+     "damageType": "cortante",
+     "attackBonus": 5,
+     "properties": [
+      "Pesada",
+      "Duas mãos"
+     ]
+    },
+    {
+     "name": "Machadinha",
+     "damage": "1d6+3",
+     "damageType": "cortante",
+     "attackBonus": 5,
+     "properties": [
+      "Leve",
+      "Arremesso 6/18m"
+     ]
+    }
+   ],
+   "features": [
+    {
+     "name": "Sentido Divino (4/longo)",
+     "source": "Paladino",
+     "description": "Conheço a localização de morto-vivo, celestial ou corruptor em 18m sem cobertura total. Também detecto consagração/conspurcação."
+    },
+    {
+     "name": "Cura pelas Mãos (pool 15)",
+     "source": "Paladino",
+     "description": "Pool de cura = 3× nível paladino. Ação para tocar e distribuir. 5 PV do pool curam veneno ou doença."
+    },
+    {
+     "name": "Destruição Divina",
+     "source": "Paladino",
+     "description": "Gasto spell slot para causar +2d8 radiante (1° nível) ou +1d8 por nível acima até 5d8. +1d8 contra corruptor ou morto-vivo. Pode critar."
+    },
+    {
+     "name": "Canalização Divina (1/curto)",
+     "source": "Juramento de Vingança",
+     "description": "Abjurar Inimigo (ação): save de Sabedoria, mortos-vivos/corruptores com desvantagem. Falha: amedrontado 1 min. Sucesso: meia velocidade 1 min. Voto de Inimizade (ação bônus): vantagem em ataques contra alvo em 3m por 1 min."
+    },
+    {
+     "name": "Drenagem de Vida (1/curto)",
+     "source": "Shade",
+     "description": "Adiciono meu nível como dano necrótico. Se alvo for thri-kreen, ganho esse dano como PV temporários."
+    },
+    {
+     "name": "Carne Fantasmagórica (1/longo)",
+     "source": "Shade",
+     "description": "Ação para virar translúcido. 9m de fly speed, resistência a perf/cort/conc não-mágico não-prata, vantagem contra agarrar, atravesso criaturas/objetos (1d10 força se terminar dentro). Dura 1 min."
+    },
+    {
+     "name": "Visão no Escuro",
+     "source": "Shade",
+     "description": "Em 18m vejo penumbra como luz plena e escuridão como penumbra."
+    },
+    {
+     "name": "Morte Imperfeita",
+     "source": "Shade",
+     "description": "Sou humanoide, porém efeitos contra mortos-vivos também me afetam."
+    },
+    {
+     "name": "Resiliência Espectral",
+     "source": "Shade",
+     "description": "Resistência a dano necrótico."
+    },
+    {
+     "name": "Combate com Armas Grandes",
+     "source": "Estilo de Luta",
+     "description": "Com arma de duas mãos, rerrolo dado de dano que cair 1 ou 2."
+    },
+    {
+     "name": "Saúde Divina",
+     "source": "Paladino",
+     "description": "Não posso ficar doente."
+    },
+    {
+     "name": "Braços Pequenininhos",
+     "source": "Thri-kreen",
+     "description": "Tenho mais dois braços menores. Podem manejar objetos pequenos, abrir portas e empunhar armas leves."
+    }
+   ],
+   "spells": {
+    "saveDC": 12,
+    "attackMod": 4,
+    "castingAbility": "cha",
+    "cantrips": [],
+    "known": [
+     {
+      "name": "Perdição",
+      "level": 1,
+      "school": "Encantamento",
+      "castingTime": "1 ação",
+      "range": "9 metros",
+      "components": "V, S, M (gota de sangue)",
+      "duration": "Concentração, 1 minuto",
+      "concentration": true,
+      "description": "Até 3 criaturas: save de Carisma. Falha: subtraem 1d4 de cada ataque/save enquanto a magia estiver ativa."
+     },
+     {
+      "name": "Marca do Caçador",
+      "level": 1,
+      "school": "Adivinhação",
+      "castingTime": "1 ação bônus",
+      "range": "27 metros",
+      "components": "V",
+      "duration": "Concentração, 1 hora",
+      "concentration": true,
+      "description": "+1d6 de dano (mesmo tipo da arma) em ataques contra o alvo. Vantagem em Percepção/Sobrevivência para encontrá-lo. Se alvo zerar, posso re-marcar outro no próximo turno."
+     },
+     {
+      "name": "Destruição Colérica",
+      "level": 1,
+      "school": "Evocação",
+      "castingTime": "1 ação bônus",
+      "range": "Pessoal",
+      "components": "V",
+      "duration": "Concentração, até 1 minuto",
+      "concentration": true,
+      "description": "+1d6 de dano psíquico no próximo ataque com arma. Save de Sabedoria: falha amedronta até o fim da magia. (1 ataque só)"
+     },
+     {
+      "name": "Comando",
+      "level": 1,
+      "school": "Encantamento",
+      "castingTime": "1 ação",
+      "range": "18 metros",
+      "components": "V",
+      "duration": "1 rodada",
+      "description": "Save de Sabedoria. Falha: alvo cumpre comando no próximo turno. Comandos válidos: Aproxime-se, Largue, Fuja, Deite-se, Parado."
+     },
+     {
+      "name": "Heroísmo",
+      "level": 1,
+      "school": "Encantamento",
+      "castingTime": "1 ação",
+      "range": "Toque",
+      "components": "V, S",
+      "duration": "Concentração, até 1 minuto",
+      "concentration": true,
+      "description": "Imune a amedrontado e ganha PV temporários = mod conjuração no início de cada turno. Ao acabar, perde os temporários."
+     }
+    ]
+   },
+   "inventory": {
+    "coins": {
+     "gp": 120,
+     "sp": 0,
+     "cp": 0
+    },
+    "items": [
+     {
+      "name": "Cota de Malha",
+      "description": "Armadura pesada, CA 16, desvantagem em furtividade. 27,5 kg."
+     },
+     {
+      "name": "Escudo Pequeno",
+      "description": "+1 CA. (Contado na CA total: 18)"
+     },
+     {
+      "name": "Símbolo Sagrado",
+      "description": "Amuleto com olho de gato desenhado. (Bast)"
+     },
+     {
+      "name": "Bugigangas",
+      "description": "Pedaço de couro de estandarte. Leque que abre revelando um gato."
+     },
+     {
+      "name": "Saquinho de moedas",
+      "description": "Contém 10 po extras."
+     },
+     {
+      "name": "Balança de mercador",
+      "description": "Pratos e pesinhos somando 1 kg."
+     },
+     {
+      "name": "Roupas finas"
+     },
+     {
+      "name": "Mochila"
+     },
+     {
+      "name": "Saco de dormir"
+     },
+     {
+      "name": "Corda 15m"
+     },
+     {
+      "name": "Algema"
+     },
+     {
+      "name": "Ração para 5 dias"
+     }
+    ]
+   },
+   "appearance": {
+    "size": "Médio",
+    "height": "1,93m",
+    "description": "Frequentemente troca de roupa, tentando se sentir confortável neste corpo. Quando ativa Carne Fantasmagórica, fica translúcido com ar gelado em volta."
+   },
+   "personality": {
+    "trait": "Cara tranquilo, mais na sua, não é de bater papo. Fechado sobre o passado, mas fala tranquilo sobre estar em outro corpo. Fica puto se mexem com quem ele se importa.",
+    "ideal": "Compaixão pelos shadow goblins (foram injustiçados). Empatia com feridos e oprimidos. Ama gatos. Vinga quem fez mal aos seus.",
+    "flaw": "Se culpa muito quando algo dá errado. Cabeça dura quando puto. Pode machucar quem ama na busca por vingança. Evita pensar no próprio corpo. Esquecido sobre a vida passada.",
+    "why": "Entender o que aconteceu com Leandro, vingar-se de Pierre, se acostumar com este corpo (ou achar um novo / antigo).",
+    "backstory": "Vida tranquila com pais e irmã. Aos quase 30 anos, montou uma loja de artesanato perto do porto em Solus. Pierre (Acidôn), um cuzão, ficou enciumado e me ameaçou — fechei a loja por medo de ele machucar quem eu amo. Conheci Leandro, um paladino foda; virei amigo dele e aprendi as bases de combate. Um dia fui entregar uma encomenda na casa dele e o achei sendo atacado — fugi covarde e nunca soube se ele sobreviveu. Voltei depois e segui os atacantes (jurei ouvir o nome de Pierre); acabei sendo apagado numa pancada na nuca em uma cidade desconhecida. Voltei como ente quase incorpóreo, possuí o corpo do Rudá (um Thri-kreen) que vi morrer lutando. Estou nesse corpo há alguns meses. Hoje aventuro para descobrir o que aconteceu, me vingar e talvez reaver meu corpo. Religião: Bast."
+   }
+  }
+ }
+]

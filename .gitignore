@@ -13,9 +13,6 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
 
 # production
 /build
@@ -45,4 +42,11 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+
+# frontend buildado (embutido no binário Rust) e artefatos do cargo
+/dist
+/server/target
+
+# estado do scripts/deploy-vps.sh (deploy anterior, backups)
+/.deploy
+/backup

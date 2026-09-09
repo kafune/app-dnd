@@ -1,0 +1,27 @@
+[package]
+name = "app-dnd"
+version = "0.2.0"
+edition = "2021"
+description = "Mesa Pankleos — servidor de fichas de D&D (API + SSE + frontend embutido)"
+publish = false
+
+[dependencies]
+axum = { version = "0.8", features = ["json", "http1", "tokio", "query"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower-http = { version = "0.6", features = ["compression-br", "compression-gzip"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+rust-embed = { version = "8", features = ["include-exclude"] }
+mime_guess = "2"
+uuid = { version = "1", features = ["v4"] }
+unicode-normalization = "0.1"
+bytes = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
