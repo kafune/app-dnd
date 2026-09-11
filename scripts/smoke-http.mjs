@@ -15,6 +15,11 @@ const port = Number(process.env.SMOKE_PORT ?? "3100");
 const baseUrl = `http://127.0.0.1:${port}`;
 const JOAO_PIN = "7429";
 const MASTER_PIN = "670067";
+// PNG 1×1 válido, para a foto de perfil.
+const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64",
+);
 const tmpDir = mkdtempSync(join(tmpdir(), "app-dnd-smoke-"));
 const dbPath = join(tmpDir, "app-dnd.sqlite");
 
@@ -57,6 +62,9 @@ try {
   await assertCharactersApi();
   await assertCharacterPatch();
   await assertCreateAndDelete();
+  await assertMasterAndHomebrew();
+  await assertAvatars();
+  await assertPinTrim();
   await assertRollsApi();
   await assertEventsApi();
   await assertLatency();
@@ -261,6 +269,225 @@ async function assertCreateAndDelete() {
   }
   const after = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
   assert.equal(after.characters.length, 4, "cache da listagem deve ser invalidado após escrita");
+}
+
+/** Cria uma ficha mínima para os testes e devolve o corpo da resposta. */
+async function createSmokeCharacter(characterName, pin, extra = {}) {
+  const response = await fetch(`${baseUrl}/api/characters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character: {
+        playerName: "Smoke",
+        characterName,
+        ...(pin === undefined ? {} : { pin }),
+        sheet: { species: "Humano", classes: [{ name: "Guerreiro", level: 1 }], abilityScores: { str: 10 } },
+        hpCurrent: 10,
+        hpMax: 10,
+        hpTemp: 0,
+        spellSlots: {},
+        resources: [],
+        ...extra,
+      },
+    }),
+  });
+  assert.equal(response.status, 201, `POST de ${characterName} deve criar a ficha`);
+  return response.json();
+}
+
+async function assertMasterAndHomebrew() {
+  const master = (pin) =>
+    fetch(`${baseUrl}/api/master`, { method: "POST", headers: pin ? { "x-character-pin": pin } : {} });
+  assert.equal((await master()).status, 403, "checagem da chave mestra sem PIN deve dar 403");
+  assert.equal((await master(JOAO_PIN)).status, 403, "PIN de jogador não é chave mestra");
+  const ok = await master(MASTER_PIN);
+  assert.equal(ok.status, 200, "chave mestra deve ser aceita");
+  assert.deepEqual(await ok.json(), { ok: true });
+
+  const hb = (method, path, body, pin) =>
+    fetch(`${baseUrl}/api/homebrew${path}`, {
+      method,
+      headers: { "Content-Type": "application/json", ...(pin ? { "x-character-pin": pin } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  const race = { kind: "race", data: { name: "Shade Smoke", description: "Espírito preso ao mundo.", traits: [] } };
+  assert.equal((await hb("POST", "", race)).status, 403, "criar homebrew sem PIN deve dar 403");
+  assert.equal((await hb("POST", "", race, JOAO_PIN)).status, 403, "criar homebrew exige a chave mestra");
+
+  const badKind = await hb("POST", "", { kind: "classe", data: { name: "X" } }, MASTER_PIN);
+  assert.equal(badKind.status, 400);
+  assert.deepEqual(await badKind.json(), { error: "bad_kind" });
+  const noName = await hb("POST", "", { kind: "feat", data: { name: "   " } }, MASTER_PIN);
+  assert.equal(noName.status, 400);
+  assert.deepEqual(await noName.json(), { error: "bad_request" });
+
+  const created = await hb("POST", "", race, MASTER_PIN);
+  assert.equal(created.status, 201, "Mestre cria raça homebrew");
+  const { item } = await created.json();
+  assert.match(item.id, /^hb-[0-9a-f]{10}$/);
+  assert.equal(item.kind, "race");
+  assert.equal(item.data.name, "Shade Smoke");
+  assert.ok(item.updatedAt, "item deve ter updatedAt");
+
+  const dup = await hb("POST", "", { kind: "race", data: { name: "  SHADE smóke " } }, MASTER_PIN);
+  assert.equal(dup.status, 409, "nome repetido (caixa/acento/espaço) deve dar 409");
+  assert.deepEqual(await dup.json(), { error: "name_taken" });
+
+  const otherKind = await hb("POST", "", { kind: "feat", data: { name: "Shade Smoke" } }, MASTER_PIN);
+  assert.equal(otherKind.status, 201, "mesmo nome em outro tipo é permitido");
+  const featId = (await otherKind.json()).item.id;
+
+  let list = await fetch(`${baseUrl}/api/homebrew`).then((r) => r.json());
+  assert.ok(list.items.some((entry) => entry.id === item.id && entry.data.name === "Shade Smoke"), "GET lista a raça");
+  assert.equal(list.items[0].kind, "feat", "lista ordenada por tipo");
+
+  const renamed = { data: { ...race.data, name: "Shade Smoke Revisada" } };
+  assert.equal((await hb("PUT", `/${item.id}`, renamed)).status, 403, "editar homebrew exige a chave mestra");
+  assert.equal((await hb("PUT", "/hb-nao-existe", renamed, MASTER_PIN)).status, 404);
+  const clash = await hb("PUT", `/${item.id}`, { data: { name: "shade smoke" } }, MASTER_PIN);
+  assert.equal(clash.status, 200, "renomear para o próprio nome não conflita");
+  const put = await hb("PUT", `/${item.id}`, renamed, MASTER_PIN);
+  assert.equal(put.status, 200, "Mestre edita homebrew");
+  const updated = (await put.json()).item;
+  assert.equal(updated.kind, "race");
+  assert.equal(updated.data.name, "Shade Smoke Revisada");
+
+  list = await fetch(`${baseUrl}/api/homebrew`).then((r) => r.json());
+  assert.equal(
+    list.items.find((entry) => entry.id === item.id)?.data.name,
+    "Shade Smoke Revisada",
+    "cache do homebrew deve ser invalidado após edição",
+  );
+
+  assert.equal((await hb("DELETE", `/${item.id}`)).status, 403, "apagar homebrew exige a chave mestra");
+  const removed = await hb("DELETE", `/${item.id}`, undefined, MASTER_PIN);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), { ok: true });
+  assert.equal((await hb("DELETE", `/${item.id}`, undefined, MASTER_PIN)).status, 404, "apagar de novo dá 404");
+  assert.equal((await hb("DELETE", `/${featId}`, undefined, MASTER_PIN)).status, 200);
+  list = await fetch(`${baseUrl}/api/homebrew`).then((r) => r.json());
+  assert.equal(list.items.length, 0, "homebrew removido some da lista");
+}
+
+async function assertAvatars() {
+  const pin = "5555";
+  const body = await createSmokeCharacter("Smoke Avatar", pin, { avatarVersion: "hack" });
+  const id = body.character.id;
+  assert.equal(body.character.avatarVersion, undefined, "cliente não define avatarVersion na criação");
+  const url = `${baseUrl}/api/characters/${id}/avatar`;
+  const put = (bytes, type, withPin) =>
+    fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": type, ...(withPin ? { "x-character-pin": withPin } : {}) },
+      body: bytes,
+    });
+
+  assert.equal((await fetch(url)).status, 404, "sem foto, GET dá 404");
+  assert.equal((await put(PNG_1X1, "image/png")).status, 403, "PUT sem PIN deve dar 403");
+  assert.equal((await put(PNG_1X1, "image/png", "0000")).status, 403, "PUT com PIN errado deve dar 403");
+  const ghost = await fetch(`${baseUrl}/api/characters/nao-existe/avatar`, {
+    method: "PUT",
+    headers: { "Content-Type": "image/png", "x-character-pin": pin },
+    body: PNG_1X1,
+  });
+  assert.equal(ghost.status, 404, "PUT para ficha inexistente deve dar 404");
+
+  const badType = await put(PNG_1X1, "text/plain", pin);
+  assert.equal(badType.status, 415);
+  assert.deepEqual(await badType.json(), { error: "bad_type" });
+  const badMagic = await put(Buffer.from("isto não é uma imagem"), "image/png", pin);
+  assert.equal(badMagic.status, 400);
+  assert.deepEqual(await badMagic.json(), { error: "bad_image" });
+  assert.equal((await put(PNG_1X1, "image/jpeg", pin)).status, 400, "tipo declarado precisa bater com os bytes");
+  const tooLarge = await put(Buffer.alloc(1024 * 1024 + 16), "image/png", pin);
+  assert.equal(tooLarge.status, 413, "foto acima de 1 MB deve dar 413");
+
+  const uploaded = await put(PNG_1X1, "image/png; charset=binary", pin);
+  assert.equal(uploaded.status, 200, "PUT com PIN deve gravar a foto");
+  const saved = await uploaded.json();
+  assert.equal(saved.role, "jogador");
+  const version = saved.character.avatarVersion;
+  assert.match(version, /^[0-9a-f]{12}$/, "ficha ganha avatarVersion");
+  assert.equal(saved.character.pin, undefined, "resposta não expõe PIN");
+
+  const got = await fetch(url);
+  assert.equal(got.status, 200);
+  assert.equal(got.headers.get("content-type"), "image/png");
+  assert.equal(got.headers.get("etag"), `"${version}"`);
+  assert.equal(got.headers.get("cache-control"), "no-cache", "sem ?v= revalida");
+  assert.equal(got.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), PNG_1X1, "GET devolve os mesmos bytes");
+
+  const versioned = await fetch(`${url}?v=${version}`);
+  assert.match(versioned.headers.get("cache-control") ?? "", /immutable/, "?v=<versão> é cache imutável");
+  await versioned.arrayBuffer();
+  const stale = await fetch(`${url}?v=velha`);
+  assert.equal(stale.headers.get("cache-control"), "no-cache", "versão errada não é imutável");
+  await stale.arrayBuffer();
+  const revalidated = await fetch(url, { headers: { "if-none-match": `"${version}"` } });
+  assert.equal(revalidated.status, 304, "ETag igual deve responder 304");
+
+  let list = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
+  assert.equal(list.characters.find((c) => c.id === id)?.avatarVersion, version, "listagem pública traz avatarVersion");
+  assert.equal(list.characters.find((c) => c.id === "joao-lindao")?.avatarVersion, null, "sem foto, avatarVersion é null");
+
+  const log = await fetch(`${baseUrl}/api/characters/${id}?log=1`, { headers: { "x-character-pin": pin } }).then((r) => r.json());
+  assert.deepEqual(log.log[0].changes, [{ field: "Foto de perfil", note: "atualizada" }], "upload entra no log");
+
+  const hacked = await fetch(`${baseUrl}/api/characters/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patch: { avatarVersion: "hack", hpCurrent: 7 }, pin }),
+  }).then((r) => r.json());
+  assert.equal(hacked.character.avatarVersion, version, "PATCH não troca avatarVersion");
+  assert.equal(hacked.character.hpCurrent, 7);
+
+  const del = (withPin) =>
+    fetch(url, { method: "DELETE", headers: withPin ? { "x-character-pin": withPin } : {} });
+  assert.equal((await del()).status, 403, "DELETE da foto sem PIN deve dar 403");
+  const cleared = await del(pin);
+  assert.equal(cleared.status, 200);
+  assert.equal((await cleared.json()).character.avatarVersion, undefined, "DELETE limpa avatarVersion");
+  assert.equal((await fetch(url)).status, 404, "foto removida dá 404");
+  assert.equal((await del(pin)).status, 200, "DELETE da foto é idempotente");
+  list = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
+  assert.equal(list.characters.find((c) => c.id === id)?.avatarVersion, null, "cache público invalidado ao remover");
+
+  assert.equal((await put(PNG_1X1, "image/png", pin)).status, 200);
+  const gone = await fetch(`${baseUrl}/api/characters/${id}`, { method: "DELETE", headers: { "x-character-pin": pin } });
+  assert.equal(gone.status, 200);
+  assert.equal((await fetch(url)).status, 404, "deletar a ficha apaga a foto");
+}
+
+async function assertPinTrim() {
+  const trimmed = await createSmokeCharacter("Smoke Pin Trim", " 9999 ");
+  assert.equal(trimmed.character.protected, true, "PIN com espaços ainda protege a ficha");
+  const id = trimmed.character.id;
+  const patched = await fetch(`${baseUrl}/api/characters/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patch: { hpCurrent: 3 }, pin: "9999" }),
+  });
+  assert.equal(patched.status, 200, "PIN é guardado aparado: PATCH com '9999' funciona");
+  const opened = await fetch(`${baseUrl}/api/characters/${id}`, { headers: { "x-character-pin": "9999" } });
+  assert.equal(opened.status, 200, "GET com o PIN aparado funciona");
+  await opened.arrayBuffer();
+
+  // A resposta autorizada sempre marca `protected: true`; o que prova que o PIN só de
+  // espaços foi descartado é a ficha abrir sem PIN nenhum.
+  const blank = await createSmokeCharacter("Smoke Pin Vazio", "   ");
+  const openGet = await fetch(`${baseUrl}/api/characters/${blank.character.id}`);
+  assert.equal(openGet.status, 200, "PIN só de espaços vira ficha aberta (abre sem PIN)");
+  await openGet.arrayBuffer();
+
+  assert.equal(
+    (await fetch(`${baseUrl}/api/characters/${id}`, { method: "DELETE", headers: { "x-character-pin": "9999" } })).status,
+    200,
+  );
+  assert.equal((await fetch(`${baseUrl}/api/characters/${blank.character.id}`, { method: "DELETE" })).status, 200);
+  const after = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
+  assert.equal(after.characters.length, 4, "fichas de teste removidas");
 }
 
 async function assertRollsApi() {

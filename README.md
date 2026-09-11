@@ -187,9 +187,24 @@ Tudo num arquivo `app-dnd.sqlite` (mesmo esquema da versão anterior em Node):
 - `characters (id PK, data JSON blob, updated_at)` — a ficha inteira como JSON
 - `rolls (id PK, character_id, character_name, label, expression, result, detail JSON, created_at)` — mantém as 200 últimas
 - `character_log (id PK, character_id, by, changes JSON, created_at)` — log de modificações, 100 por ficha
+- `avatars (character_id PK, mime, data BLOB, version, updated_at)` — foto de perfil em bytes, fora do JSON da ficha
+- `homebrew (id PK, kind, data JSON, created_at, updated_at)` — raças, talentos e traços raciais criados pelo Mestre
 
 PINs das fichas do seed vêm de `APP_DND_CHARACTER_PINS`; fichas criadas no app guardam o PIN
 no próprio registro (`Character.pin`). Sem PIN, a ficha é aberta. As APIs nunca devolvem o PIN.
+
+Rotas além das de ficha e rolagem:
+
+| Rota | Acesso | O que faz |
+| --- | --- | --- |
+| `GET /api/characters/:id/avatar?v=` | público | foto de perfil (cache imutável quando `v` é a versão atual) |
+| `PUT` / `DELETE /api/characters/:id/avatar` | PIN da ficha ou chave mestra | troca ou remove a foto (JPEG/PNG/WebP, até 1 MB) |
+| `GET /api/homebrew` | público | lista o homebrew do Mestre |
+| `POST /api/homebrew`, `PUT` / `DELETE /api/homebrew/:id` | chave mestra | cria, edita ou apaga homebrew (evento SSE `homebrew`) |
+| `POST /api/master` | chave mestra | confere a chave da página `/mestre` |
+
+Na primeira subida depois da atualização, imagens antigas de "aparência" guardadas dentro da
+ficha viram foto de perfil automaticamente e saem do JSON.
 
 ## Arquitetura
 

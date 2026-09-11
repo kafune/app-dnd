@@ -9,7 +9,7 @@ Use estes PINs para abrir a ficha completa de cada personagem em Mundo Pankleos.
 | Vinicíus | Holg Smough | `9052` |
 | Rudá | Edson Manoel Fagundes Peixoto | `6148` |
 
-Chave mestra do Mestre (abre qualquer ficha): `670067`.
+Chave mestra do Mestre (abre qualquer ficha e a página `/mestre`, onde se criam raças, talentos e traços homebrew): `670067`.
 
 Esses são os **defaults embutidos no servidor**. Para trocar sem recompilar, defina no ambiente:
 

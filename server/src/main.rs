@@ -22,13 +22,17 @@ use std::{
 };
 
 use axum::{
-    extract::{rejection::JsonRejection, DefaultBodyLimit, Path, Query, State},
+    body::Body,
+    extract::{
+        rejection::{BytesRejection, JsonRejection},
+        DefaultBodyLimit, Path, Query, State,
+    },
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
     },
-    routing::get,
+    routing::{get, post, put},
     Json, Router,
 };
 use bytes::Bytes;
@@ -40,6 +44,12 @@ use tower_http::compression::{CompressionLayer, CompressionLevel};
 use db::{to_authorized, to_public, CharMap, Change, Db, DiceRoll};
 
 const SEED_JSON: &str = include_str!("../seed.json");
+
+/// Foto de perfil: o frontend manda ~40 KB (JPEG 384 px); 1 MB é folga de sobra.
+const AVATAR_LIMIT: usize = 1024 * 1024;
+/// Um item homebrew é um JSON pequeno (raça com traços, talento, traço).
+const HOMEBREW_LIMIT: usize = 256 * 1024;
+const HOMEBREW_KINDS: [&str; 3] = ["race", "feat", "trait"];
 
 /// Evento já serializado, compartilhado entre todos os clientes SSE (serializa 1x).
 pub struct Msg {
@@ -113,6 +123,8 @@ struct AppState {
     pins: Pins,
     /// `GET /api/characters` já serializado; invalidado em qualquer escrita de ficha.
     public_cache: Mutex<Option<Bytes>>,
+    /// `GET /api/homebrew` já serializado; invalidado em qualquer escrita de homebrew.
+    homebrew_cache: Mutex<Option<Bytes>>,
 }
 
 impl AppState {
@@ -126,6 +138,10 @@ impl AppState {
 
     fn invalidate(&self) {
         *self.public_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    fn invalidate_homebrew(&self) {
+        *self.homebrew_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 
@@ -221,7 +237,19 @@ async fn create_character(
         return error(StatusCode::BAD_REQUEST, "bad_request");
     }
     let mut c = payload.clone();
-    let has_pin = matches!(c.get("pin"), Some(Value::String(p)) if !p.is_empty());
+    c.remove("avatarVersion"); // gerenciado pelo servidor (rotas de foto)
+    // PIN com espaço nas pontas trancava o próprio criador: o navegador guardava o PIN
+    // cru e o `Pins::ok` só apara o PIN recebido. Guarda já aparado.
+    match c.get("pin").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => {
+            let p = p.to_string();
+            c.insert("pin".into(), Value::String(p));
+        }
+        None => {
+            c.remove("pin");
+        }
+    }
+    let has_pin = c.contains_key("pin");
 
     let saved = {
         let db = st.db();
@@ -295,6 +323,7 @@ async fn patch_character(
     let mut safe: CharMap = patch.clone();
     safe.remove("id");
     safe.remove("pin");
+    safe.remove("avatarVersion");
 
     let next = {
         let mut db = st.db();
@@ -341,6 +370,269 @@ async fn delete_character(
     }
     st.invalidate();
     st.publish("character-deleted", json!({ "id": id }));
+    Json(json!({ "ok": true })).into_response()
+}
+
+// === Fotos de perfil ===
+
+/// Pública (o card da mesa mostra a foto). Com `?v=<versão>` a URL muda a cada
+/// troca, então dá para cachear para sempre; sem `v`, revalida pelo ETag.
+async fn get_avatar(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let avatar = match st.db().get_avatar(&id) {
+        Ok(Some(a)) => a,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    let etag = format!("\"{}\"", avatar.version);
+    let cache = if q.get("v").map(String::as_str) == Some(avatar.version.as_str()) {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    let not_modified = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(',').any(|t| t.trim() == etag))
+        .unwrap_or(false);
+    let builder = Response::builder()
+        .header(header::ETAG, &etag)
+        .header(header::CACHE_CONTROL, cache)
+        .header("x-content-type-options", "nosniff");
+    let res = if not_modified {
+        builder.status(StatusCode::NOT_MODIFIED).body(Body::empty())
+    } else {
+        builder
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, avatar.mime)
+            .body(Body::from(avatar.data))
+    };
+    res.unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+fn body_error(status: StatusCode) -> Response {
+    if status == StatusCode::PAYLOAD_TOO_LARGE {
+        error(StatusCode::PAYLOAD_TOO_LARGE, "too_large")
+    } else {
+        error(StatusCode::BAD_REQUEST, "bad_request")
+    }
+}
+
+/// Corpo = bytes da imagem (JPEG/PNG/WEBP). Mesma autorização do PATCH.
+async fn put_avatar(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let body = match body {
+        Ok(b) => b,
+        Err(rej) => return body_error(rej.status()),
+    };
+    let pin = header_pin(&headers);
+    let next = {
+        let mut db = st.db();
+        let current = match db.get_stored(&id) {
+            Ok(Some(c)) => c,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        };
+        if !st.pins.ok(&current, pin.as_deref()) {
+            return error(StatusCode::FORBIDDEN, "bad_pin");
+        }
+        let mime = headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| util::image_mime(v.split(';').next().unwrap_or("")));
+        let Some(mime) = mime else {
+            return error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "bad_type");
+        };
+        if !util::sniff_image(mime, &body) {
+            return error(StatusCode::BAD_REQUEST, "bad_image");
+        }
+        let by = if st.pins.is_master(pin.as_deref()) { "mestre" } else { "jogador" };
+        match db.set_avatar(&id, mime, &body, by) {
+            Ok(Some(n)) => n,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        }
+    };
+    st.invalidate();
+    st.publish("character", json!({ "character": to_public(&next) }));
+    Json(authorized(&st, next, pin.as_deref())).into_response()
+}
+
+async fn delete_avatar(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let pin = header_pin(&headers);
+    let (next, changed) = {
+        let mut db = st.db();
+        let current = match db.get_stored(&id) {
+            Ok(Some(c)) => c,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        };
+        if !st.pins.ok(&current, pin.as_deref()) {
+            return error(StatusCode::FORBIDDEN, "bad_pin");
+        }
+        let by = if st.pins.is_master(pin.as_deref()) { "mestre" } else { "jogador" };
+        match db.remove_avatar(&id, by) {
+            Ok(Some(r)) => r,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        }
+    };
+    if changed {
+        st.invalidate();
+        st.publish("character", json!({ "character": to_public(&next) }));
+    }
+    Json(authorized(&st, next, pin.as_deref())).into_response()
+}
+
+// === Chave mestra e homebrew ===
+
+/// Confere a chave mestra (tela do Mestre). Não devolve nada além de ok.
+async fn master_check(State(st): State<Shared>, headers: HeaderMap) -> Response {
+    if st.pins.is_master(header_pin(&headers).as_deref()) {
+        Json(json!({ "ok": true })).into_response()
+    } else {
+        error(StatusCode::FORBIDDEN, "bad_pin")
+    }
+}
+
+fn json_body_error(rej: JsonRejection) -> Response {
+    if rej.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        error(StatusCode::PAYLOAD_TOO_LARGE, "too_large")
+    } else {
+        error(StatusCode::BAD_REQUEST, "bad_json")
+    }
+}
+
+/// `data` válido de um item homebrew: objeto com `name` não vazio (guardado aparado).
+fn homebrew_data(body: &Value) -> Option<(Value, String)> {
+    let mut data = body.get("data").filter(|d| d.is_object())?.clone();
+    let name = data
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|n| !n.is_empty())?
+        .to_string();
+    data["name"] = Value::String(name.clone());
+    Some((data, name))
+}
+
+async fn list_homebrew(State(st): State<Shared>) -> Response {
+    if let Some(cached) = st.homebrew_cache.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        return json_bytes(cached);
+    }
+    let items = match st.db().list_homebrew() {
+        Ok(l) => l,
+        Err(e) => return db_error(e),
+    };
+    let bytes = Bytes::from(serde_json::to_vec(&json!({ "items": items })).unwrap());
+    *st.homebrew_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(bytes.clone());
+    json_bytes(bytes)
+}
+
+async fn create_homebrew(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let kind = body.get("kind").and_then(Value::as_str).unwrap_or_default();
+    if !HOMEBREW_KINDS.contains(&kind) {
+        return error(StatusCode::BAD_REQUEST, "bad_kind");
+    }
+    let Some((data, name)) = homebrew_data(&body) else {
+        return error(StatusCode::BAD_REQUEST, "bad_request");
+    };
+    let item = {
+        let db = st.db();
+        match db.homebrew_name_taken(kind, &name, None) {
+            Ok(true) => return error(StatusCode::CONFLICT, "name_taken"),
+            Ok(false) => {}
+            Err(e) => return db_error(e),
+        }
+        match db.insert_homebrew(kind, &data) {
+            Ok(item) => item,
+            Err(e) => return db_error(e),
+        }
+    };
+    st.invalidate_homebrew();
+    st.publish("homebrew", json!({ "item": item }));
+    (StatusCode::CREATED, Json(json!({ "item": item }))).into_response()
+}
+
+async fn update_homebrew(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let Some((data, name)) = homebrew_data(&body) else {
+        return error(StatusCode::BAD_REQUEST, "bad_request");
+    };
+    let item = {
+        let db = st.db();
+        let kind = match db.homebrew_kind(&id) {
+            Ok(Some(k)) => k,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        };
+        match db.homebrew_name_taken(&kind, &name, Some(&id)) {
+            Ok(true) => return error(StatusCode::CONFLICT, "name_taken"),
+            Ok(false) => {}
+            Err(e) => return db_error(e),
+        }
+        match db.update_homebrew(&id, &data) {
+            Ok(Some(item)) => item,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        }
+    };
+    st.invalidate_homebrew();
+    st.publish("homebrew", json!({ "item": item }));
+    Json(json!({ "item": item })).into_response()
+}
+
+async fn delete_homebrew(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let removed = match st.db().delete_homebrew(&id) {
+        Ok(r) => r,
+        Err(e) => return db_error(e),
+    };
+    if !removed {
+        return error(StatusCode::NOT_FOUND, "not_found");
+    }
+    st.invalidate_homebrew();
+    st.publish("homebrew-deleted", json!({ "id": id }));
     Json(json!({ "ok": true })).into_response()
 }
 
@@ -540,6 +832,7 @@ async fn main() {
         tx,
         pins: Pins::from_env(),
         public_cache: Mutex::new(None),
+        homebrew_cache: Mutex::new(None),
     });
 
     // Rotas JSON (com compressão); SSE fica fora da camada de compressão.
@@ -549,6 +842,27 @@ async fn main() {
             "/api/characters/{id}",
             get(get_character).patch(patch_character).delete(delete_character),
         )
+        // Limites por rota: a camada interna vence o limite geral de 8 MB lá de baixo.
+        .route(
+            "/api/characters/{id}/avatar",
+            get(get_avatar)
+                .put(put_avatar)
+                .delete(delete_avatar)
+                .layer(DefaultBodyLimit::max(AVATAR_LIMIT)),
+        )
+        .route(
+            "/api/homebrew",
+            get(list_homebrew)
+                .post(create_homebrew)
+                .layer(DefaultBodyLimit::max(HOMEBREW_LIMIT)),
+        )
+        .route(
+            "/api/homebrew/{id}",
+            put(update_homebrew)
+                .delete(delete_homebrew)
+                .layer(DefaultBodyLimit::max(HOMEBREW_LIMIT)),
+        )
+        .route("/api/master", post(master_check))
         .route("/api/rolls", get(list_rolls).post(post_roll).delete(delete_rolls))
         .route("/api/health", get(health))
         .layer(
