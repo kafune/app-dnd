@@ -1,7 +1,7 @@
-//! Mesa Pankleos — servidor único (API JSON + Server-Sent Events + frontend embutido).
+//! Fichas DnD — servidor único (API JSON + Server-Sent Events + frontend embutido).
 //!
 //! Um binário, um arquivo SQLite, ~10 MB de RAM. Substitui o `next start` anterior
-//! mantendo a MESMA API HTTP e o MESMO esquema de banco.
+//! mantendo a MESMA API HTTP e o MESMO esquema de banco (mais as pastas).
 //!
 //! Variáveis de ambiente:
 //!   APP_DND_DB              caminho do SQLite (default ./data/app-dnd.sqlite)
@@ -41,7 +41,7 @@ use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 
-use db::{to_authorized, to_public, CharMap, Change, Db, DiceRoll};
+use db::{to_authorized, to_public, Avatar, CharMap, Change, Db, DiceRoll, Folder, FolderDelete};
 
 const SEED_JSON: &str = include_str!("../seed.json");
 
@@ -50,11 +50,15 @@ const AVATAR_LIMIT: usize = 1024 * 1024;
 /// Um item homebrew é um JSON pequeno (raça com traços, talento, traço).
 const HOMEBREW_LIMIT: usize = 256 * 1024;
 const HOMEBREW_KINDS: [&str; 3] = ["race", "feat", "trait"];
+const FOLDER_NAME_MAX: usize = 60;
+const FOLDER_PIN_MAX: usize = 64;
 
 /// Evento já serializado, compartilhado entre todos os clientes SSE (serializa 1x).
+/// Com `folder`, só chega a quem está inscrito naquela pasta.
 pub struct Msg {
     event: &'static str,
     data: String,
+    folder: Option<String>,
 }
 
 struct Pins {
@@ -82,20 +86,23 @@ impl Pins {
         pin.map(str::trim) == Some(self.master.as_str())
     }
 
-    /// O PIN pertence a alguém da mesa (chave mestra, PIN fixo do seed ou PIN de
-    /// uma ficha criada)? Usado nas ações que afetam a mesa inteira, onde não há
-    /// uma ficha específica para conferir.
-    fn any_member(&self, db: &Db, pin: Option<&str>) -> rusqlite::Result<bool> {
-        if self.is_master(pin) {
+    /// Chave da pasta: chave mestra, pasta sem senha ou a senha dela. Libera criar
+    /// fichas na pasta.
+    fn folder_key(&self, folder: &Folder, pin: Option<&str>) -> bool {
+        self.is_master(pin) || folder.pin.is_empty() || pin.map(str::trim) == Some(folder.pin.as_str())
+    }
+
+    /// Membro da pasta: a chave dela ou o PIN de uma ficha que está nela. Libera ver
+    /// as fichas e a mesa (rolagens) da pasta — quem abriu a própria ficha por link
+    /// direto também acompanha a mesa sem digitar a senha da pasta.
+    fn folder_member(&self, db: &Db, folder: &Folder, pin: Option<&str>) -> rusqlite::Result<bool> {
+        if self.folder_key(folder, pin) {
             return Ok(true);
         }
         let Some(pin) = pin.map(str::trim).filter(|p| !p.is_empty()) else {
             return Ok(false);
         };
-        if self.fixed.values().any(|p| p == pin) {
-            return Ok(true);
-        }
-        db.pin_matches_any(pin)
+        db.folder_character_pin(&folder.id, pin, &self.fixed)
     }
 
     /// Fichas do seed usam o PIN fixo; fichas criadas guardam o PIN no registro.
@@ -121,8 +128,8 @@ struct AppState {
     db: Mutex<Db>,
     tx: broadcast::Sender<Arc<Msg>>,
     pins: Pins,
-    /// `GET /api/characters` já serializado; invalidado em qualquer escrita de ficha.
-    public_cache: Mutex<Option<Bytes>>,
+    /// `GET /api/folders` já serializado; invalidado ao mexer em pasta ou criar/apagar ficha.
+    folders_cache: Mutex<Option<Bytes>>,
     /// `GET /api/homebrew` já serializado; invalidado em qualquer escrita de homebrew.
     homebrew_cache: Mutex<Option<Bytes>>,
 }
@@ -132,12 +139,18 @@ impl AppState {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Evento para todo mundo (pastas, homebrew).
     fn publish(&self, event: &'static str, data: Value) {
-        let _ = self.tx.send(Arc::new(Msg { event, data: data.to_string() }));
+        self.publish_in(None, event, data);
     }
 
-    fn invalidate(&self) {
-        *self.public_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    /// Evento só para quem está na pasta (fichas, rolagens). `None` = todo mundo.
+    fn publish_in(&self, folder: Option<String>, event: &'static str, data: Value) {
+        let _ = self.tx.send(Arc::new(Msg { event, data: data.to_string(), folder }));
+    }
+
+    fn invalidate_folders(&self) {
+        *self.folders_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     fn invalidate_homebrew(&self) {
@@ -166,6 +179,8 @@ fn authorized(st: &AppState, c: CharMap, pin: Option<&str>) -> Value {
     json!({ "character": to_authorized(c), "role": role })
 }
 
+/// PIN/senha enviados no header. Serve para ficha, pasta e chave mestra: cada rota
+/// confere contra o que protege.
 fn header_pin(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-character-pin")
@@ -173,23 +188,85 @@ fn header_pin(headers: &HeaderMap) -> Option<String> {
         .map(str::to_string)
 }
 
-// === Fichas ===
-
-async fn list_characters(State(st): State<Shared>) -> Response {
-    if let Some(cached) = st.public_cache.lock().unwrap_or_else(|e| e.into_inner()).clone() {
-        return json_bytes(cached);
-    }
-    let list = match st.db().list_public() {
-        Ok(l) => l,
-        Err(e) => return db_error(e),
-    };
-    let bytes = Bytes::from(serde_json::to_vec(&json!({ "characters": list })).unwrap());
-    *st.public_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(bytes.clone());
-    json_bytes(bytes)
+fn folder_of(c: &CharMap) -> Option<String> {
+    c.get("folderId").and_then(Value::as_str).map(str::to_string)
 }
 
 fn json_bytes(b: Bytes) -> Response {
     ([(header::CONTENT_TYPE, "application/json")], b).into_response()
+}
+
+fn json_body_error(rej: JsonRejection) -> Response {
+    if rej.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        error(StatusCode::PAYLOAD_TOO_LARGE, "too_large")
+    } else {
+        error(StatusCode::BAD_REQUEST, "bad_json")
+    }
+}
+
+fn body_error(status: StatusCode) -> Response {
+    if status == StatusCode::PAYLOAD_TOO_LARGE {
+        error(StatusCode::PAYLOAD_TOO_LARGE, "too_large")
+    } else {
+        error(StatusCode::BAD_REQUEST, "bad_request")
+    }
+}
+
+/// Imagem com `?v=<versão>`: a URL muda a cada troca, então dá para cachear para
+/// sempre; sem `v`, revalida pelo ETag.
+fn image_response(avatar: Avatar, q: &HashMap<String, String>, headers: &HeaderMap) -> Response {
+    let etag = format!("\"{}\"", avatar.version);
+    let cache = if q.get("v").map(String::as_str) == Some(avatar.version.as_str()) {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    let not_modified = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(',').any(|t| t.trim() == etag))
+        .unwrap_or(false);
+    let builder = Response::builder()
+        .header(header::ETAG, &etag)
+        .header(header::CACHE_CONTROL, cache)
+        .header("x-content-type-options", "nosniff");
+    let res = if not_modified {
+        builder.status(StatusCode::NOT_MODIFIED).body(Body::empty())
+    } else {
+        builder
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, avatar.mime)
+            .body(Body::from(avatar.data))
+    };
+    res.unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Tipo canônico da imagem enviada (JPEG/PNG/WEBP, conferido pela assinatura), ou a
+/// resposta de erro.
+fn checked_image(headers: &HeaderMap, body: &[u8]) -> Result<&'static str, Response> {
+    let mime = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| util::image_mime(v.split(';').next().unwrap_or("")))
+        .ok_or_else(|| error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "bad_type"))?;
+    if !util::sniff_image(mime, body) {
+        return Err(error(StatusCode::BAD_REQUEST, "bad_image"));
+    }
+    Ok(mime)
+}
+
+// === Fichas ===
+
+/// Todas as fichas de todas as pastas (resumo). Só o Mestre: jogador enxerga as
+/// fichas pela pasta, com a senha dela.
+async fn list_characters(State(st): State<Shared>, headers: HeaderMap) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    match st.db().list_public() {
+        Ok(list) => Json(json!({ "characters": list })).into_response(),
+        Err(e) => db_error(e),
+    }
 }
 
 fn valid_payload(c: &CharMap) -> bool {
@@ -225,8 +302,11 @@ fn unique_id(db: &Db, name: &str) -> rusqlite::Result<String> {
     }
 }
 
+/// Toda ficha nasce dentro de uma pasta (`character.folderId`); o header leva a senha
+/// da pasta (ou a chave mestra).
 async fn create_character(
     State(st): State<Shared>,
+    headers: HeaderMap,
     body: Result<Json<Value>, JsonRejection>,
 ) -> Response {
     let Ok(Json(body)) = body else { return error(StatusCode::BAD_REQUEST, "bad_json") };
@@ -236,8 +316,20 @@ async fn create_character(
     if !valid_payload(payload) {
         return error(StatusCode::BAD_REQUEST, "bad_request");
     }
+    let Some(folder_id) = payload
+        .get("folderId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .map(str::to_string)
+    else {
+        return error(StatusCode::BAD_REQUEST, "folder_required");
+    };
+    let folder_pin = header_pin(&headers);
+
     let mut c = payload.clone();
     c.remove("avatarVersion"); // gerenciado pelo servidor (rotas de foto)
+    c.insert("folderId".into(), Value::String(folder_id.clone()));
     // PIN com espaço nas pontas trancava o próprio criador: o navegador guardava o PIN
     // cru e o `Pins::ok` só apara o PIN recebido. Guarda já aparado.
     match c.get("pin").and_then(Value::as_str).map(str::trim).filter(|p| !p.is_empty()) {
@@ -251,8 +343,16 @@ async fn create_character(
     }
     let has_pin = c.contains_key("pin");
 
-    let saved = {
+    let (saved, folder_summary) = {
         let db = st.db();
+        let folder = match db.get_folder(&folder_id) {
+            Ok(Some(f)) => f,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "folder_not_found"),
+            Err(e) => return db_error(e),
+        };
+        if !st.pins.folder_key(&folder, folder_pin.as_deref()) {
+            return error(StatusCode::FORBIDDEN, "bad_folder_pin");
+        }
         let name = c.get("characterName").and_then(Value::as_str).unwrap_or("");
         let id = match unique_id(&db, name) {
             Ok(id) => id,
@@ -273,11 +373,17 @@ async fn create_character(
         if let Err(e) = db.record_log(&id, "jogador", &created) {
             return db_error(e);
         }
-        saved
+        match db.folder_public(&folder_id) {
+            Ok(summary) => (saved, summary),
+            Err(e) => return db_error(e),
+        }
     };
 
-    st.invalidate();
-    st.publish("character", json!({ "character": to_public(&saved) }));
+    st.invalidate_folders();
+    st.publish_in(Some(folder_id), "character", json!({ "character": to_public(&saved) }));
+    if let Some(folder) = folder_summary {
+        st.publish("folder", json!({ "folder": folder }));
+    }
     let pin = payload.get("pin").and_then(Value::as_str);
     (StatusCode::CREATED, Json(authorized(&st, saved, pin))).into_response()
 }
@@ -308,6 +414,16 @@ async fn get_character(
     Json(authorized(&st, stored, pin.as_deref())).into_response()
 }
 
+/// Resumo público de uma ficha (nome, jogador, espécie, classes, pasta): a tela de
+/// PIN de quem chega por link direto, sem ter passado pela pasta.
+async fn character_summary(State(st): State<Shared>, Path(id): Path<String>) -> Response {
+    match st.db().get_stored(&id) {
+        Ok(Some(c)) => Json(json!({ "character": to_public(&c) })).into_response(),
+        Ok(None) => error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => db_error(e),
+    }
+}
+
 async fn patch_character(
     State(st): State<Shared>,
     Path(id): Path<String>,
@@ -324,6 +440,7 @@ async fn patch_character(
     safe.remove("id");
     safe.remove("pin");
     safe.remove("avatarVersion");
+    safe.remove("folderId");
 
     let next = {
         let mut db = st.db();
@@ -343,8 +460,7 @@ async fn patch_character(
         }
     };
 
-    st.invalidate();
-    st.publish("character", json!({ "character": to_public(&next) }));
+    st.publish_in(folder_of(&next), "character", json!({ "character": to_public(&next) }));
     Json(authorized(&st, next, pin.as_deref())).into_response()
 }
 
@@ -354,7 +470,7 @@ async fn delete_character(
     headers: HeaderMap,
 ) -> Response {
     let pin = header_pin(&headers);
-    {
+    let (folder, folder_summary) = {
         let mut db = st.db();
         let current = match db.get_stored(&id) {
             Ok(Some(c)) => c,
@@ -367,58 +483,34 @@ async fn delete_character(
         if let Err(e) = db.delete(&id) {
             return db_error(e);
         }
+        let folder = folder_of(&current);
+        let summary = match folder.as_deref().map(|f| db.folder_public(f)).transpose() {
+            Ok(s) => s.flatten(),
+            Err(e) => return db_error(e),
+        };
+        (folder, summary)
+    };
+    st.invalidate_folders();
+    st.publish_in(folder, "character-deleted", json!({ "id": id }));
+    if let Some(summary) = folder_summary {
+        st.publish("folder", json!({ "folder": summary }));
     }
-    st.invalidate();
-    st.publish("character-deleted", json!({ "id": id }));
     Json(json!({ "ok": true })).into_response()
 }
 
-// === Fotos de perfil ===
+// === Fotos de perfil das fichas ===
 
-/// Pública (o card da mesa mostra a foto). Com `?v=<versão>` a URL muda a cada
-/// troca, então dá para cachear para sempre; sem `v`, revalida pelo ETag.
+/// Pública (o card da pasta mostra a foto).
 async fn get_avatar(
     State(st): State<Shared>,
     Path(id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Response {
-    let avatar = match st.db().get_avatar(&id) {
-        Ok(Some(a)) => a,
-        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
-        Err(e) => return db_error(e),
-    };
-    let etag = format!("\"{}\"", avatar.version);
-    let cache = if q.get("v").map(String::as_str) == Some(avatar.version.as_str()) {
-        "public, max-age=31536000, immutable"
-    } else {
-        "no-cache"
-    };
-    let not_modified = headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(',').any(|t| t.trim() == etag))
-        .unwrap_or(false);
-    let builder = Response::builder()
-        .header(header::ETAG, &etag)
-        .header(header::CACHE_CONTROL, cache)
-        .header("x-content-type-options", "nosniff");
-    let res = if not_modified {
-        builder.status(StatusCode::NOT_MODIFIED).body(Body::empty())
-    } else {
-        builder
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, avatar.mime)
-            .body(Body::from(avatar.data))
-    };
-    res.unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-}
-
-fn body_error(status: StatusCode) -> Response {
-    if status == StatusCode::PAYLOAD_TOO_LARGE {
-        error(StatusCode::PAYLOAD_TOO_LARGE, "too_large")
-    } else {
-        error(StatusCode::BAD_REQUEST, "bad_request")
+    match st.db().get_avatar(&id) {
+        Ok(Some(a)) => image_response(a, &q, &headers),
+        Ok(None) => error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => db_error(e),
     }
 }
 
@@ -444,16 +536,10 @@ async fn put_avatar(
         if !st.pins.ok(&current, pin.as_deref()) {
             return error(StatusCode::FORBIDDEN, "bad_pin");
         }
-        let mime = headers
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| util::image_mime(v.split(';').next().unwrap_or("")));
-        let Some(mime) = mime else {
-            return error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "bad_type");
+        let mime = match checked_image(&headers, &body) {
+            Ok(m) => m,
+            Err(res) => return res,
         };
-        if !util::sniff_image(mime, &body) {
-            return error(StatusCode::BAD_REQUEST, "bad_image");
-        }
         let by = if st.pins.is_master(pin.as_deref()) { "mestre" } else { "jogador" };
         match db.set_avatar(&id, mime, &body, by) {
             Ok(Some(n)) => n,
@@ -461,8 +547,7 @@ async fn put_avatar(
             Err(e) => return db_error(e),
         }
     };
-    st.invalidate();
-    st.publish("character", json!({ "character": to_public(&next) }));
+    st.publish_in(folder_of(&next), "character", json!({ "character": to_public(&next) }));
     Json(authorized(&st, next, pin.as_deref())).into_response()
 }
 
@@ -490,10 +575,219 @@ async fn delete_avatar(
         }
     };
     if changed {
-        st.invalidate();
-        st.publish("character", json!({ "character": to_public(&next) }));
+        st.publish_in(folder_of(&next), "character", json!({ "character": to_public(&next) }));
     }
     Json(authorized(&st, next, pin.as_deref())).into_response()
+}
+
+// === Pastas ===
+
+fn trimmed<'a>(body: &'a Value, key: &str) -> Option<&'a str> {
+    body.get(key).and_then(Value::as_str).map(str::trim)
+}
+
+fn folder_name(body: &Value) -> Option<&str> {
+    trimmed(body, "name").filter(|n| !n.is_empty() && n.chars().count() <= FOLDER_NAME_MAX)
+}
+
+fn valid_folder_pin(pin: &str) -> bool {
+    !pin.is_empty() && pin.chars().count() <= FOLDER_PIN_MAX
+}
+
+/// Pública: nome, foto, se tem senha e quantas fichas. Nunca a senha.
+async fn list_folders(State(st): State<Shared>) -> Response {
+    if let Some(cached) = st.folders_cache.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        return json_bytes(cached);
+    }
+    let folders = match st.db().list_folders() {
+        Ok(l) => l,
+        Err(e) => return db_error(e),
+    };
+    let bytes = Bytes::from(serde_json::to_vec(&json!({ "folders": folders })).unwrap());
+    *st.folders_cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(bytes.clone());
+    json_bytes(bytes)
+}
+
+/// Só o Mestre cria pasta. Corpo: `{ name, pin }` (a senha é obrigatória).
+async fn create_folder(
+    State(st): State<Shared>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let Some(name) = folder_name(&body) else { return error(StatusCode::BAD_REQUEST, "bad_request") };
+    let Some(pin) = trimmed(&body, "pin").filter(|p| valid_folder_pin(p)) else {
+        return error(StatusCode::BAD_REQUEST, "folder_pin_required");
+    };
+    let folder = {
+        let db = st.db();
+        match db.folder_name_taken(name, None) {
+            Ok(true) => return error(StatusCode::CONFLICT, "folder_name_taken"),
+            Ok(false) => {}
+            Err(e) => return db_error(e),
+        }
+        match db.insert_folder(name, pin) {
+            Ok(f) => f,
+            Err(e) => return db_error(e),
+        }
+    };
+    st.invalidate_folders();
+    st.publish("folder", json!({ "folder": folder }));
+    (StatusCode::CREATED, Json(json!({ "folder": folder }))).into_response()
+}
+
+/// Abre a pasta: resumo + fichas. `canCreate` diz se a credencial usada (senha da
+/// pasta ou chave mestra) permite criar fichas nela; o PIN de uma ficha só deixa ver.
+async fn get_folder(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    let pin = header_pin(&headers);
+    let db = st.db();
+    let folder = match db.get_folder(&id) {
+        Ok(Some(f)) => f,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    match st.pins.folder_member(&db, &folder, pin.as_deref()) {
+        Ok(true) => {}
+        Ok(false) => return error(StatusCode::FORBIDDEN, "bad_pin"),
+        Err(e) => return db_error(e),
+    }
+    let summary = match db.folder_public(&id) {
+        Ok(Some(s)) => s,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    let characters = match db.list_folder_characters(&id) {
+        Ok(c) => c,
+        Err(e) => return db_error(e),
+    };
+    Json(json!({
+        "folder": summary,
+        "characters": characters,
+        "canCreate": st.pins.folder_key(&folder, pin.as_deref()),
+    }))
+    .into_response()
+}
+
+/// Mestre renomeia e/ou troca a senha. `pin` ausente ou vazio mantém a senha atual.
+async fn update_folder(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let Some(name) = folder_name(&body) else { return error(StatusCode::BAD_REQUEST, "bad_request") };
+    let pin = match body.get("pin") {
+        None | Some(Value::Null) => None,
+        Some(v) => match v.as_str().map(str::trim) {
+            Some("") => None,
+            Some(p) if valid_folder_pin(p) => Some(p),
+            _ => return error(StatusCode::BAD_REQUEST, "bad_request"),
+        },
+    };
+    let folder = {
+        let db = st.db();
+        match db.folder_name_taken(name, Some(&id)) {
+            Ok(true) => return error(StatusCode::CONFLICT, "folder_name_taken"),
+            Ok(false) => {}
+            Err(e) => return db_error(e),
+        }
+        match db.update_folder(&id, name, pin) {
+            Ok(Some(f)) => f,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        }
+    };
+    st.invalidate_folders();
+    st.publish("folder", json!({ "folder": folder }));
+    Json(json!({ "folder": folder })).into_response()
+}
+
+/// Mestre apaga pasta vazia (com fichas dentro dá 409 — nada some sem querer).
+async fn delete_folder(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let result = st.db().delete_folder(&id);
+    match result {
+        Ok(FolderDelete::Deleted) => {}
+        Ok(FolderDelete::NotFound) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Ok(FolderDelete::NotEmpty) => return error(StatusCode::CONFLICT, "folder_not_empty"),
+        Err(e) => return db_error(e),
+    }
+    st.invalidate_folders();
+    st.publish("folder-deleted", json!({ "id": id }));
+    Json(json!({ "ok": true })).into_response()
+}
+
+async fn get_folder_avatar(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    match st.db().get_folder_avatar(&id) {
+        Ok(Some(a)) => image_response(a, &q, &headers),
+        Ok(None) => error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => db_error(e),
+    }
+}
+
+async fn put_folder_avatar(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let body = match body {
+        Ok(b) => b,
+        Err(rej) => return body_error(rej.status()),
+    };
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let mime = match checked_image(&headers, &body) {
+        Ok(m) => m,
+        Err(res) => return res,
+    };
+    let result = st.db().set_folder_avatar(&id, mime, &body);
+    let folder = match result {
+        Ok(Some(f)) => f,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    st.invalidate_folders();
+    st.publish("folder", json!({ "folder": folder }));
+    Json(json!({ "folder": folder })).into_response()
+}
+
+async fn delete_folder_avatar(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let result = st.db().remove_folder_avatar(&id);
+    let (folder, changed) = match result {
+        Ok(Some(r)) => r,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    if changed {
+        st.invalidate_folders();
+        st.publish("folder", json!({ "folder": folder }));
+    }
+    Json(json!({ "folder": folder })).into_response()
 }
 
 // === Chave mestra e homebrew ===
@@ -504,14 +798,6 @@ async fn master_check(State(st): State<Shared>, headers: HeaderMap) -> Response 
         Json(json!({ "ok": true })).into_response()
     } else {
         error(StatusCode::FORBIDDEN, "bad_pin")
-    }
-}
-
-fn json_body_error(rej: JsonRejection) -> Response {
-    if rej.status() == StatusCode::PAYLOAD_TOO_LARGE {
-        error(StatusCode::PAYLOAD_TOO_LARGE, "too_large")
-    } else {
-        error(StatusCode::BAD_REQUEST, "bad_json")
     }
 }
 
@@ -638,24 +924,57 @@ async fn delete_homebrew(
 
 // === Rolagens ===
 
+/// Confere se o PIN dá acesso de membro à pasta. `Err` já é a resposta de erro.
+fn require_folder_member(st: &AppState, db: &Db, folder_id: &str, pin: Option<&str>) -> Result<(), Response> {
+    let folder = match db.get_folder(folder_id) {
+        Ok(Some(f)) => f,
+        Ok(None) => return Err(error(StatusCode::NOT_FOUND, "not_found")),
+        Err(e) => return Err(db_error(e)),
+    };
+    match st.pins.folder_member(db, &folder, pin) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(error(StatusCode::FORBIDDEN, "bad_pin")),
+        Err(e) => Err(db_error(e)),
+    }
+}
+
+/// `?folder=<id>`: a mesa da pasta (senha dela, PIN de uma ficha dela ou chave mestra).
+/// Sem pasta: tudo, só para o Mestre.
 async fn list_rolls(
     State(st): State<Shared>,
     Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> Response {
     let limit = q
         .get("limit")
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(50)
         .clamp(1, 200);
-    match st.db().list_rolls(limit) {
+    let pin = header_pin(&headers);
+    let db = st.db();
+    let rolls = match q.get("folder").filter(|f| !f.is_empty()) {
+        Some(folder_id) => {
+            if let Err(res) = require_folder_member(&st, &db, folder_id, pin.as_deref()) {
+                return res;
+            }
+            db.list_folder_rolls(folder_id, limit)
+        }
+        None => {
+            if !st.pins.is_master(pin.as_deref()) {
+                return error(StatusCode::FORBIDDEN, "bad_pin");
+            }
+            db.list_rolls(limit)
+        }
+    };
+    match rolls {
         Ok(rolls) => Json(json!({ "rolls": rolls })).into_response(),
         Err(e) => db_error(e),
     }
 }
 
 /// Rolar em nome de uma ficha exige o PIN dela (ou a chave mestra); rolagem
-/// avulsa, sem ficha, é coisa de Mestre. O histórico guarda só as 200 mais
-/// recentes, então POST aberto também era um jeito de apagar a mesa dos outros.
+/// avulsa, sem ficha, é coisa de Mestre. O histórico é podado, então POST aberto
+/// também era um jeito de apagar a mesa dos outros.
 async fn post_roll(
     State(st): State<Shared>,
     headers: HeaderMap,
@@ -672,7 +991,7 @@ async fn post_roll(
     };
     let pin = header_pin(&headers);
 
-    {
+    let folder = {
         let db = st.db();
         match roll.character_id.as_deref() {
             Some(id) => match db.get_stored(id) {
@@ -685,6 +1004,7 @@ async fn post_roll(
                         .get("characterName")
                         .and_then(Value::as_str)
                         .map(str::to_string);
+                    folder_of(&stored)
                 }
                 Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
                 Err(e) => return db_error(e),
@@ -693,20 +1013,21 @@ async fn post_roll(
                 if !st.pins.is_master(pin.as_deref()) {
                     return error(StatusCode::FORBIDDEN, "bad_pin");
                 }
+                None
             }
         }
-    }
+    };
 
     if let Err(e) = st.db().insert_roll(&roll) {
         return db_error(e);
     }
-    st.publish("roll", json!({ "roll": roll }));
+    st.publish_in(folder, "roll", json!({ "roll": roll }));
     Json(json!({ "roll": roll })).into_response()
 }
 
-/// Limpar o histórico de uma ficha exige o PIN dela; limpar o da mesa inteira
-/// exige um PIN válido de qualquer ficha da mesa (é destrutivo para todos, mas
-/// sempre foi uma ação de jogador — não vamos trancar no Mestre).
+/// Limpar o histórico de uma ficha exige o PIN dela; limpar a mesa de uma pasta
+/// (`?folder=`) exige ser membro dela (o PIN de qualquer ficha da pasta serve — sempre
+/// foi ação de jogador); limpar tudo, de todas as pastas, só o Mestre.
 async fn delete_rolls(
     State(st): State<Shared>,
     Query(q): Query<HashMap<String, String>>,
@@ -714,42 +1035,71 @@ async fn delete_rolls(
 ) -> Response {
     let pin = header_pin(&headers);
     let character_id = q.get("characterId").filter(|s| !s.is_empty()).cloned();
+    let folder_id = q.get("folder").filter(|s| !s.is_empty()).cloned();
 
-    {
+    let (removed, scope) = {
         let db = st.db();
-        let allowed = match character_id.as_deref() {
-            Some(id) => match db.get_stored(id) {
-                Ok(Some(stored)) => st.pins.ok(&stored, pin.as_deref()),
+        if let Some(id) = character_id.as_deref() {
+            let stored = match db.get_stored(id) {
+                Ok(Some(stored)) => stored,
                 Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
                 Err(e) => return db_error(e),
-            },
-            None => match st.pins.any_member(&db, pin.as_deref()) {
-                Ok(v) => v,
-                Err(e) => return db_error(e),
-            },
-        };
-        if !allowed {
-            return error(StatusCode::FORBIDDEN, "bad_pin");
+            };
+            if !st.pins.ok(&stored, pin.as_deref()) {
+                return error(StatusCode::FORBIDDEN, "bad_pin");
+            }
+            (db.clear_rolls(Some(id)), folder_of(&stored))
+        } else if let Some(folder) = folder_id.as_deref() {
+            if let Err(res) = require_folder_member(&st, &db, folder, pin.as_deref()) {
+                return res;
+            }
+            (db.clear_folder_rolls(folder), folder_id.clone())
+        } else {
+            if !st.pins.is_master(pin.as_deref()) {
+                return error(StatusCode::FORBIDDEN, "bad_pin");
+            }
+            (db.clear_rolls(None), None)
         }
-    }
-
-    let removed = match st.db().clear_rolls(character_id.as_deref()) {
+    };
+    let removed = match removed {
         Ok(n) => n,
         Err(e) => return db_error(e),
     };
-    st.publish("rolls-cleared", json!({ "characterId": character_id }));
+    st.publish_in(
+        scope,
+        "rolls-cleared",
+        json!({ "characterId": character_id, "folderId": folder_id }),
+    );
     Json(json!({ "ok": true, "removed": removed })).into_response()
 }
 
 // === Server-Sent Events ===
 
-async fn events(State(st): State<Shared>) -> Response {
+/// `?folder=<id>&pin=<credencial>` inscreve nos eventos da pasta (fichas, rolagens);
+/// eventos globais (pastas, homebrew) chegam para todos. EventSource não manda
+/// header, por isso a credencial vai na query. Credencial inválida = só globais.
+async fn events(State(st): State<Shared>, Query(q): Query<HashMap<String, String>>) -> Response {
+    let scope = q.get("folder").filter(|f| !f.is_empty()).and_then(|id| {
+        let db = st.db();
+        let folder = db.get_folder(id).ok().flatten()?;
+        let pin = q.get("pin").map(String::as_str);
+        st.pins.folder_member(&db, &folder, pin).unwrap_or(false).then_some(folder.id)
+    });
+
     let rx = st.tx.subscribe();
     let hello = tokio_stream::once(Ok::<Event, Infallible>(
-        Event::default().event("hello").data("{\"ok\":true}"),
+        Event::default()
+            .event("hello")
+            .data(json!({ "ok": true, "folder": scope }).to_string()),
     ));
     let updates = BroadcastStream::new(rx)
-        .filter_map(|r| r.ok()) // cliente lento perdeu eventos: segue a vida
+        .filter_map(move |r| {
+            let m: Arc<Msg> = r.ok()?; // cliente lento perdeu eventos: segue a vida
+            match &m.folder {
+                Some(f) if scope.as_deref() != Some(f.as_str()) => None,
+                _ => Some(m),
+            }
+        })
         .map(|m: Arc<Msg>| {
             Ok::<Event, Infallible>(Event::default().event(m.event).data(&m.data))
         });
@@ -831,7 +1181,7 @@ async fn main() {
         db: Mutex::new(db),
         tx,
         pins: Pins::from_env(),
-        public_cache: Mutex::new(None),
+        folders_cache: Mutex::new(None),
         homebrew_cache: Mutex::new(None),
     });
 
@@ -842,12 +1192,25 @@ async fn main() {
             "/api/characters/{id}",
             get(get_character).patch(patch_character).delete(delete_character),
         )
+        .route("/api/characters/{id}/summary", get(character_summary))
         // Limites por rota: a camada interna vence o limite geral de 8 MB lá de baixo.
         .route(
             "/api/characters/{id}/avatar",
             get(get_avatar)
                 .put(put_avatar)
                 .delete(delete_avatar)
+                .layer(DefaultBodyLimit::max(AVATAR_LIMIT)),
+        )
+        .route("/api/folders", get(list_folders).post(create_folder))
+        .route(
+            "/api/folders/{id}",
+            get(get_folder).put(update_folder).delete(delete_folder),
+        )
+        .route(
+            "/api/folders/{id}/avatar",
+            get(get_folder_avatar)
+                .put(put_folder_avatar)
+                .delete(delete_folder_avatar)
                 .layer(DefaultBodyLimit::max(AVATAR_LIMIT)),
         )
         .route(

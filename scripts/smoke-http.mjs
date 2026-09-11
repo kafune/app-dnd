@@ -15,6 +15,8 @@ const port = Number(process.env.SMOKE_PORT ?? "3100");
 const baseUrl = `http://127.0.0.1:${port}`;
 const JOAO_PIN = "7429";
 const MASTER_PIN = "670067";
+/** Pasta padrão onde o servidor põe as fichas do seed. */
+const LEGACY = "mundo-pankleos";
 // PNG 1×1 válido, para a foto de perfil.
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
@@ -60,6 +62,7 @@ try {
   await assertSpa();
   await assertStaticCaching();
   await assertCharactersApi();
+  await assertFolders();
   await assertCharacterPatch();
   await assertCreateAndDelete();
   await assertMasterAndHomebrew();
@@ -96,12 +99,12 @@ async function waitForServer() {
 }
 
 async function assertSpa() {
-  for (const path of ["/", "/personagem/joao-lindao", "/criar-ficha"]) {
+  for (const path of ["/", "/personagem/joao-lindao", `/pasta/${LEGACY}`, `/pasta/${LEGACY}/criar-ficha`]) {
     const response = await fetch(`${baseUrl}${path}`);
     assert.equal(response.status, 200, `${path} deve responder 200`);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/, `${path} deve ser HTML`);
     const html = await response.text();
-    assert.match(html, /Mundo Pankleos/, `${path} deve entregar o index.html do SPA`);
+    assert.match(html, /Fichas DnD/, `${path} deve entregar o index.html do SPA`);
     assert.match(html, /\/assets\/.*\.js/, `${path} deve referenciar o bundle`);
   }
   const missing = await fetch(`${baseUrl}/assets/nao-existe.js`);
@@ -131,20 +134,224 @@ async function assertStaticCaching() {
   assert.match(plain.headers.get("content-type") ?? "", /javascript/);
 }
 
-async function assertCharactersApi() {
-  const response = await fetch(`${baseUrl}/api/characters`);
-  assert.equal(response.status, 200, "/api/characters deve responder 200");
-  const body = await response.json();
-  assert.equal(body.characters.length, 4, "API deve retornar 4 personagens");
+/** Fichas (resumo) de uma pasta, abrindo-a com `pin` (pasta sem senha dispensa). */
+async function folderCharacters(id, pin) {
+  const response = await fetch(`${baseUrl}/api/folders/${id}`, { headers: pin ? { "x-character-pin": pin } : {} });
+  assert.equal(response.status, 200, `GET /api/folders/${id} deve abrir a pasta`);
+  return (await response.json()).characters;
+}
 
-  const joao = body.characters.find((character) => character.id === "joao-lindao");
+async function listFolders() {
+  return (await fetch(`${baseUrl}/api/folders`).then((r) => r.json())).folders;
+}
+
+async function assertCharactersApi() {
+  const denied = await fetch(`${baseUrl}/api/characters`);
+  assert.equal(denied.status, 403, "listar todas as fichas de todas as pastas é só do Mestre");
+  const all = await fetch(`${baseUrl}/api/characters`, { headers: { "x-character-pin": MASTER_PIN } }).then((r) => r.json());
+  assert.equal(all.characters.length, 4, "Mestre vê as 4 fichas do seed");
+
+  const folders = await listFolders();
+  assert.equal(folders.length, 1, "o seed vai para uma pasta só");
+  const { id, name, protected: locked, characterCount } = folders[0];
+  assert.deepEqual(
+    { id, name, locked, characterCount },
+    { id: LEGACY, name: "Mundo Pankleos", locked: false, characterCount: 4 },
+    "pasta padrão sem senha com as 4 fichas",
+  );
+
+  const opened = await fetch(`${baseUrl}/api/folders/${LEGACY}`).then((r) => r.json());
+  assert.equal(opened.canCreate, true, "pasta sem senha deixa criar ficha");
+  assert.equal(opened.characters.length, 4, "pasta deve listar 4 personagens");
+
+  const joao = opened.characters.find((character) => character.id === "joao-lindao");
   assert.ok(joao, "João deve existir no seed");
   assert.equal(joao.characterName, "Zorrilho Pabrantes");
+  assert.equal(joao.folderId, LEGACY);
   assert.equal(joao.protected, true, "listagem pública deve marcar ficha protegida");
   assert.equal(joao.hpCurrent, 0, "listagem pública não deve expor PV da ficha");
   assert.equal(joao.pin, undefined, "API pública nunca deve expor PIN");
   assert.equal(joao.sheet.species, "Shadar-Kai");
   assert.equal(joao.sheet.classes[0].name, "Ladino");
+}
+
+async function assertFolders() {
+  const folders = (method, path, { body, pin, bytes, type } = {}) =>
+    fetch(`${baseUrl}/api/folders${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(type ? { "Content-Type": type } : {}),
+        ...(pin ? { "x-character-pin": pin } : {}),
+      },
+      body: bytes ?? (body === undefined ? undefined : JSON.stringify(body)),
+    });
+
+  // --- criar: só o Mestre, com nome e senha
+  const smoke = { name: " Mesa Smoke ", pin: " 1111 " };
+  assert.equal((await folders("POST", "", { body: smoke })).status, 403, "criar pasta sem chave mestra dá 403");
+  assert.equal((await folders("POST", "", { body: smoke, pin: JOAO_PIN })).status, 403, "PIN de jogador não cria pasta");
+  const noPin = await folders("POST", "", { body: { name: "Mesa Smoke", pin: "  " }, pin: MASTER_PIN });
+  assert.equal(noPin.status, 400);
+  assert.deepEqual(await noPin.json(), { error: "folder_pin_required" }, "pasta sem senha não é criada");
+  const noName = await folders("POST", "", { body: { name: "  ", pin: "1" }, pin: MASTER_PIN });
+  assert.deepEqual(await noName.json(), { error: "bad_request" });
+
+  const created = await folders("POST", "", { body: smoke, pin: MASTER_PIN });
+  assert.equal(created.status, 201, "Mestre cria a pasta");
+  const { folder } = await created.json();
+  assert.equal(folder.id, "mesa-smoke", "id é o slug do nome");
+  assert.equal(folder.name, "Mesa Smoke", "nome guardado aparado");
+  assert.equal(folder.protected, true);
+  assert.equal(folder.characterCount, 0);
+  assert.equal(folder.pin, undefined, "resposta nunca traz a senha");
+  const dup = await folders("POST", "", { body: { name: "mesa SMÔKE", pin: "2" }, pin: MASTER_PIN });
+  assert.equal(dup.status, 409);
+  assert.deepEqual(await dup.json(), { error: "folder_name_taken" }, "nome repetido (caixa/acento) dá 409");
+
+  const listed = await fetch(`${baseUrl}/api/folders`).then((r) => r.text());
+  assert.ok(listed.includes('"mesa-smoke"'), "listagem pública inclui a pasta nova");
+  assert.ok(!listed.includes('"pin"'), "listagem pública nunca expõe senha");
+
+  // --- abrir: senha da pasta, chave mestra ou PIN de uma ficha dela (só para ver)
+  assert.equal((await folders("GET", "/mesa-smoke")).status, 403, "pasta com senha não abre sem senha");
+  assert.equal((await folders("GET", "/mesa-smoke", { pin: "errada" })).status, 403);
+  assert.equal((await folders("GET", "/nao-existe", { pin: "1111" })).status, 404);
+  const opened = await folders("GET", "/mesa-smoke", { pin: "1111" }).then((r) => r.json());
+  assert.equal(opened.canCreate, true, "senha da pasta deixa criar ficha");
+  assert.equal(opened.characters.length, 0);
+  assert.equal((await folders("GET", "/mesa-smoke", { pin: MASTER_PIN }).then((r) => r.json())).canCreate, true);
+
+  // --- ficha nasce dentro da pasta
+  const postCharacter = (character, pin) =>
+    fetch(`${baseUrl}/api/characters`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(pin ? { "x-character-pin": pin } : {}) },
+      body: JSON.stringify({ character }),
+    });
+  const ficha = {
+    playerName: "Smoke",
+    characterName: "Ficha Na Pasta",
+    pin: "8080",
+    sheet: { species: "Humano", classes: [{ name: "Guerreiro", level: 1 }], abilityScores: { str: 10 } },
+    hpCurrent: 5,
+    hpMax: 5,
+    hpTemp: 0,
+    spellSlots: {},
+    resources: [],
+  };
+  const semPasta = await postCharacter(ficha, "1111");
+  assert.equal(semPasta.status, 400);
+  assert.deepEqual(await semPasta.json(), { error: "folder_required" }, "ficha sem pasta não é criada");
+  const pastaFantasma = await postCharacter({ ...ficha, folderId: "nao-existe" }, "1111");
+  assert.deepEqual(await pastaFantasma.json(), { error: "folder_not_found" });
+  const semSenha = await postCharacter({ ...ficha, folderId: "mesa-smoke" });
+  assert.equal(semSenha.status, 403);
+  assert.deepEqual(await semSenha.json(), { error: "bad_folder_pin" }, "criar ficha exige a senha da pasta");
+  assert.equal((await postCharacter({ ...ficha, folderId: "mesa-smoke" }, JOAO_PIN)).status, 403, "PIN de ficha não cria ficha na pasta");
+
+  const made = await postCharacter({ ...ficha, folderId: " mesa-smoke " }, "1111");
+  assert.equal(made.status, 201, "senha da pasta cria a ficha");
+  const character = (await made.json()).character;
+  assert.equal(character.folderId, "mesa-smoke", "folderId guardado aparado");
+  assert.equal((await listFolders()).find((f) => f.id === "mesa-smoke")?.characterCount, 1, "contagem da pasta atualiza");
+  assert.equal((await folderCharacters(LEGACY)).length, 4, "a ficha não aparece em outra pasta");
+
+  const inside = await folderCharacters("mesa-smoke", "1111");
+  assert.equal(inside.length, 1);
+  assert.equal(inside[0].id, character.id);
+  assert.equal(inside[0].pin, undefined);
+  assert.equal(inside[0].hpCurrent, 0, "listagem da pasta é só o resumo");
+  const viaFicha = await folders("GET", "/mesa-smoke", { pin: "8080" }).then((r) => r.json());
+  assert.equal(viaFicha.canCreate, false, "PIN de uma ficha da pasta deixa ver, não criar");
+  assert.equal((await folders("GET", "/mesa-smoke", { pin: JOAO_PIN })).status, 403, "PIN de ficha de outra pasta não abre");
+
+  const summary = await fetch(`${baseUrl}/api/characters/${character.id}/summary`);
+  assert.equal(summary.status, 200, "resumo público por id (tela de PIN do link direto)");
+  const summaryBody = await summary.json();
+  assert.equal(summaryBody.character.folderId, "mesa-smoke");
+  assert.equal(summaryBody.character.pin, undefined);
+  assert.equal(summaryBody.character.hpCurrent, 0);
+  assert.equal((await fetch(`${baseUrl}/api/characters/nao-existe/summary`)).status, 404);
+
+  const moved = await fetch(`${baseUrl}/api/characters/${character.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patch: { folderId: LEGACY, hpCurrent: 4 }, pin: "8080" }),
+  }).then((r) => r.json());
+  assert.equal(moved.character.folderId, "mesa-smoke", "PATCH não troca a pasta");
+
+  // --- mesa (rolagens) separada por pasta
+  const roll = {
+    id: randomUUID(),
+    characterId: character.id,
+    label: "Smoke pasta",
+    expression: "1d20",
+    result: 11,
+    detail: { rolls: [11], modifier: 0 },
+    createdAt: new Date().toISOString(),
+  };
+  const rolled = await fetch(`${baseUrl}/api/rolls`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-character-pin": "8080" },
+    body: JSON.stringify({ roll }),
+  });
+  assert.equal(rolled.status, 200);
+  const rolls = (query, pin) =>
+    fetch(`${baseUrl}/api/rolls${query}`, { headers: pin ? { "x-character-pin": pin } : {} });
+  assert.equal((await rolls("?folder=mesa-smoke")).status, 403, "mesa de pasta com senha exige acesso");
+  const mesa = await rolls("?folder=mesa-smoke", "8080").then((r) => r.json());
+  assert.ok(mesa.rolls.some((r) => r.id === roll.id), "PIN da ficha vê a mesa da pasta dela");
+  const outraMesa = await rolls(`?folder=${LEGACY}`).then((r) => r.json());
+  assert.ok(!outraMesa.rolls.some((r) => r.id === roll.id), "rolagem não aparece na mesa de outra pasta");
+  assert.equal((await rolls("")).status, 403, "rolagens de todas as pastas só para o Mestre");
+  assert.equal((await rolls("", MASTER_PIN)).status, 200);
+  const clear = (pin) =>
+    fetch(`${baseUrl}/api/rolls?folder=mesa-smoke`, { method: "DELETE", headers: { "x-character-pin": pin } });
+  assert.equal((await clear(JOAO_PIN)).status, 403, "PIN de outra pasta não limpa esta mesa");
+  assert.deepEqual(await clear("1111").then((r) => r.json()), { ok: true, removed: 1 });
+
+  // --- editar: nome e senha (sem senha nova, fica a atual)
+  const renamed = { name: "Mesa Smoke Revisada", pin: "2222" };
+  assert.equal((await folders("PUT", "/mesa-smoke", { body: renamed })).status, 403, "editar pasta exige a chave mestra");
+  assert.equal((await folders("PUT", "/nao-existe", { body: renamed, pin: MASTER_PIN })).status, 404);
+  const put = await folders("PUT", "/mesa-smoke", { body: renamed, pin: MASTER_PIN });
+  assert.equal(put.status, 200);
+  assert.equal((await put.json()).folder.name, "Mesa Smoke Revisada");
+  assert.equal((await folders("GET", "/mesa-smoke", { pin: "1111" })).status, 403, "senha antiga para de valer");
+  assert.equal((await folders("GET", "/mesa-smoke", { pin: "2222" })).status, 200, "senha nova vale");
+  assert.equal((await folders("PUT", "/mesa-smoke", { body: { name: "Mesa Smoke Revisada" }, pin: MASTER_PIN })).status, 200);
+  assert.equal((await folders("GET", "/mesa-smoke", { pin: "2222" })).status, 200, "sem pin no PUT, a senha fica");
+  const clash = await folders("PUT", "/mesa-smoke", { body: { name: "mundo pankleos" }, pin: MASTER_PIN });
+  assert.equal(clash.status, 409, "renomear para nome de outra pasta dá 409");
+
+  // --- foto da pasta
+  assert.equal((await folders("GET", "/mesa-smoke/avatar")).status, 404, "sem foto, GET dá 404");
+  assert.equal((await folders("PUT", "/mesa-smoke/avatar", { bytes: PNG_1X1, type: "image/png", pin: "2222" })).status, 403, "trocar foto da pasta exige a chave mestra");
+  assert.equal((await folders("PUT", "/mesa-smoke/avatar", { bytes: PNG_1X1, type: "text/plain", pin: MASTER_PIN })).status, 415);
+  const photo = await folders("PUT", "/mesa-smoke/avatar", { bytes: PNG_1X1, type: "image/png", pin: MASTER_PIN });
+  assert.equal(photo.status, 200);
+  const version = (await photo.json()).folder.avatarVersion;
+  assert.match(version, /^[0-9a-f]{12}$/, "pasta ganha avatarVersion");
+  const img = await folders("GET", `/mesa-smoke/avatar?v=${version}`);
+  assert.equal(img.headers.get("content-type"), "image/png");
+  assert.match(img.headers.get("cache-control") ?? "", /immutable/);
+  assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG_1X1, "GET devolve os mesmos bytes");
+  assert.equal((await listFolders()).find((f) => f.id === "mesa-smoke")?.avatarVersion, version, "listagem traz a versão da foto");
+  const noPhoto = await folders("DELETE", "/mesa-smoke/avatar", { pin: MASTER_PIN }).then((r) => r.json());
+  assert.equal(noPhoto.folder.avatarVersion, null);
+  assert.equal((await folders("GET", "/mesa-smoke/avatar")).status, 404, "foto removida dá 404");
+
+  // --- apagar: só pasta vazia
+  const notEmpty = await folders("DELETE", "/mesa-smoke", { pin: MASTER_PIN });
+  assert.equal(notEmpty.status, 409);
+  assert.deepEqual(await notEmpty.json(), { error: "folder_not_empty" }, "pasta com fichas não é apagada");
+  const gone = await fetch(`${baseUrl}/api/characters/${character.id}`, { method: "DELETE", headers: { "x-character-pin": "8080" } });
+  assert.equal(gone.status, 200);
+  assert.equal((await folders("DELETE", "/mesa-smoke")).status, 403, "apagar pasta exige a chave mestra");
+  assert.equal((await folders("DELETE", "/mesa-smoke", { pin: MASTER_PIN })).status, 200);
+  assert.equal((await folders("DELETE", "/mesa-smoke", { pin: MASTER_PIN })).status, 404, "apagar de novo dá 404");
+  assert.ok(!(await listFolders()).some((f) => f.id === "mesa-smoke"), "pasta apagada some da lista");
 }
 
 async function assertCharacterPatch() {
@@ -224,6 +431,7 @@ async function assertCreateAndDelete() {
   assert.deepEqual(await bad.json(), { error: "bad_json" });
 
   const character = {
+    folderId: LEGACY,
     playerName: "Smoke",
     characterName: "Édson Ção",
     pin: "4321",
@@ -254,8 +462,8 @@ async function assertCreateAndDelete() {
   const dupBody = await dup.json();
   assert.match(dupBody.character.id, /^edson-cao-[0-9a-f]{4}$/, "id repetido ganha sufixo");
 
-  const list = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
-  assert.equal(list.characters.length, 6, "listagem deve incluir as fichas novas");
+  assert.equal((await folderCharacters(LEGACY)).length, 6, "listagem da pasta deve incluir as fichas novas");
+  assert.equal((await listFolders())[0].characterCount, 6, "contagem da pasta deve incluir as fichas novas");
 
   const deniedDelete = await fetch(`${baseUrl}/api/characters/edson-cao`, { method: "DELETE" });
   assert.equal(deniedDelete.status, 403, "DELETE sem PIN deve ser negado");
@@ -267,8 +475,8 @@ async function assertCreateAndDelete() {
     });
     assert.equal(del.status, 200, "DELETE com PIN deve funcionar");
   }
-  const after = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
-  assert.equal(after.characters.length, 4, "cache da listagem deve ser invalidado após escrita");
+  assert.equal((await folderCharacters(LEGACY)).length, 4, "fichas apagadas somem da pasta");
+  assert.equal((await listFolders())[0].characterCount, 4, "cache da listagem de pastas deve ser invalidado após escrita");
 }
 
 /** Cria uma ficha mínima para os testes e devolve o corpo da resposta. */
@@ -278,6 +486,7 @@ async function createSmokeCharacter(characterName, pin, extra = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       character: {
+        folderId: LEGACY,
         playerName: "Smoke",
         characterName,
         ...(pin === undefined ? {} : { pin }),
@@ -428,9 +637,9 @@ async function assertAvatars() {
   const revalidated = await fetch(url, { headers: { "if-none-match": `"${version}"` } });
   assert.equal(revalidated.status, 304, "ETag igual deve responder 304");
 
-  let list = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
-  assert.equal(list.characters.find((c) => c.id === id)?.avatarVersion, version, "listagem pública traz avatarVersion");
-  assert.equal(list.characters.find((c) => c.id === "joao-lindao")?.avatarVersion, null, "sem foto, avatarVersion é null");
+  let list = await folderCharacters(LEGACY);
+  assert.equal(list.find((c) => c.id === id)?.avatarVersion, version, "listagem pública traz avatarVersion");
+  assert.equal(list.find((c) => c.id === "joao-lindao")?.avatarVersion, null, "sem foto, avatarVersion é null");
 
   const log = await fetch(`${baseUrl}/api/characters/${id}?log=1`, { headers: { "x-character-pin": pin } }).then((r) => r.json());
   assert.deepEqual(log.log[0].changes, [{ field: "Foto de perfil", note: "atualizada" }], "upload entra no log");
@@ -451,8 +660,8 @@ async function assertAvatars() {
   assert.equal((await cleared.json()).character.avatarVersion, undefined, "DELETE limpa avatarVersion");
   assert.equal((await fetch(url)).status, 404, "foto removida dá 404");
   assert.equal((await del(pin)).status, 200, "DELETE da foto é idempotente");
-  list = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
-  assert.equal(list.characters.find((c) => c.id === id)?.avatarVersion, null, "cache público invalidado ao remover");
+  list = await folderCharacters(LEGACY);
+  assert.equal(list.find((c) => c.id === id)?.avatarVersion, null, "listagem reflete a foto removida");
 
   assert.equal((await put(PNG_1X1, "image/png", pin)).status, 200);
   const gone = await fetch(`${baseUrl}/api/characters/${id}`, { method: "DELETE", headers: { "x-character-pin": pin } });
@@ -486,8 +695,7 @@ async function assertPinTrim() {
     200,
   );
   assert.equal((await fetch(`${baseUrl}/api/characters/${blank.character.id}`, { method: "DELETE" })).status, 200);
-  const after = await fetch(`${baseUrl}/api/characters`).then((r) => r.json());
-  assert.equal(after.characters.length, 4, "fichas de teste removidas");
+  assert.equal((await folderCharacters(LEGACY)).length, 4, "fichas de teste removidas");
 }
 
 async function assertRollsApi() {
@@ -530,7 +738,7 @@ async function assertRollsApi() {
   const avulsa = await post({ ...novaRolagem(), characterId: null, characterName: undefined });
   assert.equal(avulsa.status, 403, "rolagem sem ficha exige a chave mestra");
 
-  const vazio = await fetch(`${baseUrl}/api/rolls?limit=5`).then((r) => r.json());
+  const vazio = await fetch(`${baseUrl}/api/rolls?folder=${LEGACY}&limit=5`).then((r) => r.json());
   assert.equal(vazio.rolls.length, 0, "nada recusado pode ter entrado no histórico");
 
   // --- escrita autorizada
@@ -556,7 +764,7 @@ async function assertRollsApi() {
     "o nome exibido vem do servidor, não do cliente",
   );
 
-  const listResponse = await fetch(`${baseUrl}/api/rolls?limit=5`);
+  const listResponse = await fetch(`${baseUrl}/api/rolls?folder=${LEGACY}&limit=5`);
   assert.equal(listResponse.status, 200, "GET de rolagens deve responder 200");
   const body = await listResponse.json();
   assert.ok(
@@ -569,22 +777,60 @@ async function assertRollsApi() {
   assert.equal(limparSemPin.status, 403, "DELETE de uma ficha sem PIN deve ser negado");
 
   const limparMesaSemPin = await del("");
-  assert.equal(limparMesaSemPin.status, 403, "DELETE da mesa toda sem PIN deve ser negado");
+  assert.equal(limparMesaSemPin.status, 403, "DELETE de todas as mesas sem PIN deve ser negado");
+  assert.equal((await del("?folder=nao-existe", JOAO_PIN)).status, 404, "DELETE da mesa de pasta inexistente dá 404");
 
   const daFicha = await del("?characterId=joao-lindao", JOAO_PIN).then((r) => r.json());
   assert.deepEqual(daFicha, { ok: true, removed: 2 }, "só saem as rolagens da ficha");
 
-  // Limpar a mesa inteira é destrutivo para todos, mas qualquer PIN da mesa serve.
-  const daMesa = await del("", JOAO_PIN).then((r) => r.json());
-  assert.deepEqual(daMesa, { ok: true, removed: 1 }, "PIN de jogador limpa a mesa toda");
+  // Limpar a mesa da pasta é destrutivo para todos dela, mas o PIN de qualquer ficha da pasta serve.
+  assert.equal((await post(novaRolagem(), JOAO_PIN)).status, 200);
+  const daMesa = await del(`?folder=${LEGACY}`, JOAO_PIN).then((r) => r.json());
+  assert.deepEqual(daMesa, { ok: true, removed: 1 }, "PIN de jogador limpa a mesa da pasta (a rolagem avulsa fica)");
+
+  assert.equal((await del("", JOAO_PIN)).status, 403, "limpar todas as pastas de uma vez é só do Mestre");
+  const tudo = await del("", MASTER_PIN).then((r) => r.json());
+  assert.deepEqual(tudo, { ok: true, removed: 1 }, "Mestre limpa o que sobrou (a rolagem avulsa)");
 }
 
 async function assertEventsApi() {
+  // Uma pasta com senha e uma ficha nela: eventos de uma pasta não podem vazar para outra.
+  const json = (pin) => ({ "Content-Type": "application/json", "x-character-pin": pin });
+  const { folder } = await fetch(`${baseUrl}/api/folders`, {
+    method: "POST",
+    headers: json(MASTER_PIN),
+    body: JSON.stringify({ name: "Mesa SSE", pin: "3333" }),
+  }).then((r) => r.json());
+  const { character: alheia } = await fetch(`${baseUrl}/api/characters`, {
+    method: "POST",
+    headers: json("3333"),
+    body: JSON.stringify({
+      character: {
+        folderId: folder.id,
+        playerName: "Smoke",
+        characterName: "Ficha SSE",
+        pin: "3434",
+        sheet: { species: "Humano", classes: [], abilityScores: { str: 10 } },
+        hpCurrent: 1,
+        hpMax: 1,
+        hpTemp: 0,
+        spellSlots: {},
+        resources: [],
+      },
+    }),
+  }).then((r) => r.json());
+
+  // Senha errada conecta, mas só com os eventos globais.
+  const wrong = await fetch(`${baseUrl}/api/events?folder=${folder.id}&pin=errada`);
+  const wrongReader = wrong.body.getReader();
+  assert.match(new TextDecoder().decode((await wrongReader.read()).value), /"folder":null/, "senha errada não inscreve na pasta");
+  await wrongReader.cancel();
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(`${baseUrl}/api/events`, { signal: controller.signal });
+    const response = await fetch(`${baseUrl}/api/events?folder=${LEGACY}`, { signal: controller.signal });
     assert.equal(response.status, 200, "SSE deve responder 200");
     assert.equal(
       response.headers.get("content-type")?.includes("text/event-stream"),
@@ -598,44 +844,57 @@ async function assertEventsApi() {
     const decoder = new TextDecoder();
     let text = decoder.decode((await reader.read()).value);
     assert.match(text, /event: hello/, "SSE deve enviar evento hello inicial");
+    assert.match(text, new RegExp(`"folder":"${LEGACY}"`), "pasta sem senha inscreve sem PIN");
 
-    // Uma rolagem postada deve chegar por SSE em tempo real.
-    const roll = {
+    const rolagem = (characterId) => ({
       id: randomUUID(),
-      characterId: null,
+      characterId,
       label: "sse",
       expression: "1d4",
       result: 3,
       detail: { rolls: [3], modifier: 0 },
       createdAt: new Date().toISOString(),
-    };
-    const t0 = performance.now();
-    await fetch(`${baseUrl}/api/rolls`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-character-pin": MASTER_PIN },
-      body: JSON.stringify({ roll }),
     });
-    while (!text.includes(roll.id)) {
+    const post = (roll, pin) =>
+      fetch(`${baseUrl}/api/rolls`, { method: "POST", headers: json(pin), body: JSON.stringify({ roll }) });
+
+    // A rolagem da outra pasta sai antes; se vazasse, chegaria antes da nossa.
+    const deOutraPasta = rolagem(alheia.id);
+    assert.equal((await post(deOutraPasta, "3434")).status, 200);
+    const nossa = rolagem("joao-lindao");
+    const t0 = performance.now();
+    assert.equal((await post(nossa, JOAO_PIN)).status, 200);
+    while (!text.includes(nossa.id)) {
       const chunk = await reader.read();
       if (chunk.done) break;
       text += decoder.decode(chunk.value);
     }
     assert.match(text, /event: roll/, "SSE deve propagar a rolagem");
     console.log(`SSE: rolagem propagada em ${(performance.now() - t0).toFixed(1)} ms`);
+    assert.ok(!text.includes(deOutraPasta.id), "rolagem de outra pasta não chega a quem está nesta");
     await reader.cancel();
   } finally {
     clearTimeout(timeout);
   }
+
+  assert.equal((await fetch(`${baseUrl}/api/characters/${alheia.id}`, { method: "DELETE", headers: json("3434") })).status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/folders/${folder.id}`, { method: "DELETE", headers: json(MASTER_PIN) })).status, 200);
 }
 
 async function assertLatency() {
   const n = 200;
   const t0 = performance.now();
   for (let i = 0; i < n; i++) {
-    await fetch(`${baseUrl}/api/characters`);
+    await (await fetch(`${baseUrl}/api/folders`)).arrayBuffer();
   }
-  const perReq = (performance.now() - t0) / n;
-  console.log(`latência média GET /api/characters (sequencial, ${n}x): ${perReq.toFixed(2)} ms`);
+  let perReq = (performance.now() - t0) / n;
+  console.log(`latência média GET /api/folders (sequencial, ${n}x): ${perReq.toFixed(2)} ms`);
+  const t1 = performance.now();
+  for (let i = 0; i < n; i++) {
+    await (await fetch(`${baseUrl}/api/folders/${LEGACY}`)).arrayBuffer();
+  }
+  perReq = (performance.now() - t1) / n;
+  console.log(`latência média GET /api/folders/${LEGACY} (sequencial, ${n}x): ${perReq.toFixed(2)} ms`);
 }
 
 async function waitForExit() {
