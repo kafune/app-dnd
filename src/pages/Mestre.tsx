@@ -6,7 +6,6 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { MasterKeyForm } from "@/components/MasterKeyForm";
 import { Field, selectCls, textareaCls } from "@/components/create/common";
 import { OFFICIAL_RACE_TRAITS, RACES_CATALOG } from "@/data/racesCatalog";
 import { FEATS_CATALOG } from "@/data/featsCatalog";
@@ -65,10 +64,14 @@ export default function Mestre() {
 }
 
 function MasterLogin() {
+  const unlockMaster = useStore((s) => s.unlockMaster);
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10">
       <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
-        <ArrowLeft className="h-3 w-3" /> Fichas DnD
+        <ArrowLeft className="h-3 w-3" /> Mundo Pankleos
       </Link>
       <Card>
         <CardHeader>
@@ -79,9 +82,35 @@ function MasterLogin() {
         <CardBody className="space-y-3">
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Crie raças, talentos e traços raciais homebrew. Eles aparecem para todos os jogadores na criação de ficha, marcados
-            como homebrew. A mesma chave cria e edita as pastas na página inicial.
+            como homebrew.
           </p>
-          <MasterKeyForm autoFocus />
+          <form
+            className="space-y-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setBusy(true);
+              const ok = await unlockMaster(pin);
+              setBusy(false);
+              if (!ok) setError(true);
+            }}
+          >
+            <Input
+              autoFocus
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={(event) => {
+                setPin(event.target.value);
+                setError(false);
+              }}
+              placeholder="Chave mestra"
+              className={error ? "border-red-500" : ""}
+            />
+            {error && <p className="text-xs text-red-500">Chave mestra inválida.</p>}
+            <Button type="submit" className="w-full" disabled={busy || !pin.trim()}>
+              {busy ? "verificando…" : "entrar"}
+            </Button>
+          </form>
         </CardBody>
       </Card>
     </main>
@@ -125,7 +154,7 @@ function HomebrewManager() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Link to="/">
           <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-3 w-3" /> Fichas DnD
+            <ArrowLeft className="h-3 w-3" /> Mesa
           </Button>
         </Link>
         <Button variant="ghost" size="sm" className="ml-auto" onClick={lockMaster}>

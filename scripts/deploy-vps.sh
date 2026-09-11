@@ -367,7 +367,7 @@ phase_build() {
   "$JS" scripts/precompress.mjs dist
   local nbr; nbr=$(find dist -name '*.br' | wc -l)
   [ "$nbr" -ge 3 ] && ok "dist/ pronto com $nbr arquivos .br" || die "pré-compressão não gerou .br"
-  grep -q 'Fichas DnD' dist/index.html && ok "index.html contém o título" || bad "index.html sem título esperado"
+  grep -q 'Mundo Pankleos' dist/index.html && ok "index.html contém o título" || bad "index.html sem título esperado"
 
   cargo build --release --manifest-path server/Cargo.toml
   [ -x "$BIN" ] || die "cargo build não gerou $BIN"
@@ -601,20 +601,18 @@ phase_verify() {
 
   # API + banco
   local chars
-  # fichas ficam em pastas: a listagem pública é de pastas, com a contagem de fichas de cada uma
-  if have python3; then chars=$(curl -s --max-time 5 "$base/api/folders" | python3 -c 'import json,sys; print(sum(f["characterCount"] for f in json.load(sys.stdin)["folders"]))' 2>/dev/null || echo "?")
-  else chars=$(curl -s --max-time 5 "$base/api/folders" | grep -o '"characterCount":[0-9]*' | awk -F: '{s+=$2} END {print s+0}' || echo "?"); fi
+  if have python3; then chars=$(curl -s --max-time 5 "$base/api/characters" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["characters"]))' 2>/dev/null || echo "?")
+  else chars=$(curl -s --max-time 5 "$base/api/characters" | grep -o '"id":' | wc -l || echo "?"); fi
   read -r C R L <<<"$(db_counts)"
-  if [ "$chars" = "$C" ]; then ok "pastas somam $chars fichas = banco ($C)"; elif [ "$chars" = "?" ]; then warn "não consegui contar fichas pela API"; else bad "pastas somam $chars fichas, banco tem $C"; fi
-  (curl -s --max-time 5 "$base/api/folders" || true) | grep -q '"pin"' && bad "API pública de pastas expõe senha!" || ok "API pública de pastas não expõe senha"
-  [ "$(http_code "$base/api/characters")" = "403" ] && ok "listagem de todas as fichas sem chave mestra → 403" || bad "GET /api/characters sem chave mestra não deu 403"
+  if [ "$chars" = "$C" ]; then ok "API lista $chars fichas = banco ($C)"; elif [ "$chars" = "?" ]; then warn "não consegui contar fichas pela API"; else bad "API lista $chars fichas, banco tem $C"; fi
+  (curl -s --max-time 5 "$base/api/characters" || true) | grep -q '"pin"' && bad "API pública expõe campo pin!" || ok "API pública não expõe PIN"
   [ "$(http_code "$base/api/characters/joao-lindao")" = "403" ] && ok "ficha protegida sem PIN → 403" || warn "GET /api/characters/joao-lindao sem PIN não deu 403 (ficha pode ter outro id)"
   local integ; integ=$(sql "PRAGMA integrity_check" 2>/dev/null || echo "?")
   [ "$integ" = "ok" ] || [ "$integ" = "?" ] && ok "banco íntegro após subida" || bad "integrity_check: $integ"
 
   # frontend
   local html; html=$(curl -s --max-time 5 "$base/" || true)
-  printf '%s' "$html" | grep -q 'Fichas DnD' && ok "GET / entrega o index.html" || bad "GET / sem o título esperado"
+  printf '%s' "$html" | grep -q 'Mundo Pankleos' && ok "GET / entrega o index.html" || bad "GET / sem o título esperado"
   local asset; asset=$(printf '%s' "$html" | grep -oE '/assets/[^"]+\.js' | head -1 || true)
   if [ -n "$asset" ]; then
     local hdr; hdr=$(curl -sI --max-time 5 -H 'Accept-Encoding: br' "$base$asset" || true)
@@ -625,7 +623,7 @@ phase_verify() {
   else
     bad "index.html não referencia nenhum asset JS"
   fi
-  (curl -s --max-time 5 "$base/personagem/joao-lindao" || true) | grep -q 'Fichas DnD' && ok "rota do SPA (/personagem/...) cai no index.html" || bad "rota do SPA não entrega o index.html"
+  (curl -s --max-time 5 "$base/personagem/joao-lindao" || true) | grep -q 'Mundo Pankleos' && ok "rota do SPA (/personagem/...) cai no index.html" || bad "rota do SPA não entrega o index.html"
   [ "$(http_code "$base/assets/nao-existe.js")" = "404" ] && ok "asset inexistente → 404" || bad "asset inexistente não deu 404"
 
   # SSE

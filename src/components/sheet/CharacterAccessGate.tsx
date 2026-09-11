@@ -10,8 +10,6 @@ import { CharacterAvatar } from "@/components/CharacterAvatar";
 export function CharacterAccessGate({ id }: { id: string }) {
   const character = useStore((s) => s.characters[id]);
   const unlock = useStore((s) => s.unlock);
-  const folderId = useStore((s) => s.characters[id]?.folderId);
-  const folderName = useStore((s) => (folderId ? s.folders[folderId]?.name : undefined));
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -21,10 +19,10 @@ export function CharacterAccessGate({ id }: { id: string }) {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10">
       <Link
-        to={folderId ? `/pasta/${folderId}` : "/"}
+        to="/"
         className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
-        <ArrowLeft className="h-3 w-3" /> <span className="break-words">{folderId ? (folderName ?? "Pasta") : "Fichas DnD"}</span>
+        <ArrowLeft className="h-3 w-3" /> Mundo Pankleos
       </Link>
       <Card style={{ borderTopColor: character.color, borderTopWidth: 4 }}>
         <CardHeader>

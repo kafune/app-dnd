@@ -1,8 +1,6 @@
 # PINs de acesso das fichas
 
-Use estes PINs para abrir a ficha completa de cada personagem da pasta "Mundo Pankleos" no Fichas DnD.
-
-A pasta "Mundo Pankleos" (onde as fichas antigas foram parar) nasce **sem senha**; o Mestre define uma em "Editar pasta".
+Use estes PINs para abrir a ficha completa de cada personagem em Mundo Pankleos.
 
 | Jogador | Personagem | PIN |
 | --- | --- | --- |
@@ -11,7 +9,7 @@ A pasta "Mundo Pankleos" (onde as fichas antigas foram parar) nasce **sem senha*
 | Vinicíus | Holg Smough | `9052` |
 | Rudá | Edson Manoel Fagundes Peixoto | `6148` |
 
-Chave mestra do Mestre (abre qualquer ficha e qualquer pasta, cria/edita/apaga pastas e libera a página `/mestre`, onde se criam raças, talentos e traços homebrew): `670067`.
+Chave mestra do Mestre (abre qualquer ficha e a página `/mestre`, onde se criam raças, talentos e traços homebrew): `670067`.
 
 Esses são os **defaults embutidos no servidor**. Para trocar sem recompilar, defina no ambiente:
 

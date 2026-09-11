@@ -1,6 +1,6 @@
-# Fichas DnD — D&D companion
+# Mesa Pankleos — D&D companion
 
-Webapp de fichas de D&D 5e (BR), organizadas em **pastas** — uma por mesa/campanha. Roda inteiro num **único binário Rust**
+Webapp de fichas para uma mesa de D&D 5e (BR). Roda inteiro num **único binário Rust**
 (~10 MB de RAM, sobe em milissegundos): API + SQLite + Server-Sent Events + frontend
 embutido, servindo tudo da memória com Brotli pré-comprimido.
 
@@ -105,7 +105,7 @@ pm2 startup
 
 ```ini
 [Unit]
-Description=Fichas DnD (app-dnd)
+Description=Mesa Pankleos (app-dnd)
 After=network.target
 
 [Service]
@@ -184,9 +184,8 @@ bun run test:all      # tudo acima + build
 
 Tudo num arquivo `app-dnd.sqlite` (mesmo esquema da versão anterior em Node):
 
-- `folders (id PK, name, pin, avatar_mime, avatar_data BLOB, avatar_version, created_at, updated_at)` — pastas: nome, foto e senha
-- `characters (id PK, data JSON blob, updated_at, folder_id)` — a ficha inteira como JSON; `folder_id` espelha `folderId`
-- `rolls (id PK, character_id, character_name, label, expression, result, detail JSON, created_at)` — 100 por ficha, 2000 no total
+- `characters (id PK, data JSON blob, updated_at)` — a ficha inteira como JSON
+- `rolls (id PK, character_id, character_name, label, expression, result, detail JSON, created_at)` — mantém as 200 últimas
 - `character_log (id PK, character_id, by, changes JSON, created_at)` — log de modificações, 100 por ficha
 - `avatars (character_id PK, mime, data BLOB, version, updated_at)` — foto de perfil em bytes, fora do JSON da ficha
 - `homebrew (id PK, kind, data JSON, created_at, updated_at)` — raças, talentos e traços raciais criados pelo Mestre
@@ -194,27 +193,10 @@ Tudo num arquivo `app-dnd.sqlite` (mesmo esquema da versão anterior em Node):
 PINs das fichas do seed vêm de `APP_DND_CHARACTER_PINS`; fichas criadas no app guardam o PIN
 no próprio registro (`Character.pin`). Sem PIN, a ficha é aberta. As APIs nunca devolvem o PIN.
 
-**Pastas.** Só o Mestre (chave mestra) cria, edita e apaga pastas; a senha é obrigatória na
-criação. Jogador entra na pasta com a senha dela e só cria ficha dentro de uma pasta. O PIN de
-uma ficha também abre a pasta dela, só para ver (mesa e lista). Pasta com fichas não pode ser
-apagada. Na primeira subida depois da atualização, as fichas que já existiam vão para a pasta
-**Mundo Pankleos**, criada **sem senha** — defina uma em "Editar pasta".
-
-Eventos em tempo real de ficha e rolagem só chegam a quem está inscrito na pasta
-(`/api/events?folder=<id>&pin=<senha>`); eventos de pasta e homebrew chegam a todos.
-
 Rotas além das de ficha e rolagem:
 
 | Rota | Acesso | O que faz |
 | --- | --- | --- |
-| `GET /api/folders` | público | lista as pastas (nome, foto, se tem senha, quantas fichas) |
-| `POST /api/folders`, `PUT` / `DELETE /api/folders/:id` | chave mestra | cria (`{name, pin}`), edita (pin vazio mantém) ou apaga pasta vazia |
-| `GET /api/folders/:id` | senha da pasta, PIN de ficha dela ou chave mestra | fichas da pasta + `canCreate` |
-| `GET /api/folders/:id/avatar?v=`, `PUT` / `DELETE` | público / chave mestra | foto da pasta |
-| `POST /api/characters` | senha da pasta (header) ou chave mestra | cria a ficha na pasta `character.folderId` |
-| `GET /api/characters` | chave mestra | resumo de todas as fichas de todas as pastas |
-| `GET /api/characters/:id/summary` | público | resumo de uma ficha (tela de PIN de link direto) |
-| `GET` / `DELETE /api/rolls?folder=:id` | senha da pasta, PIN de ficha dela ou chave mestra | mesa da pasta (sem `folder`: só o Mestre) |
 | `GET /api/characters/:id/avatar?v=` | público | foto de perfil (cache imutável quando `v` é a versão atual) |
 | `PUT` / `DELETE /api/characters/:id/avatar` | PIN da ficha ou chave mestra | troca ou remove a foto (JPEG/PNG/WebP, até 1 MB) |
 | `GET /api/homebrew` | público | lista o homebrew do Mestre |

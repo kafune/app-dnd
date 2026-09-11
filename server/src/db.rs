@@ -5,36 +5,16 @@
 //! como `serde_json::Map` opaco — o formato é definido pelos tipos TypeScript do
 //! frontend e o servidor só toca nos campos que precisa (id, pin, nomes, sheet).
 
-use std::collections::HashMap;
-
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::util::{normalize_name, now_iso, parse_image_data_url, short, slugify};
+use crate::util::{normalize_name, now_iso, parse_image_data_url, short};
 
 pub type CharMap = Map<String, Value>;
 
-/// Pasta que recebe as fichas criadas antes de existirem pastas (a mesa original).
-/// Nasce sem senha; o Mestre define uma na edição da pasta.
-pub const LEGACY_FOLDER_ID: &str = "mundo-pankleos";
-const LEGACY_FOLDER_NAME: &str = "Mundo Pankleos";
-
 pub struct Db {
     conn: Connection,
-}
-
-/// Dados da pasta usados na autorização (o resumo público sai de `folder_public`).
-pub struct Folder {
-    pub id: String,
-    pub pin: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum FolderDelete {
-    Deleted,
-    NotFound,
-    NotEmpty,
 }
 
 /// Foto de perfil: bytes crus (não base64) fora do JSON da ficha, para que PATCH
@@ -85,19 +65,7 @@ const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
   data TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  folder_id TEXT
-);
-
-CREATE TABLE IF NOT EXISTS folders (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  pin TEXT NOT NULL DEFAULT '',
-  avatar_mime TEXT,
-  avatar_data BLOB,
-  avatar_version TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS rolls (
@@ -163,7 +131,6 @@ impl Db {
         conn.pragma_update(None, "mmap_size", 64 * 1024 * 1024)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
-        ensure_folder_column(&conn)?;
 
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM characters", [], |r| r.get(0))?;
         if n == 0 {
@@ -182,13 +149,11 @@ impl Db {
             tx.commit()?;
         }
         migrate_appearance_images(&conn)?;
-        migrate_legacy_folder(&conn)?;
         Ok(Db { conn })
     }
 
     // === Fichas ===
 
-    /// Resumo de todas as fichas de todas as pastas (só o Mestre usa).
     pub fn list_public(&self) -> rusqlite::Result<Vec<Value>> {
         let mut st = self.conn.prepare_cached("SELECT data FROM characters ORDER BY id")?;
         let rows = st.query_map([], |r| r.get::<_, String>(0))?;
@@ -212,19 +177,32 @@ impl Db {
         st.exists([id])
     }
 
+    /// Existe alguma ficha cujo PIN seja exatamente este? Autoriza as ações que
+    /// afetam a mesa inteira (limpar todo o histórico) sem exigir a chave mestra.
+    /// A mesa tem meia dúzia de linhas: varrer e comparar em Rust sai mais barato
+    /// que depender do JSON1 do SQLite.
+    pub fn pin_matches_any(&self, pin: &str) -> rusqlite::Result<bool> {
+        let mut st = self.conn.prepare_cached("SELECT data FROM characters")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        for data in rows {
+            let Ok(stored) = serde_json::from_str::<CharMap>(&data?) else { continue };
+            if stored.get("pin").and_then(Value::as_str) == Some(pin) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Insere ou substitui a ficha inteira; devolve a ficha com `updatedAt` novo.
-    /// A coluna `folder_id` espelha o `folderId` do JSON (é por ela que se filtra).
     pub fn upsert(&self, mut c: CharMap) -> rusqlite::Result<CharMap> {
         let now = now_iso();
         c.insert("updatedAt".into(), Value::String(now.clone()));
         let id = c.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
-        let folder = c.get("folderId").and_then(Value::as_str).map(str::to_string);
         let mut st = self.conn.prepare_cached(
-            "INSERT INTO characters (id, data, updated_at, folder_id) VALUES (?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at,
-               folder_id = excluded.folder_id",
+            "INSERT INTO characters (id, data, updated_at) VALUES (?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
         )?;
-        st.execute(params![id, serde_json::to_string(&c).unwrap(), now, folder])?;
+        st.execute(params![id, serde_json::to_string(&c).unwrap(), now])?;
         Ok(c)
     }
 
@@ -249,15 +227,12 @@ impl Db {
             next.insert(k.clone(), v.clone());
         }
         next.insert("id".into(), Value::String(id.to_string()));
-        // PIN e pasta não mudam por PATCH (a coluna folder_id nem é tocada abaixo).
-        for key in ["pin", "folderId"] {
-            match current.get(key) {
-                Some(v) => {
-                    next.insert(key.into(), v.clone());
-                }
-                None => {
-                    next.remove(key);
-                }
+        match current.get("pin") {
+            Some(p) => {
+                next.insert("pin".into(), p.clone());
+            }
+            None => {
+                next.remove("pin");
             }
         }
         next.insert("protected".into(), Value::Bool(true));
@@ -410,178 +385,6 @@ impl Db {
         Ok(self.conn.execute("DELETE FROM homebrew WHERE id = ?", [id])? > 0)
     }
 
-    // === Pastas (separam as fichas de cada mesa/campanha) ===
-
-    pub fn list_folders(&self) -> rusqlite::Result<Vec<Value>> {
-        let mut st = self
-            .conn
-            .prepare_cached(&format!("{FOLDER_SELECT} ORDER BY f.name COLLATE NOCASE, f.id"))?;
-        let rows = st.query_map([], folder_row)?;
-        rows.collect()
-    }
-
-    /// Resumo público da pasta (nunca inclui a senha).
-    pub fn folder_public(&self, id: &str) -> rusqlite::Result<Option<Value>> {
-        self.conn
-            .prepare_cached(&format!("{FOLDER_SELECT} WHERE f.id = ?"))?
-            .query_row([id], folder_row)
-            .optional()
-    }
-
-    pub fn get_folder(&self, id: &str) -> rusqlite::Result<Option<Folder>> {
-        self.conn
-            .prepare_cached("SELECT id, pin FROM folders WHERE id = ?")?
-            .query_row([id], |r| Ok(Folder { id: r.get(0)?, pin: r.get(1)? }))
-            .optional()
-    }
-
-    fn folder_exists(&self, id: &str) -> rusqlite::Result<bool> {
-        self.conn.prepare_cached("SELECT 1 FROM folders WHERE id = ?")?.exists([id])
-    }
-
-    /// Já existe pasta com esse nome (sem acento/caixa/espaços extras)?
-    pub fn folder_name_taken(&self, name: &str, exclude_id: Option<&str>) -> rusqlite::Result<bool> {
-        let wanted = normalize_name(name);
-        let mut st = self.conn.prepare_cached("SELECT id, name FROM folders")?;
-        let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-        for row in rows {
-            let (id, existing) = row?;
-            if exclude_id != Some(id.as_str()) && normalize_name(&existing) == wanted {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    /// Cria a pasta com id = slug do nome (+ sufixo curto se colidir). Devolve o resumo.
-    pub fn insert_folder(&self, name: &str, pin: &str) -> rusqlite::Result<Value> {
-        let mut base = slugify(name);
-        if base.is_empty() {
-            base = "pasta".into();
-        }
-        let mut id = base.clone();
-        while self.folder_exists(&id)? {
-            id = format!("{base}-{}", &uuid::Uuid::new_v4().simple().to_string()[..4]);
-        }
-        let now = now_iso();
-        self.conn
-            .prepare_cached("INSERT INTO folders (id, name, pin, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")?
-            .execute(params![id, name, pin, now, now])?;
-        self.folder_public(&id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
-    }
-
-    /// Renomeia e, se `pin` vier, troca a senha. `None` se a pasta não existe.
-    pub fn update_folder(&self, id: &str, name: &str, pin: Option<&str>) -> rusqlite::Result<Option<Value>> {
-        let now = now_iso();
-        let changed = match pin {
-            Some(pin) => self
-                .conn
-                .prepare_cached("UPDATE folders SET name = ?, pin = ?, updated_at = ? WHERE id = ?")?
-                .execute(params![name, pin, now, id])?,
-            None => self
-                .conn
-                .prepare_cached("UPDATE folders SET name = ?, updated_at = ? WHERE id = ?")?
-                .execute(params![name, now, id])?,
-        };
-        if changed == 0 {
-            return Ok(None);
-        }
-        self.folder_public(id)
-    }
-
-    /// Só apaga pasta vazia: ficha nenhuma some junto com a pasta.
-    pub fn delete_folder(&self, id: &str) -> rusqlite::Result<FolderDelete> {
-        if !self.folder_exists(id)? {
-            return Ok(FolderDelete::NotFound);
-        }
-        let used: i64 = self
-            .conn
-            .prepare_cached("SELECT COUNT(*) FROM characters WHERE folder_id = ?")?
-            .query_row([id], |r| r.get(0))?;
-        if used > 0 {
-            return Ok(FolderDelete::NotEmpty);
-        }
-        self.conn.execute("DELETE FROM folders WHERE id = ?", [id])?;
-        Ok(FolderDelete::Deleted)
-    }
-
-    pub fn get_folder_avatar(&self, id: &str) -> rusqlite::Result<Option<Avatar>> {
-        self.conn
-            .prepare_cached(
-                "SELECT avatar_mime, avatar_data, avatar_version FROM folders WHERE id = ? AND avatar_data IS NOT NULL",
-            )?
-            .query_row([id], |r| Ok(Avatar { mime: r.get(0)?, data: r.get(1)?, version: r.get(2)? }))
-            .optional()
-    }
-
-    /// Grava (ou troca) a foto da pasta. Devolve o resumo novo, ou `None` se não existe.
-    pub fn set_folder_avatar(&self, id: &str, mime: &str, data: &[u8]) -> rusqlite::Result<Option<Value>> {
-        let changed = self
-            .conn
-            .prepare_cached(
-                "UPDATE folders SET avatar_mime = ?, avatar_data = ?, avatar_version = ?, updated_at = ? WHERE id = ?",
-            )?
-            .execute(params![mime, data, new_version(), now_iso(), id])?;
-        if changed == 0 {
-            return Ok(None);
-        }
-        self.folder_public(id)
-    }
-
-    /// Remove a foto da pasta (idempotente). Devolve o resumo e se algo mudou.
-    pub fn remove_folder_avatar(&self, id: &str) -> rusqlite::Result<Option<(Value, bool)>> {
-        if !self.folder_exists(id)? {
-            return Ok(None);
-        }
-        let changed = self
-            .conn
-            .prepare_cached(
-                "UPDATE folders SET avatar_mime = NULL, avatar_data = NULL, avatar_version = NULL, updated_at = ?
-                 WHERE id = ? AND avatar_data IS NOT NULL",
-            )?
-            .execute(params![now_iso(), id])?
-            > 0;
-        Ok(self.folder_public(id)?.map(|folder| (folder, changed)))
-    }
-
-    /// Resumos públicos das fichas de uma pasta.
-    pub fn list_folder_characters(&self, folder_id: &str) -> rusqlite::Result<Vec<Value>> {
-        let mut st = self.conn.prepare_cached("SELECT data FROM characters WHERE folder_id = ? ORDER BY id")?;
-        let rows = st.query_map([folder_id], |r| r.get::<_, String>(0))?;
-        let mut out = Vec::new();
-        for data in rows {
-            if let Ok(c) = serde_json::from_str::<CharMap>(&data?) {
-                out.push(to_public(&c));
-            }
-        }
-        Ok(out)
-    }
-
-    /// Alguma ficha da pasta tem exatamente este PIN? O PIN fixo do seed vale no lugar
-    /// do gravado; ficha sem PIN não conta. Desserializa só o campo `pin`.
-    pub fn folder_character_pin(
-        &self,
-        folder_id: &str,
-        pin: &str,
-        fixed: &HashMap<String, String>,
-    ) -> rusqlite::Result<bool> {
-        #[derive(Deserialize)]
-        struct PinOnly {
-            pin: Option<String>,
-        }
-        let mut st = self.conn.prepare_cached("SELECT id, data FROM characters WHERE folder_id = ?")?;
-        let rows = st.query_map([folder_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-        for row in rows {
-            let (id, data) = row?;
-            let stored = serde_json::from_str::<PinOnly>(&data).ok().and_then(|p| p.pin);
-            let expected = fixed.get(&id).cloned().or(stored);
-            if expected.is_some_and(|e| !e.is_empty() && e == pin) {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     // === Log de modificações ===
 
     pub fn record_log(&self, id: &str, by: &str, changes: &[Change]) -> rusqlite::Result<()> {
@@ -609,36 +412,28 @@ impl Db {
 
     // === Rolagens ===
 
-    /// Rolagens de todas as pastas (só o Mestre usa).
     pub fn list_rolls(&self, limit: i64) -> rusqlite::Result<Vec<DiceRoll>> {
         let mut st = self.conn.prepare_cached(
             "SELECT id, character_id, character_name, label, expression, result, detail, created_at
              FROM rolls ORDER BY created_at DESC LIMIT ?",
         )?;
-        let rows = st.query_map([limit], roll_row)?;
+        let rows = st.query_map([limit], |r| {
+            let detail: String = r.get::<_, Option<String>>(6)?.unwrap_or_default();
+            Ok(DiceRoll {
+                id: r.get(0)?,
+                character_id: r.get(1)?,
+                character_name: r.get(2)?,
+                label: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                expression: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                result: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                detail: serde_json::from_str(&detail).unwrap_or_else(|_| empty_detail()),
+                created_at: r.get(7)?,
+            })
+        })?;
         rows.collect()
     }
 
-    /// Rolagens das fichas de uma pasta: a "mesa" de quem está nela.
-    pub fn list_folder_rolls(&self, folder_id: &str, limit: i64) -> rusqlite::Result<Vec<DiceRoll>> {
-        let mut st = self.conn.prepare_cached(
-            "SELECT id, character_id, character_name, label, expression, result, detail, created_at
-             FROM rolls WHERE character_id IN (SELECT id FROM characters WHERE folder_id = ?)
-             ORDER BY created_at DESC LIMIT ?",
-        )?;
-        let rows = st.query_map(params![folder_id, limit], roll_row)?;
-        rows.collect()
-    }
-
-    pub fn clear_folder_rolls(&self, folder_id: &str) -> rusqlite::Result<usize> {
-        self.conn.execute(
-            "DELETE FROM rolls WHERE character_id IN (SELECT id FROM characters WHERE folder_id = ?)",
-            [folder_id],
-        )
-    }
-
-    /// Insere a rolagem e poda o histórico: 100 por ficha (uma pasta movimentada não
-    /// empurra para fora as rolagens das outras) e 2000 no total.
+    /// Insere a rolagem e mantém só as 200 mais recentes.
     pub fn insert_roll(&mut self, r: &DiceRoll) -> rusqlite::Result<()> {
         let tx = self.conn.transaction()?;
         tx.prepare_cached(
@@ -655,16 +450,8 @@ impl Db {
             serde_json::to_string(&r.detail).unwrap(),
             r.created_at
         ])?;
-        if let Some(character_id) = &r.character_id {
-            tx.prepare_cached(
-                "DELETE FROM rolls WHERE character_id = ?1 AND rowid IN (
-                   SELECT rowid FROM rolls WHERE character_id = ?1 ORDER BY created_at DESC LIMIT -1 OFFSET 100
-                 )",
-            )?
-            .execute([character_id])?;
-        }
         tx.prepare_cached(
-            "DELETE FROM rolls WHERE rowid IN (SELECT rowid FROM rolls ORDER BY created_at DESC LIMIT -1 OFFSET 2000)",
+            "DELETE FROM rolls WHERE rowid IN (SELECT rowid FROM rolls ORDER BY created_at DESC LIMIT -1 OFFSET 200)",
         )?
         .execute([])?;
         tx.commit()
@@ -698,88 +485,6 @@ fn write_character(conn: &Connection, id: &str, c: &CharMap, now: &str) -> rusql
     conn.prepare_cached("UPDATE characters SET data = ?, updated_at = ? WHERE id = ?")?
         .execute(params![serde_json::to_string(c).unwrap(), now, id])?;
     Ok(())
-}
-
-fn roll_row(r: &rusqlite::Row) -> rusqlite::Result<DiceRoll> {
-    let detail: String = r.get::<_, Option<String>>(6)?.unwrap_or_default();
-    Ok(DiceRoll {
-        id: r.get(0)?,
-        character_id: r.get(1)?,
-        character_name: r.get(2)?,
-        label: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
-        expression: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
-        result: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
-        detail: serde_json::from_str(&detail).unwrap_or_else(|_| empty_detail()),
-        created_at: r.get(7)?,
-    })
-}
-
-/// Colunas do resumo público de pasta, na ordem que `folder_row` lê.
-const FOLDER_SELECT: &str = "SELECT f.id, f.name, f.pin <> '', f.avatar_version, f.created_at, f.updated_at,
-  (SELECT COUNT(*) FROM characters c WHERE c.folder_id = f.id) FROM folders f";
-
-fn folder_row(r: &rusqlite::Row) -> rusqlite::Result<Value> {
-    Ok(json!({
-        "id": r.get::<_, String>(0)?,
-        "name": r.get::<_, String>(1)?,
-        "protected": r.get::<_, bool>(2)?,
-        "avatarVersion": r.get::<_, Option<String>>(3)?,
-        "createdAt": r.get::<_, String>(4)?,
-        "updatedAt": r.get::<_, String>(5)?,
-        "characterCount": r.get::<_, i64>(6)?,
-    }))
-}
-
-/// Bancos anteriores às pastas não têm a coluna `folder_id`.
-fn ensure_folder_column(conn: &Connection) -> rusqlite::Result<()> {
-    let has = conn
-        .prepare("SELECT 1 FROM pragma_table_info('characters') WHERE name = 'folder_id'")?
-        .exists([])?;
-    if !has {
-        conn.execute_batch("ALTER TABLE characters ADD COLUMN folder_id TEXT")?;
-    }
-    conn.execute_batch("CREATE INDEX IF NOT EXISTS characters_folder_idx ON characters (folder_id)")
-}
-
-/// Fichas sem pasta (as de antes das pastas e as do seed) vão para a pasta padrão,
-/// criada sem senha. Se o JSON já apontar para uma pasta existente, ela é respeitada.
-fn migrate_legacy_folder(conn: &Connection) -> rusqlite::Result<()> {
-    let orphans: Vec<(String, String)> = {
-        let mut st = conn.prepare("SELECT id, data FROM characters WHERE folder_id IS NULL")?;
-        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        rows.collect::<rusqlite::Result<_>>()?
-    };
-    if orphans.is_empty() {
-        return Ok(());
-    }
-    let tx = conn.unchecked_transaction()?;
-    for (id, data) in orphans {
-        let mut c = serde_json::from_str::<CharMap>(&data).ok();
-        let claimed = c.as_ref().and_then(|c| c.get("folderId")).and_then(Value::as_str).map(str::to_string);
-        let folder = match claimed {
-            Some(f) if tx.prepare_cached("SELECT 1 FROM folders WHERE id = ?")?.exists([&f])? => f,
-            _ => {
-                let now = now_iso();
-                tx.prepare_cached(
-                    "INSERT OR IGNORE INTO folders (id, name, pin, created_at, updated_at) VALUES (?, ?, '', ?, ?)",
-                )?
-                .execute(params![LEGACY_FOLDER_ID, LEGACY_FOLDER_NAME, now, now])?;
-                LEGACY_FOLDER_ID.to_string()
-            }
-        };
-        match c.as_mut() {
-            Some(c) => {
-                c.insert("folderId".into(), Value::String(folder.clone()));
-                tx.prepare_cached("UPDATE characters SET data = ?, folder_id = ? WHERE id = ?")?
-                    .execute(params![serde_json::to_string(c).unwrap(), folder, id])?;
-            }
-            None => {
-                tx.prepare_cached("UPDATE characters SET folder_id = ? WHERE id = ?")?
-                    .execute(params![folder, id])?;
-            }
-        }
-    }
-    tx.commit()
 }
 
 fn homebrew_item(id: String, kind: String, data: &str, updated_at: String) -> Value {
@@ -897,7 +602,7 @@ fn scalar_text(v: Option<&Value>) -> String {
 pub fn diff_changes(current: &CharMap, patch: &CharMap) -> Vec<Change> {
     let mut out = Vec::new();
     for (key, after) in patch {
-        if matches!(key.as_str(), "id" | "pin" | "protected" | "updatedAt" | "folderId") {
+        if matches!(key.as_str(), "id" | "pin" | "protected" | "updatedAt") {
             continue;
         }
         let before = current.get(key);
@@ -937,7 +642,6 @@ pub fn to_public(c: &CharMap) -> Value {
         "characterName": pick("characterName"),
         "color": pick("color"),
         "avatarVersion": pick("avatarVersion"),
-        "folderId": pick("folderId"),
         "protected": true,
         "updatedAt": pick("updatedAt"),
         "hpCurrent": 0,
@@ -1010,10 +714,9 @@ mod tests {
         assert_eq!(next["pin"], "1");
         assert_eq!(next["hpCurrent"], 5);
         assert_eq!(db.list_log("a", 50).unwrap().len(), 1);
-        let none = HashMap::new();
-        assert!(db.folder_character_pin(LEGACY_FOLDER_ID, "1", &none).unwrap());
-        assert!(!db.folder_character_pin(LEGACY_FOLDER_ID, "nope", &none).unwrap());
-        assert!(!db.folder_character_pin(LEGACY_FOLDER_ID, "", &none).unwrap());
+        assert!(db.pin_matches_any("1").unwrap());
+        assert!(!db.pin_matches_any("nope").unwrap());
+        assert!(!db.pin_matches_any("").unwrap());
 
         let roll = DiceRoll {
             id: "r1".into(),
@@ -1141,106 +844,5 @@ mod tests {
         assert!(db.delete_homebrew(&id).unwrap());
         assert!(!db.delete_homebrew(&id).unwrap());
         assert_eq!(db.list_homebrew().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn legacy_characters_move_into_default_folder() {
-        let db = Db::open(
-            ":memory:",
-            r#"[{"id":"a","playerName":"P","characterName":"C","pin":"1","sheet":{"species":"Elfo","classes":[]}},
-                {"id":"b","playerName":"Q","characterName":"D","sheet":{"species":"Anão","classes":[]}}]"#,
-        )
-        .unwrap();
-        assert_eq!(db.get_stored("a").unwrap().unwrap()["folderId"], LEGACY_FOLDER_ID);
-        let folders = db.list_folders().unwrap();
-        assert_eq!(folders.len(), 1);
-        assert_eq!(folders[0]["id"], LEGACY_FOLDER_ID);
-        assert_eq!(folders[0]["name"], "Mundo Pankleos");
-        assert_eq!(folders[0]["protected"], false, "pasta padrão nasce sem senha");
-        assert_eq!(folders[0]["characterCount"], 2);
-        assert!(folders[0].get("pin").is_none());
-        let chars = db.list_folder_characters(LEGACY_FOLDER_ID).unwrap();
-        assert_eq!(chars.len(), 2);
-        assert_eq!(chars[0]["folderId"], LEGACY_FOLDER_ID);
-    }
-
-    #[test]
-    fn folders_crud_access_and_scoped_rolls() {
-        let mut db = Db::open(":memory:", "[]").unwrap();
-        assert!(db.list_folders().unwrap().is_empty(), "sem fichas órfãs não há pasta padrão");
-
-        let f = db.insert_folder("Mesa de Sábado", "abc").unwrap();
-        assert_eq!(f["id"], "mesa-de-sabado");
-        assert_eq!(f["protected"], true);
-        assert_eq!(f["characterCount"], 0);
-        assert_eq!(f["avatarVersion"], Value::Null);
-        assert!(f.get("pin").is_none(), "resumo nunca leva a senha");
-        assert!(db.folder_name_taken("  mesa de SABADO ", None).unwrap());
-        assert!(!db.folder_name_taken("Mesa de Sábado", Some("mesa-de-sabado")).unwrap());
-        let other = db.insert_folder("Outra Mesa", "xyz").unwrap();
-        let clash = db.insert_folder("Mesa de Sabado!", "q").unwrap();
-        assert!(clash["id"].as_str().unwrap().starts_with("mesa-de-sabado-"), "slug repetido ganha sufixo");
-        assert_eq!(db.delete_folder(clash["id"].as_str().unwrap()).unwrap(), FolderDelete::Deleted);
-
-        let ficha = |id: &str, folder: &str, pin: &str| {
-            map(json!({ "id": id, "folderId": folder, "pin": pin, "characterName": id, "sheet": { "species": "Humano", "classes": [] } }))
-        };
-        db.upsert(ficha("c1", "mesa-de-sabado", "11")).unwrap();
-        db.upsert(ficha("c2", "outra-mesa", "22")).unwrap();
-        assert_eq!(db.folder_public("mesa-de-sabado").unwrap().unwrap()["characterCount"], 1);
-        assert_eq!(db.list_folder_characters("outra-mesa").unwrap()[0]["id"], "c2");
-
-        let moved = db.patch("c1", &map(json!({ "folderId": "outra-mesa", "hpCurrent": 3 })), "jogador").unwrap().unwrap();
-        assert_eq!(moved["folderId"], "mesa-de-sabado", "PATCH não troca a pasta");
-        assert_eq!(db.list_folder_characters("mesa-de-sabado").unwrap().len(), 1);
-
-        let mut fixed = HashMap::new();
-        assert!(db.folder_character_pin("mesa-de-sabado", "11", &fixed).unwrap());
-        assert!(!db.folder_character_pin("mesa-de-sabado", "22", &fixed).unwrap(), "PIN de ficha de outra pasta não vale");
-        fixed.insert("c1".to_string(), "77".to_string());
-        assert!(db.folder_character_pin("mesa-de-sabado", "77", &fixed).unwrap(), "PIN fixo vale no lugar do gravado");
-        assert!(!db.folder_character_pin("mesa-de-sabado", "11", &fixed).unwrap());
-
-        let roll = |id: &str, character: &str| DiceRoll {
-            id: id.into(),
-            character_id: Some(character.into()),
-            character_name: None,
-            label: "x".into(),
-            expression: "1d20".into(),
-            result: 1,
-            detail: json!({"rolls":[1],"modifier":0}),
-            created_at: now_iso(),
-        };
-        db.insert_roll(&roll("r1", "c1")).unwrap();
-        db.insert_roll(&roll("r2", "c2")).unwrap();
-        let rolls = db.list_folder_rolls("mesa-de-sabado", 50).unwrap();
-        assert_eq!(rolls.len(), 1);
-        assert_eq!(rolls[0].id, "r1");
-        assert_eq!(db.clear_folder_rolls("mesa-de-sabado").unwrap(), 1);
-        assert_eq!(db.list_rolls(50).unwrap().len(), 1, "a outra pasta fica intacta");
-
-        let png = png_1x1();
-        assert!(db.get_folder_avatar("outra-mesa").unwrap().is_none());
-        let with_photo = db.set_folder_avatar("outra-mesa", "image/png", &png).unwrap().unwrap();
-        let version = with_photo["avatarVersion"].as_str().unwrap().to_string();
-        assert_eq!(db.get_folder_avatar("outra-mesa").unwrap().unwrap().version, version);
-        assert!(db.set_folder_avatar("nao-existe", "image/png", &png).unwrap().is_none());
-        let (cleared, changed) = db.remove_folder_avatar("outra-mesa").unwrap().unwrap();
-        assert!(changed);
-        assert_eq!(cleared["avatarVersion"], Value::Null);
-        assert!(!db.remove_folder_avatar("outra-mesa").unwrap().unwrap().1, "remover de novo não muda nada");
-
-        let renamed = db.update_folder(other["id"].as_str().unwrap(), "Mesa de Domingo", None).unwrap().unwrap();
-        assert_eq!(renamed["name"], "Mesa de Domingo");
-        assert_eq!(db.get_folder("outra-mesa").unwrap().unwrap().pin, "xyz", "sem pin novo, a senha fica");
-        db.update_folder("outra-mesa", "Mesa de Domingo", Some("nova")).unwrap().unwrap();
-        assert_eq!(db.get_folder("outra-mesa").unwrap().unwrap().pin, "nova");
-        assert!(db.update_folder("nao-existe", "x", None).unwrap().is_none());
-
-        assert_eq!(db.delete_folder("mesa-de-sabado").unwrap(), FolderDelete::NotEmpty);
-        db.delete("c1").unwrap();
-        assert_eq!(db.delete_folder("mesa-de-sabado").unwrap(), FolderDelete::Deleted);
-        assert_eq!(db.delete_folder("mesa-de-sabado").unwrap(), FolderDelete::NotFound);
-        assert_eq!(db.list_folders().unwrap().len(), 1);
     }
 }

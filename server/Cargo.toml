@@ -2,7 +2,7 @@
 name = "app-dnd"
 version = "0.2.0"
 edition = "2021"
-description = "Fichas DnD — servidor de fichas de D&D (API + SSE + frontend embutido)"
+description = "Mesa Pankleos — servidor de fichas de D&D (API + SSE + frontend embutido)"
 publish = false
 
 [dependencies]

@@ -1,8 +1,5 @@
 import type { Character } from "@/lib/types";
 
-/** Pasta onde o servidor coloca as fichas de antes das pastas (as do seed inclusive). */
-export const LEGACY_FOLDER_ID = "mundo-pankleos";
-
 const emptySheet: Character["sheet"] = {
   species: "",
   classes: [],
@@ -52,7 +49,6 @@ function publicCharacter(
 ): Character {
   return {
     id,
-    folderId: LEGACY_FOLDER_ID,
     playerName,
     characterName,
     color,

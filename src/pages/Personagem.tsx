@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -56,32 +56,6 @@ export default function CharacterPage() {
   const patchSheet = useStore((s) => s.patchSheet);
   const unlocked = useUnlocked(id);
   const isMaster = useIsMaster(id);
-  const hasCharacter = !!character;
-  const folderId = character?.folderId;
-  const folderName = useStore((s) => (folderId ? s.folders[folderId]?.name : undefined));
-  const loadCharacterSummary = useStore((s) => s.loadCharacterSummary);
-  const watchCharacterFolder = useStore((s) => s.watchCharacterFolder);
-  const [missingId, setMissingId] = useState<string | null>(null);
-  const folderHref = folderId ? `/pasta/${folderId}` : "/";
-  const folderLabel = folderId ? (folderName ?? "Pasta") : "Fichas DnD";
-
-  // Link direto, sem ter passado pela pasta: busca o resumo para mostrar a tela de PIN.
-  useEffect(() => {
-    if (hasCharacter) return;
-    let cancelled = false;
-    void loadCharacterSummary(id).then((found) => {
-      if (!cancelled && !found) setMissingId(id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, hasCharacter, loadCharacterSummary]);
-
-  // Mesa (rolagens) e tempo real da pasta desta ficha.
-  useEffect(() => {
-    if (unlocked && folderId) watchCharacterFolder(id);
-  }, [id, unlocked, folderId, watchCharacterFolder]);
-
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [clearScope, setClearScope] = useState<"player" | "mesa" | null>(null);
@@ -95,7 +69,7 @@ export default function CharacterPage() {
     setConfirmDelete(false);
     setEditMode(false);
     pushToast({ title: `${name} foi deletado.`, tone: "success" });
-    navigate(folderHref);
+    navigate("/");
   };
 
   const onClearRolls = () => {
@@ -109,9 +83,9 @@ export default function CharacterPage() {
     return (
       <main className="mx-auto w-full max-w-3xl px-4 py-10">
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900">
-          <ArrowLeft className="h-3 w-3" /> Fichas DnD
+          <ArrowLeft className="h-3 w-3" /> Voltar
         </Link>
-        <p className="mt-6 text-zinc-500">{missingId === id ? "Personagem não encontrado." : "Carregando…"}</p>
+        <p className="mt-6 text-zinc-500">Personagem não encontrado.</p>
       </main>
     );
   }
@@ -175,9 +149,9 @@ export default function CharacterPage() {
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
-        <Link to={folderHref}>
+        <Link to="/">
           <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-3 w-3" /> <span className="max-w-[10rem] truncate">{folderLabel}</span>
+            <ArrowLeft className="h-3 w-3" /> Mesa
           </Button>
         </Link>
         <PinLock id={id} />
