@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { ChevronLeft } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -65,6 +65,9 @@ const CUSTOM = "__custom__";
 
 export default function CriarFicha() {
   const navigate = useNavigate();
+  const { folderId = "" } = useParams<{ folderId: string }>();
+  const folderName = useStore((s) => s.folders[folderId]?.name);
+  const canCreate = useStore((s) => !!s.openedFolders[folderId]?.canCreate);
   const createCharacter = useStore((s) => s.createCharacter);
   const uploadAvatar = useStore((s) => s.uploadAvatar);
   const pushToast = useStore((s) => s.pushToast);
@@ -238,7 +241,7 @@ export default function CriarFicha() {
 
     setSubmitting(true);
     try {
-      const character = buildCharacter(draft, "");
+      const character = { ...buildCharacter(draft, ""), folderId };
       const id = await createCharacter(character);
       // A foto vai depois que a ficha existe (a rota exige o PIN dela). Se falhar, a ficha fica sem foto.
       if (avatar) await uploadAvatar(id, avatar);
@@ -250,15 +253,21 @@ export default function CriarFicha() {
     }
   }
 
+  // Só cria quem abriu a pasta com a senha (ou a chave mestra); a pasta pede a senha se preciso.
+  if (!canCreate) return <Navigate to={`/pasta/${folderId}`} replace />;
+
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <Link
-        to="/"
+        to={`/pasta/${folderId}`}
         className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
       >
         <ChevronLeft className="h-4 w-4" /> Voltar
       </Link>
-      <h1 className="mb-6 font-mono text-2xl font-bold tracking-tight">Criar ficha</h1>
+      <h1 className="font-mono text-2xl font-bold tracking-tight">Criar ficha</h1>
+      <p className="mb-6 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        na pasta <strong className="break-words">{folderName ?? folderId}</strong>
+      </p>
 
       <div className="space-y-4">
         {/* Identidade */}
@@ -554,7 +563,7 @@ export default function CriarFicha() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => navigate("/")} disabled={submitting}>
+          <Button variant="outline" onClick={() => navigate(`/pasta/${folderId}`)} disabled={submitting}>
             Cancelar
           </Button>
           <Button variant="success" onClick={onSubmit} disabled={submitting}>
