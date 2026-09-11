@@ -17,7 +17,7 @@ import { homebrewItems, homebrewVersion } from "./homebrewRegistry";
  *   a partir do texto do livro.
  * - Guia de Volo (VGtM), Elemental Evil (EEPC), Tomo de Mordenkainen (MToF) e
  *   The Tortle Package: raças usadas na mesa, autoradas a partir das regras oficiais.
- * - Monstros do Multiverso (MPMM): Shadar-Kai e Kenku revisados, como variantes.
+ * - Monstros do Multiverso (MPMM): Kenku revisado, como variante.
  * - Eberron (ERLW): Marca da Descoberta, variante de meio-orc.
  * - Midgard Heroes Handbook (Kobold Press): Shade.
  * - Homebrew: Thri-kreen (não existe versão oficial em 5e 2014).
@@ -1256,103 +1256,6 @@ const THRI_KREEN: RaceDef = {
 };
 
 // ---------------------------------------------------------------------------
-// Monstros do Multiverso / Tomo de Mordenkainen: Shadar-Kai
-// ---------------------------------------------------------------------------
-
-const SHADAR_KAI: RaceDef = {
-  name: "Shadar-Kai",
-  source: "MPMM",
-  description:
-    "Elfos a serviço da Rainha Corvo que vivem no Pendor das Sombras (Shadowfell). O plano sombrio os marcou com pele pálida ou acinzentada, olhar distante e um vínculo com a morte que lhes permite atravessar as sombras. Escolha em Sub-raça a versão do livro usada na mesa.",
-  abilityScoreIncrease: {},
-  size: "Médio",
-  speed: 9,
-  languages: ["Comum"],
-  extraLanguages: 1,
-  subraceRequired: true,
-  traits: [],
-  subraces: [
-    {
-      name: "Monstros do Multiverso",
-      source: "MPMM",
-      description:
-        "Versão de Mordenkainen Apresenta: Monstros do Multiverso (2022): aumento de atributo flexível, Bênção da Rainha Corvo várias vezes por dia e Transe que rende proficiências temporárias.",
-      replaceBase: true,
-      abilityScoreIncrease: { choose: { count: 3, amount: 1, maxPerAbility: 2 } },
-      languages: ["Comum"],
-      extraLanguages: 1,
-      traits: [
-        {
-          name: "Tipo de Criatura",
-          description:
-            "Você é um Humanoide. Você também é considerado um elfo para qualquer pré-requisito ou efeito que exija que você seja um elfo.",
-        },
-        {
-          name: "Bênção da Rainha Corvo",
-          description:
-            "Com uma ação bônus, você se teleporta magicamente até 9 metros para um espaço desocupado que possa ver. Você pode usar este traço um número de vezes igual ao seu bônus de proficiência e recupera todos os usos gastos quando termina um descanso longo. A partir do 3º nível, você também ganha resistência a todo dano quando se teleporta com este traço. A resistência dura até o início do seu próximo turno; durante esse tempo, você parece fantasmagórico e translúcido.",
-          resource: { max: "prof", recharge: "long" },
-        },
-        {
-          name: "Visão no Escuro",
-          description:
-            "Você enxerga na penumbra a até 18 metros como se fosse luz plena, e no escuro como se fosse penumbra. Você não discerne cores no escuro, apenas tons de cinza.",
-        },
-        {
-          name: "Ancestral Feérico",
-          description:
-            "Você tem vantagem nos testes de resistência que fizer para evitar ou encerrar a condição enfeitiçado em si mesmo.",
-        },
-        {
-          name: "Sentidos Aguçados",
-          description: "Você tem proficiência na perícia Percepção.",
-          skills: ["Percepção"],
-        },
-        {
-          name: "Resistência Necrótica",
-          description: "Você tem resistência a dano necrótico.",
-        },
-        {
-          name: "Transe",
-          description:
-            "Você não precisa dormir, e magia não pode colocá-lo para dormir. Você pode terminar um descanso longo em 4 horas se passar essas horas numa meditação semelhante a um transe, durante a qual permanece consciente. Sempre que terminar esse transe, você pode ganhar duas proficiências que não possui, cada uma com uma arma ou uma ferramenta à sua escolha dentre as do Livro do Jogador. Você as adquire misticamente, a partir da memória compartilhada élfica, e as mantém até terminar seu próximo descanso longo.",
-        },
-      ],
-    },
-    {
-      name: "Tomo dos Inimigos de Mordenkainen",
-      source: "MToF",
-      description:
-        "Versão original (2018), uma sub-raça de elfo: Destreza +2 e Constituição +1, idioma Élfico e a Bênção da Rainha Corvo uma vez por descanso longo.",
-      replaceBase: true,
-      abilityScoreIncrease: { dex: 2, con: 1 },
-      languages: ["Comum", "Élfico"],
-      extraLanguages: 0,
-      traits: [
-        visaoNoEscuro("Acostumado às sombras do Pendor das Sombras,"),
-        ANCESTRAL_FEERICO,
-        ELFO.traits.find((trait) => trait.name === "Transe")!,
-        {
-          name: "Sentidos Aguçados",
-          description: "Você tem proficiência na perícia Percepção.",
-          skills: ["Percepção"],
-        },
-        {
-          name: "Resistência Necrótica",
-          description: "Você tem resistência a dano necrótico.",
-        },
-        {
-          name: "Bênção da Rainha Corvo",
-          description:
-            "Com uma ação bônus, você pode se teleportar magicamente até 9 metros para um espaço desocupado que possa ver. Depois de usar este traço, você não pode usá-lo novamente até terminar um descanso longo. A partir do 3º nível, você também ganha resistência a todo dano quando se teleporta com este traço; a resistência dura até o início do seu próximo turno, e durante esse tempo você parece fantasmagórico e translúcido.",
-          resource: { max: 1, recharge: "long" },
-        },
-      ],
-    },
-  ],
-};
-
-// ---------------------------------------------------------------------------
 // Midgard Heroes Handbook (Kobold Press): Shade
 // ---------------------------------------------------------------------------
 
@@ -1432,7 +1335,6 @@ export const RACES_CATALOG: RaceDef[] = [
   MEIO_ELFO,
   MEIO_ORC,
   ORC,
-  SHADAR_KAI,
   SHADE,
   TABAXI,
   THRI_KREEN,

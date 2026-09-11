@@ -547,7 +547,7 @@ function FeatForm({ initial, onDone }: { initial?: { id: string; data: HomebrewF
           </div>
         </div>
         <Field label="Só para as raças (opcional, separadas por vírgula)" hint="Deixe vazio para qualquer raça poder escolher.">
-          <Input value={races} onChange={(event) => setRaces(event.target.value)} placeholder="Ex.: Shade, Shadar-Kai" />
+          <Input value={races} onChange={(event) => setRaces(event.target.value)} placeholder="Ex.: Shade, Elfo" />
         </Field>
         <FormActions busy={busy} error={error} onCancel={onDone} onSave={() => void save()} />
       </CardBody>

@@ -11,16 +11,13 @@ const scores = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
 afterEach(() => setHomebrewItems([]));
 
 describe("raças novas", () => {
-  test("Shadar-Kai: versões do livro como variantes que substituem a base", () => {
-    expect(findRace("shadar-kai")?.subraceRequired).toBe(true);
-    const mpmm = resolveRace("Shadar-Kai", "Monstros do Multiverso")!;
-    expect(mpmm.fixedBonuses).toEqual({});
-    expect(mpmm.choose).toEqual({ count: 3, amount: 1, maxPerAbility: 2, exclude: [] });
-    expect(mpmm.traits.find((trait) => trait.name === "Bênção da Rainha Corvo")?.resource?.max).toBe("prof");
-    const mtof = resolveRace("Shadar-Kai", "Tomo dos Inimigos de Mordenkainen")!;
-    expect(mtof.fixedBonuses).toEqual({ dex: 2, con: 1 });
-    expect(mtof.languages).toEqual(["Comum", "Élfico"]);
-    expect(mtof.traits.map((trait) => trait.name)).toContain("Transe");
+  test("Shadar-Kai existe só como sub-raça de elfo", () => {
+    expect(findRace("Shadar-Kai")).toBeUndefined();
+    const shadarKai = resolveRace("Elfo", "Shadar-Kai")!;
+    expect(shadarKai.fixedBonuses).toEqual({ dex: 2, con: 1 });
+    expect(shadarKai.traits.map((trait) => trait.name)).toEqual(
+      expect.arrayContaining(["Transe", "Resistência Necrótica", "Bênção da Rainha Corvo"]),
+    );
   });
 
   test("Kenku e Meio-orc: versão do livro por padrão e variante opcional", () => {
@@ -76,11 +73,11 @@ describe("raças novas", () => {
   });
 
   test("recursos raciais que usam o bônus de proficiência", () => {
-    const traits = resolveRace("Shadar-Kai", "Monstros do Multiverso")!.traits;
-    expect(raceResourcesFor(traits, 3, scores, "Shadar-Kai")).toEqual([
-      { name: "Bênção da Rainha Corvo", current: 2, max: 2, recharge: "long", description: "Shadar-Kai: Bênção da Rainha Corvo" },
+    const traits = resolveRace("Kenku", "Monstros do Multiverso")!.traits;
+    expect(raceResourcesFor(traits, 3, scores, "Kenku")).toEqual([
+      { name: "Lembrança Kenku", current: 2, max: 2, recharge: "long", description: "Kenku: Lembrança Kenku" },
     ]);
-    expect(raceResourcesFor(traits, 5, scores, "Shadar-Kai")[0].max).toBe(3);
+    expect(raceResourcesFor(traits, 5, scores, "Kenku")[0].max).toBe(3);
   });
 });
 
