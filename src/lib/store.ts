@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Character, DiceRoll, HomebrewItem, HomebrewKind, Sheet } from "./types";
+import type { Character, DiceRoll, Folder, HomebrewItem, HomebrewKind, Sheet } from "./types";
 import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
 import { setHomebrewItems } from "@/data/homebrewRegistry";
 import { api, ApiError, errorMessage, type AccessRole } from "./api";
@@ -13,19 +13,33 @@ export type AppToast = {
 };
 
 export type HomebrewSaveResult = { ok: true; item: HomebrewItem } | { ok: false; error: string };
+export type FolderSaveResult = { ok: true; folder: Folder } | { ok: false; error: string };
+/** Resultado de tentar abrir uma pasta. */
+export type FolderEntry = "ok" | "bad_pin" | "not_found" | "error";
 
 type Store = {
+  /** Fichas conhecidas neste aparelho: resumos das pastas abertas + fichas destravadas. */
   characters: Record<string, Character>;
+  /** Rolagens da mesa da pasta ativa. */
   rolls: DiceRoll[];
   toasts: AppToast[];
   // PIN guardado por device por personagem; usado para mandar nas requests
   pins: Record<string, string>;
   /** Papel com que cada ficha foi destravada neste aparelho (mestre × jogador). */
   roles: Record<string, AccessRole>;
-  /** Chave mestra validada neste aparelho (libera a página do Mestre / homebrew). */
+  /** Chave mestra validada neste aparelho (libera o Mestre: homebrew e pastas). */
   masterPin: string | null;
   /** Raças, talentos e traços homebrew do Mestre. */
   homebrew: HomebrewItem[];
+  /** Pastas (resumo público) por id. */
+  folders: Record<string, Folder>;
+  foldersLoaded: boolean;
+  /** Senha de cada pasta guardada neste aparelho. */
+  folderPins: Record<string, string>;
+  /** Pastas abertas nesta sessão e se a credencial usada permite criar fichas nelas. */
+  openedFolders: Record<string, { canCreate: boolean }>;
+  /** Pasta cuja mesa (rolagens + eventos em tempo real) está sendo acompanhada. */
+  activeFolder: string | null;
   hydrated: boolean;
   realtimeReady: boolean;
   patchError: string | null;
@@ -33,6 +47,7 @@ type Store = {
 
   setEditMode: (v: boolean) => void;
   setLocalCharacter: (c: Character) => void;
+  /** Cria na pasta `character.folderId` com a senha guardada dela (ou a chave mestra). */
   createCharacter: (character: Character) => Promise<string>;
   patchCharacter: (id: string, patch: Partial<Character>) => Promise<boolean>;
   patchSheet: (id: string, partial: Partial<Sheet>) => Promise<boolean>;
@@ -45,8 +60,22 @@ type Store = {
   lockMaster: () => void;
   saveHomebrew: (kind: HomebrewKind, data: HomebrewItem["data"], id?: string) => Promise<HomebrewSaveResult>;
   deleteHomebrew: (id: string) => Promise<boolean>;
+  /** Abre a pasta: `pin` digitado, senão a guardada, a chave mestra ou nenhuma (pasta sem senha). */
+  enterFolder: (id: string, pin?: string) => Promise<FolderEntry>;
+  /** Esquece a senha da pasta neste aparelho. */
+  leaveFolder: (id: string) => void;
+  /** Passa a acompanhar a mesa da pasta (rolagens + tempo real). Não faz nada se já está nela. */
+  watchFolder: (id: string, pin?: string) => void;
+  /** `watchFolder` da pasta de uma ficha, com a melhor credencial deste aparelho. */
+  watchCharacterFolder: (characterId: string) => void;
+  /** Busca o resumo de uma ficha que ainda não está na tela. `false` = não existe. */
+  loadCharacterSummary: (id: string) => Promise<boolean>;
+  createFolder: (name: string, pin: string, avatar: Blob | null) => Promise<FolderSaveResult>;
+  /** `pin` vazio mantém a senha; `avatar`: Blob troca, `null` remove, `undefined` mantém. */
+  updateFolder: (id: string, name: string, pin: string, avatar: Blob | null | undefined) => Promise<FolderSaveResult>;
+  deleteFolder: (id: string) => Promise<boolean>;
   addRoll: (r: DiceRoll) => Promise<void>;
-  /** `actorId`: de quem é o PIN usado para autorizar (default: `characterId`). */
+  /** `actorId`: de quem é o PIN usado para autorizar (default: `characterId`). Sem `characterId`, limpa a mesa da pasta. */
   clearRolls: (characterId?: string, actorId?: string) => Promise<void>;
   pushToast: (toast: Omit<AppToast, "id">) => void;
   dismissToast: (id: string) => void;
@@ -76,6 +105,20 @@ function withoutCharacter(s: Store, id: string): Partial<Store> {
   return { characters, pins, roles, rolls: s.rolls.filter((r) => r.characterId !== id) };
 }
 
+function withoutFolderAccess(s: Store, id: string): Partial<Store> {
+  const folderPins = { ...s.folderPins };
+  delete folderPins[id];
+  const openedFolders = { ...s.openedFolders };
+  delete openedFolders[id];
+  return { folderPins, openedFolders };
+}
+
+function withoutFolder(s: Store, id: string): Partial<Store> {
+  const folders = { ...s.folders };
+  delete folders[id];
+  return { ...withoutFolderAccess(s, id), folders };
+}
+
 export const useStore = create<Store>()(
   persist(
     (set, get) => {
@@ -96,6 +139,105 @@ export const useStore = create<Store>()(
         }));
       };
 
+      const removeCharacter = (id: string) => {
+        deletedIds.add(id);
+        if (!(id in get().characters)) return;
+        set((s) => withoutCharacter(s, id));
+      };
+
+      const setFolder = (folder: Folder) => set((s) => ({ folders: { ...s.folders, [folder.id]: folder } }));
+
+      /**
+       * Recebe o resumo público de uma ficha (evento SSE ou listagem da pasta). Ficha
+       * destravada aqui NÃO é trocada pela versão pública (zeraria PV/slots na tela por
+       * um instante): só atualiza a identidade e, se mudou, busca a versão completa.
+       */
+      const receivePublic = (incoming: Character, notify: boolean) => {
+        if (deletedIds.has(incoming.id)) return;
+        const previous = get().characters[incoming.id];
+        const pin = get().pins[incoming.id];
+        if (pin && previous) {
+          // Mesma versão que já temos (ex.: eco do nosso próprio PATCH): nada a buscar.
+          if (previous.updatedAt && previous.updatedAt === incoming.updatedAt) return;
+          set((s) => ({
+            characters: {
+              ...s.characters,
+              [incoming.id]: {
+                ...previous,
+                playerName: incoming.playerName,
+                characterName: incoming.characterName,
+                color: incoming.color,
+                avatarVersion: incoming.avatarVersion,
+                folderId: incoming.folderId,
+              },
+            },
+          }));
+          void api
+            .getCharacter(incoming.id, pin)
+            .then(({ character }) => {
+              if (deletedIds.has(character.id)) return;
+              set((s) => ({ characters: { ...s.characters, [character.id]: character } }));
+            })
+            .catch((e) => {
+              if (deletedIds.has(incoming.id)) return;
+              if (e instanceof ApiError && e.status === 404) {
+                removeCharacter(incoming.id);
+                return;
+              }
+              // PIN não serve mais: rebaixa para o resumo público recebido.
+              set((s) => ({ characters: { ...s.characters, [incoming.id]: incoming } }));
+            });
+        } else {
+          set((s) => ({ characters: { ...s.characters, [incoming.id]: incoming } }));
+        }
+        if (notify && previous && previous.updatedAt !== incoming.updatedAt) {
+          get().pushToast({
+            title: `${incoming.characterName} foi atualizado`,
+            description: "Ficha sincronizada em tempo real.",
+          });
+        }
+      };
+
+      const realtime = createRealtime(
+        {
+          character: ({ character }: { character: Character }) => receivePublic(character, true),
+          "character-deleted": ({ id }: { id: string }) => removeCharacter(id),
+          folder: ({ folder }: { folder: Folder }) => setFolder(folder),
+          "folder-deleted": ({ id }: { id: string }) => set((s) => withoutFolder(s, id)),
+          homebrew: ({ item }: { item: HomebrewItem }) =>
+            applyHomebrew([...get().homebrew.filter((entry) => entry.id !== item.id), item]),
+          "homebrew-deleted": ({ id }: { id: string }) =>
+            applyHomebrew(get().homebrew.filter((entry) => entry.id !== id)),
+          roll: ({ roll }: { roll: DiceRoll }) => {
+            const rolls = get().rolls;
+            if (rolls.some((x) => x.id === roll.id)) return;
+            set({ rolls: [roll, ...rolls].slice(0, 50) });
+            get().pushToast({
+              title: `${roll.characterName ?? "Alguém"} rolou ${roll.label}`,
+              description: `${roll.expression} = ${roll.result}`,
+              tone: roll.detail.crit ? "success" : roll.detail.fumble ? "danger" : "default",
+            });
+          },
+          "rolls-cleared": ({ characterId, folderId }: { characterId: string | null; folderId?: string | null }) =>
+            set((s) => ({
+              rolls: characterId
+                ? s.rolls.filter((r) => r.characterId !== characterId)
+                : folderId && folderId !== s.activeFolder
+                  ? s.rolls
+                  : [],
+            })),
+        },
+        (ready) => set({ realtimeReady: ready }),
+      );
+
+      /** Credencial mais forte deste aparelho para uma pasta (senha > chave mestra). */
+      const folderCredential = (folderId: string) => get().folderPins[folderId] ?? get().masterPin ?? undefined;
+
+      const masterFailure = (e: unknown) => {
+        if (e instanceof ApiError && e.code === "bad_pin") set({ masterPin: null });
+        return { ok: false as const, error: errorMessage(e) };
+      };
+
       return {
         characters: Object.fromEntries(PUBLIC_CHARACTERS.map((c) => [c.id, c])),
         rolls: [],
@@ -104,6 +246,11 @@ export const useStore = create<Store>()(
         roles: {},
         masterPin: null,
         homebrew: [],
+        folders: {},
+        foldersLoaded: false,
+        folderPins: {},
+        openedFolders: {},
+        activeFolder: null,
         hydrated: false,
         realtimeReady: false,
         patchError: null,
@@ -114,7 +261,8 @@ export const useStore = create<Store>()(
         setLocalCharacter: (c) => set((s) => ({ characters: { ...s.characters, [c.id]: c } })),
 
         createCharacter: async (character) => {
-          const { character: saved, role } = await api.createCharacter(character);
+          const folderPin = character.folderId ? folderCredential(character.folderId) : undefined;
+          const { character: saved, role } = await api.createCharacter(character, folderPin);
           set((s) => ({
             characters: { ...s.characters, [saved.id]: saved },
             // O criador já fica destravado com o PIN que digitou.
@@ -272,6 +420,134 @@ export const useStore = create<Store>()(
           return true;
         },
 
+        enterFolder: async (id, rawPin) => {
+          const typed = rawPin?.trim() || undefined;
+          const pin = typed ?? folderCredential(id);
+          try {
+            const { folder, characters, canCreate } = await api.getFolder(id, pin);
+            const listed = new Set(characters.map((c) => c.id));
+            set((s) => {
+              // Some da tela o que não está mais na pasta (apagada enquanto a aba dormia).
+              const kept = Object.fromEntries(
+                Object.entries(s.characters).filter(([cid, c]) => c.folderId !== id || listed.has(cid)),
+              );
+              return {
+                characters: kept,
+                folders: { ...s.folders, [id]: folder },
+                openedFolders: { ...s.openedFolders, [id]: { canCreate } },
+                folderPins: typed ? { ...s.folderPins, [id]: typed } : s.folderPins,
+              };
+            });
+            for (const character of characters) receivePublic(character, false);
+            get().watchFolder(id, pin);
+            return "ok";
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 403) {
+              // Senha trocada pelo Mestre (ou digitada errada): pede de novo.
+              set((s) => withoutFolderAccess(s, id));
+              return "bad_pin";
+            }
+            if (e instanceof ApiError && e.status === 404) {
+              set((s) => withoutFolder(s, id));
+              return "not_found";
+            }
+            return "error";
+          }
+        },
+
+        leaveFolder: (id) => set((s) => withoutFolderAccess(s, id)),
+
+        watchFolder: (id, pin) => {
+          if (!realtime.scope(id, pin)) return;
+          set((s) => ({ activeFolder: id, rolls: s.activeFolder === id ? s.rolls : [] }));
+          void api
+            .listRolls(id, pin)
+            .then(({ rolls }) => {
+              if (get().activeFolder !== id) return;
+              // Rolagens que chegaram por SSE durante o GET continuam na frente.
+              const fetched = new Set(rolls.map((r) => r.id));
+              set((s) => ({ rolls: [...s.rolls.filter((r) => !fetched.has(r.id)), ...rolls].slice(0, 50) }));
+            })
+            .catch(() => {
+              // sem acesso ou offline: a mesa fica vazia
+            });
+        },
+
+        watchCharacterFolder: (characterId) => {
+          const folderId = get().characters[characterId]?.folderId;
+          if (!folderId) return;
+          get().watchFolder(folderId, folderCredential(folderId) ?? get().pins[characterId]);
+        },
+
+        loadCharacterSummary: async (id) => {
+          if (get().characters[id]) return true;
+          try {
+            const { character } = await api.getCharacterSummary(id);
+            if (deletedIds.has(id)) return false;
+            set((s) => (s.characters[id] ? {} : { characters: { ...s.characters, [id]: character } }));
+            return true;
+          } catch (e) {
+            // Só 404 é "não existe"; sem rede, continua tentando na próxima visita.
+            return !(e instanceof ApiError && e.status === 404);
+          }
+        },
+
+        createFolder: async (name, pin, avatar) => {
+          const master = get().masterPin;
+          if (!master) return { ok: false, error: "Entre com a chave mestra primeiro." };
+          try {
+            let { folder } = await api.createFolder(name, pin, master);
+            if (avatar) {
+              try {
+                ({ folder } = await api.uploadFolderAvatar(folder.id, avatar, master));
+              } catch (e) {
+                get().pushToast({
+                  title: "A pasta foi criada, mas a foto não foi salva",
+                  description: errorMessage(e),
+                  tone: "danger",
+                });
+              }
+            }
+            setFolder(folder);
+            return { ok: true, folder };
+          } catch (e) {
+            return masterFailure(e);
+          }
+        },
+
+        updateFolder: async (id, name, rawPin, avatar) => {
+          const master = get().masterPin;
+          if (!master) return { ok: false, error: "Entre com a chave mestra primeiro." };
+          const pin = rawPin.trim();
+          try {
+            let { folder } = await api.updateFolder(id, { name, ...(pin ? { pin } : {}) }, master);
+            if (avatar) ({ folder } = await api.uploadFolderAvatar(id, avatar, master));
+            else if (avatar === null) ({ folder } = await api.removeFolderAvatar(id, master));
+            setFolder(folder);
+            // Senha nova: a guardada neste aparelho (se havia) acompanha.
+            if (pin && get().folderPins[id]) set((s) => ({ folderPins: { ...s.folderPins, [id]: pin } }));
+            return { ok: true, folder };
+          } catch (e) {
+            return masterFailure(e);
+          }
+        },
+
+        deleteFolder: async (id) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            await api.deleteFolder(id, master);
+          } catch (e) {
+            if (!(e instanceof ApiError && e.status === 404)) {
+              if (e instanceof ApiError && e.code === "bad_pin") set({ masterPin: null });
+              get().pushToast({ title: "Não foi possível apagar a pasta", description: errorMessage(e), tone: "danger" });
+              return false;
+            }
+          }
+          set((s) => withoutFolder(s, id));
+          return true;
+        },
+
         addRoll: async (r) => {
           const pin = r.characterId ? get().pins[r.characterId] : undefined;
           set((s) => ({ rolls: [r, ...s.rolls].slice(0, 50) }));
@@ -290,14 +566,17 @@ export const useStore = create<Store>()(
         },
 
         clearRolls: async (characterId, actorId) => {
-          const pin = get().pins[actorId ?? characterId ?? ""];
+          const actor = actorId ?? characterId ?? "";
+          const pin = get().pins[actor];
+          // Sem ficha: a mesa inteira da pasta de quem pediu.
+          const folderId = characterId ? undefined : (get().characters[actor]?.folderId ?? get().activeFolder ?? undefined);
           const prev = get().rolls;
           // update otimista
           set({
             rolls: characterId ? prev.filter((r) => r.characterId !== characterId) : [],
           });
           try {
-            await api.clearRolls(characterId, pin);
+            await api.clearRolls({ characterId, folderId }, pin);
           } catch (e) {
             set({ rolls: prev }); // rollback
             get().pushToast({
@@ -318,36 +597,39 @@ export const useStore = create<Store>()(
         hydrate: async () => {
           if (get().hydrated) return;
           set({ hydrated: true });
+          realtime.ensure();
 
           try {
-            const [{ characters }, { rolls }, { items }] = await Promise.all([
-              api.listCharacters(),
-              api.listRolls(50),
-              // Servidor antigo (sem homebrew) não pode derrubar a mesa.
+            const [{ folders }, { items }] = await Promise.all([
+              api.listFolders(),
+              // Servidor antigo (sem homebrew) não pode derrubar a página.
               api.listHomebrew().catch(() => ({ items: [] as HomebrewItem[] })),
             ]);
             applyHomebrew(items);
-            const map: Record<string, Character> = {};
-            for (const c of characters) map[c.id] = c;
-            // Fichas já destravadas neste aparelho: busca as versões completas em paralelo.
-            await Promise.all(
-              Object.entries(get().pins).map(async ([id, pin]) => {
-                try {
-                  const { character, role } = await api.getCharacter(id, pin);
-                  map[id] = character;
-                  if (role) set((s) => ({ roles: { ...s.roles, [id]: role } }));
-                } catch {
-                  // PIN removido/alterado no servidor: mantém só o resumo público.
-                }
-              }),
-            );
-            for (const id of deletedIds) delete map[id];
-            set({ characters: map, rolls });
+            set((s) => ({
+              folders: { ...Object.fromEntries(folders.map((f) => [f.id, f])) },
+              foldersLoaded: true,
+              // Pasta que sumiu enquanto a aba dormia não fica "aberta".
+              openedFolders: Object.fromEntries(
+                Object.entries(s.openedFolders).filter(([id]) => folders.some((f) => f.id === id)),
+              ),
+            }));
           } catch {
             // offline: mantém o estado persistido / seed
           }
 
-          connectSse(set, get, applyHomebrew);
+          // Fichas já destravadas neste aparelho: busca as versões completas em paralelo.
+          await Promise.all(
+            Object.entries(get().pins).map(async ([id, pin]) => {
+              try {
+                const { character, role } = await api.getCharacter(id, pin);
+                storeAuthorized(id, character, role);
+              } catch (e) {
+                if (e instanceof ApiError && e.status === 404) removeCharacter(id);
+                // PIN removido/alterado no servidor: mantém só o resumo público.
+              }
+            }),
+          );
         },
       };
     },
@@ -357,150 +639,82 @@ export const useStore = create<Store>()(
         pins: s.pins,
         roles: s.roles,
         masterPin: s.masterPin,
-        // characters/rolls/homebrew vêm do servidor; persistimos só as chaves do aparelho
+        folderPins: s.folderPins,
+        // characters/rolls/homebrew/pastas vêm do servidor; persistimos só as chaves do aparelho
       }),
     },
   ),
 );
 
-function connectSse(
-  set: (partial: Partial<Store>) => void,
-  get: () => Store,
-  applyHomebrew: (items: HomebrewItem[]) => void,
-) {
-  if (typeof window === "undefined") return;
-  let attempts = 0;
+/** Cada handler recebe o JSON do evento já com o tipo que declara. */
+type RealtimeHandlers = Record<string, (data: never) => void>;
 
-  const removeCharacter = (id: string) => {
-    deletedIds.add(id);
-    if (!(id in get().characters)) return;
-    set(withoutCharacter(get(), id));
-  };
+/**
+ * Uma conexão SSE por aba. A inscrição (pasta + credencial) decide quais eventos de
+ * ficha e rolagem chegam; eventos de pasta e homebrew chegam sempre. Reconecta com
+ * backoff exponencial.
+ */
+function createRealtime(handlers: RealtimeHandlers, onStatus: (ready: boolean) => void) {
+  let source: EventSource | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let attempts = 0;
+  let current: { folder?: string; pin?: string } = {};
 
   const open = () => {
+    if (retry) {
+      clearTimeout(retry);
+      retry = null;
+    }
+    source?.close();
+    const params = new URLSearchParams();
+    if (current.folder) params.set("folder", current.folder);
+    if (current.folder && current.pin) params.set("pin", current.pin);
+    const query = params.toString();
     let es: EventSource;
     try {
-      es = new EventSource("/api/events");
+      es = new EventSource(`/api/events${query ? `?${query}` : ""}`);
     } catch {
       return;
     }
+    source = es;
     es.addEventListener("hello", () => {
-      set({ realtimeReady: true });
       attempts = 0;
+      onStatus(true);
     });
-    es.addEventListener("character", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as {
-          character: Character;
-        };
-        const incoming = data.character;
-        if (deletedIds.has(incoming.id)) return;
-        const previous = get().characters[incoming.id];
-        const pin = get().pins[incoming.id];
-        if (pin && previous) {
-          // Mesma versão que já temos (ex.: eco do nosso próprio PATCH): nada a buscar.
-          if (previous.updatedAt && previous.updatedAt === incoming.updatedAt) return;
-          // Ficha destravada aqui: NÃO troca pela versão pública (zeraria PV/slots na
-          // tela por um instante). Só atualiza a identidade e busca a versão completa.
-          set({
-            characters: {
-              ...get().characters,
-              [incoming.id]: {
-                ...previous,
-                playerName: incoming.playerName,
-                characterName: incoming.characterName,
-                color: incoming.color,
-                avatarVersion: incoming.avatarVersion,
-              },
-            },
-          });
-          void api
-            .getCharacter(incoming.id, pin)
-            .then(({ character }) => {
-              if (deletedIds.has(character.id)) return;
-              set({ characters: { ...get().characters, [character.id]: character } });
-            })
-            .catch((e) => {
-              if (deletedIds.has(incoming.id)) return;
-              if (e instanceof ApiError && e.status === 404) {
-                removeCharacter(incoming.id);
-                return;
-              }
-              // PIN não serve mais: rebaixa para o resumo público recebido.
-              set({ characters: { ...get().characters, [incoming.id]: incoming } });
-            });
-        } else {
-          set({ characters: { ...get().characters, [incoming.id]: incoming } });
+    for (const [event, handle] of Object.entries(handlers)) {
+      es.addEventListener(event, (ev) => {
+        try {
+          handle(JSON.parse((ev as MessageEvent).data) as never);
+        } catch {
+          // evento malformado: ignora
         }
-        if (previous && previous.updatedAt !== incoming.updatedAt) {
-          get().pushToast({
-            title: `${incoming.characterName} foi atualizado`,
-            description: "Ficha sincronizada em tempo real.",
-          });
-        }
-      } catch {
-        // ignore
-      }
-    });
-    es.addEventListener("character-deleted", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as { id: string };
-        removeCharacter(data.id);
-      } catch {
-        // ignore
-      }
-    });
-    es.addEventListener("homebrew", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as { item: HomebrewItem };
-        applyHomebrew([...get().homebrew.filter((entry) => entry.id !== data.item.id), data.item]);
-      } catch {
-        // ignore
-      }
-    });
-    es.addEventListener("homebrew-deleted", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as { id: string };
-        applyHomebrew(get().homebrew.filter((entry) => entry.id !== data.id));
-      } catch {
-        // ignore
-      }
-    });
-    es.addEventListener("roll", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as { roll: DiceRoll };
-        const rolls = get().rolls;
-        if (rolls.find((x) => x.id === data.roll.id)) return;
-        set({ rolls: [data.roll, ...rolls].slice(0, 50) });
-        get().pushToast({
-          title: `${data.roll.characterName ?? "Alguém"} rolou ${data.roll.label}`,
-          description: `${data.roll.expression} = ${data.roll.result}`,
-          tone: data.roll.detail.crit ? "success" : data.roll.detail.fumble ? "danger" : "default",
-        });
-      } catch {
-        // ignore
-      }
-    });
-    es.addEventListener("rolls-cleared", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as { characterId: string | null };
-        const rolls = get().rolls;
-        set({
-          rolls: data.characterId ? rolls.filter((r) => r.characterId !== data.characterId) : [],
-        });
-      } catch {
-        // ignore
-      }
-    });
+      });
+    }
     es.onerror = () => {
-      set({ realtimeReady: false });
+      if (source !== es) return;
+      onStatus(false);
       es.close();
+      source = null;
       attempts++;
-      const delay = Math.min(30_000, 1000 * 2 ** attempts);
-      setTimeout(open, delay);
+      retry = setTimeout(open, Math.min(30_000, 1000 * 2 ** attempts));
     };
   };
-  open();
+
+  return {
+    /** Abre a conexão se ainda não há uma (nem uma reconexão agendada). */
+    ensure() {
+      if (typeof window !== "undefined" && !source && !retry) open();
+    },
+    /** Troca a inscrição; reabre só se mudou. Devolve se reabriu. */
+    scope(folder?: string, pin?: string): boolean {
+      if (typeof window === "undefined") return false;
+      if (source && current.folder === folder && current.pin === pin) return false;
+      current = { folder, pin };
+      attempts = 0;
+      open();
+      return true;
+    },
+  };
 }
 
 function cryptoRandomId(): string {

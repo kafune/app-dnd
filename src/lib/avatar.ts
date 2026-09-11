@@ -11,6 +11,12 @@ export function avatarUrl(character: { id: string; avatarVersion?: string | null
   return `/api/characters/${encodeURIComponent(character.id)}/avatar?v=${encodeURIComponent(character.avatarVersion)}`;
 }
 
+/** Mesma ideia para a foto da pasta (`/api/folders/:id/avatar`). */
+export function folderAvatarUrl(folder: { id: string; avatarVersion?: string | null }): string | null {
+  if (!folder.avatarVersion) return null;
+  return `/api/folders/${encodeURIComponent(folder.id)}/avatar?v=${encodeURIComponent(folder.avatarVersion)}`;
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();

@@ -349,8 +349,23 @@ export type Resource = {
   description?: string;
 };
 
+/** Pasta: separa as fichas de cada mesa/campanha. A senha nunca vem do servidor. */
+export type Folder = {
+  id: string;
+  name: string;
+  /** Versão da foto da pasta (a imagem fica em /api/folders/:id/avatar). */
+  avatarVersion?: string | null;
+  /** Tem senha? Pasta sem senha abre direto. */
+  protected: boolean;
+  characterCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type Character = {
   id: string;
+  /** Pasta onde a ficha vive: definida na criação, não muda depois. */
+  folderId?: string;
   playerName: string;
   characterName: string;
   pin?: string;
