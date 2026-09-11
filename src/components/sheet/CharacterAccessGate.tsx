@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { useStore } from "@/lib/store";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 
 export function CharacterAccessGate({ id }: { id: string }) {
   const character = useStore((s) => s.characters[id]);
@@ -31,15 +32,14 @@ export function CharacterAccessGate({ id }: { id: string }) {
           </CardTitle>
         </CardHeader>
         <CardBody className="space-y-4">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-500">
-              {character.playerName}
+          <div className="flex items-center gap-3">
+            <CharacterAvatar character={character} size={56} />
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-wide text-zinc-500">{character.playerName}</div>
+              <h1 className="break-words font-mono text-2xl font-bold">{character.characterName}</h1>
             </div>
-            <h1 className="font-mono text-2xl font-bold">{character.characterName}</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Digite o PIN deste personagem para abrir a ficha.
-            </p>
           </div>
+          <p className="text-sm text-zinc-500">Digite o PIN deste personagem para abrir a ficha.</p>
 
           <form
             className="space-y-3"

@@ -1,41 +1,39 @@
 import { useState } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useIsMaster, useStore } from "@/lib/store";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
-import { CREATURE_SIZES, type Item } from "@/lib/types";
+import { ABILITY_LABELS, ABILITY_ORDER, type InventoryCategory, type Item } from "@/lib/types";
 import { ITEMS_CATALOG, findItem } from "@/data/itemsCatalog";
+import { groupProficiencies, splitProficiencies } from "@/lib/proficiencies";
+import {
+  groupInventory,
+  INVENTORY_CATEGORY_LABELS,
+  INVENTORY_CATEGORY_ORDER,
+  inventoryCategory,
+} from "@/lib/inventory";
 
-const splitList = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
+const splitLines = (v: string) =>
+  v
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-/**
- * Lê uma imagem do disco e devolve um data URL JPEG reduzido (máx. ~640px no maior
- * lado, qualidade 0.8). Mantém a ficha leve, já que ela é salva inteira como JSON.
- */
-function fileToCompressedDataUrl(file: File, maxDim = 640, quality = 0.8): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Falha ao ler o arquivo."));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Arquivo de imagem inválido."));
-      img.onload = () => {
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return reject(new Error("Canvas indisponível."));
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
+const smallSelect =
+  "h-7 rounded border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+
+function TopicList({ label, items }: { label: string; items: string[] }) {
+  return (
+    <section>
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{label}</h4>
+      <ul className="list-disc space-y-0.5 pl-4 text-sm text-zinc-700 marker:text-zinc-400 dark:text-zinc-300">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 export function ProficienciesAndLanguages({ id }: { id: string }) {
@@ -50,44 +48,56 @@ export function ProficienciesAndLanguages({ id }: { id: string }) {
         <CardHeader>
           <CardTitle>Proficiências & Idiomas</CardTitle>
         </CardHeader>
-        <CardBody className="space-y-2 text-sm">
+        <CardBody className="space-y-3 text-sm">
           <label className="block text-xs text-zinc-500">
-            Idiomas (vírgula)
+            Idiomas (um por linha)
             <EditableText
-              value={c.sheet.languages.join(", ")}
-              onSave={(v) => void patchSheet(id, { languages: splitList(v) })}
+              multiline
+              value={c.sheet.languages.join("\n")}
+              onSave={(v) => void patchSheet(id, { languages: splitLines(v) })}
             />
           </label>
           <label className="block text-xs text-zinc-500">
-            Proficiências (vírgula)
+            Proficiências (uma por linha; a ficha separa em armaduras, armas e ferramentas sozinha)
             <EditableText
-              value={c.sheet.proficiencies.join(", ")}
-              onSave={(v) => void patchSheet(id, { proficiencies: splitList(v) })}
+              multiline
+              className="min-h-[8rem]"
+              value={splitProficiencies(c.sheet.proficiencies).join("\n")}
+              onSave={(v) => void patchSheet(id, { proficiencies: splitLines(v) })}
             />
           </label>
         </CardBody>
       </Card>
     );
   }
+
+  const saves = ABILITY_ORDER.filter((key) => c.sheet.saves.includes(key)).map((key) => ABILITY_LABELS[key]);
+  const topics = [
+    ...(saves.length ? [{ key: "saves", label: "Testes de resistência", items: saves }] : []),
+    ...groupProficiencies(c.sheet.proficiencies).map((group) => ({ key: group.topic, label: group.label, items: group.items })),
+    ...(c.sheet.languages.length ? [{ key: "idiomas", label: "Idiomas", items: c.sheet.languages }] : []),
+  ];
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Proficiências & Idiomas</CardTitle>
+        <div className="flex items-baseline justify-between gap-2">
+          <CardTitle>Proficiências & Idiomas</CardTitle>
+          <span className="text-xs text-zinc-500">
+            Bônus de proficiência <strong>+{c.sheet.proficiencyBonus}</strong>
+          </span>
+        </div>
       </CardHeader>
-      <CardBody className="space-y-2 text-sm">
-        <div>
-          <div className="text-xs uppercase text-zinc-500">Idiomas</div>
-          <p>{c.sheet.languages.join(", ")}</p>
-        </div>
-        <div>
-          <div className="text-xs uppercase text-zinc-500">Proficiências</div>
-          <p className="text-zinc-700 dark:text-zinc-300">
-            {c.sheet.proficiencies.join(", ")}
-          </p>
-        </div>
-        <div className="text-xs text-zinc-500">
-          Bônus de proficiência: <strong>+{c.sheet.proficiencyBonus}</strong>
-        </div>
+      <CardBody>
+        {topics.length === 0 ? (
+          <p className="text-sm text-zinc-500">Nenhuma proficiência registrada.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {topics.map((topic) => (
+              <TopicList key={topic.key} label={topic.label} items={topic.items} />
+            ))}
+          </div>
+        )}
       </CardBody>
     </Card>
   );
@@ -100,70 +110,118 @@ export function Inventory({ id }: { id: string }) {
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
   const inv = c.sheet.inventory;
-  const setInv = (partial: Partial<typeof inv>) =>
-    void patchSheet(id, { inventory: { ...inv, ...partial } });
-  const setCoin = (k: "gp" | "sp" | "cp", v: number) =>
-    setInv({ coins: { ...inv.coins, [k]: v } });
+  const setInv = (partial: Partial<typeof inv>) => void patchSheet(id, { inventory: { ...inv, ...partial } });
+  const setCoin = (k: "gp" | "sp" | "cp", v: number) => setInv({ coins: { ...inv.coins, [k]: v } });
   const updateItem = (i: number, p: Partial<Item>) =>
     setInv({ items: inv.items.map((it, idx) => (idx === i ? { ...it, ...p } : it)) });
+  const groups = groupInventory(inv.items);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Inventário</CardTitle>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <CardTitle>Inventário</CardTitle>
+          {!editMode && (
+            <span className="font-mono text-xs text-zinc-500">
+              {inv.coins.gp} po · {inv.coins.sp} pp · {inv.coins.cp} pc
+            </span>
+          )}
+        </div>
       </CardHeader>
-      <CardBody className="space-y-2 text-sm">
-        {editMode ? (
-          <>
-            <div className="flex items-center gap-1 text-xs">
-              <EditableNumber value={inv.coins.gp} min={0} onSave={(v) => setCoin("gp", v)} className="h-7 w-16" /> po
-              <EditableNumber value={inv.coins.sp} min={0} onSave={(v) => setCoin("sp", v)} className="h-7 w-16" /> pp
-              <EditableNumber value={inv.coins.cp} min={0} onSave={(v) => setCoin("cp", v)} className="h-7 w-16" /> pc
-            </div>
-            {inv.items.map((it, i) => (
-              <div key={i} className="flex items-center gap-1">
-                {isMaster ? (
-                  <>
-                    <EditableText value={it.name} onSave={(v) => updateItem(i, { name: v })} placeholder="item" className="w-40" />
-                    <EditableText value={it.description ?? ""} onSave={(v) => updateItem(i, { description: v || undefined })} placeholder="descrição" className="flex-1" />
-                  </>
+      <CardBody className="space-y-4 text-sm">
+        {editMode && (
+          <div className="flex flex-wrap items-center gap-1 text-xs">
+            <EditableNumber value={inv.coins.gp} min={0} onSave={(v) => setCoin("gp", v)} className="h-7 w-16" /> po
+            <EditableNumber value={inv.coins.sp} min={0} onSave={(v) => setCoin("sp", v)} className="h-7 w-16" /> pp
+            <EditableNumber value={inv.coins.cp} min={0} onSave={(v) => setCoin("cp", v)} className="h-7 w-16" /> pc
+          </div>
+        )}
+
+        {groups.length === 0 && <p className="text-zinc-500">Inventário vazio.</p>}
+
+        {groups.map((group) => (
+          <section key={group.category}>
+            <h4 className="mb-1 flex items-baseline justify-between border-b border-zinc-100 pb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800">
+              <span>{group.label}</span>
+              <span className="font-normal">{group.entries.length}</span>
+            </h4>
+            <ul className="space-y-1">
+              {group.entries.map(({ item, index }) =>
+                editMode ? (
+                  <li key={`${index}:${item.name}`} className="flex flex-wrap items-center gap-1">
+                    {isMaster ? (
+                      <>
+                        <EditableText value={item.name} onSave={(v) => updateItem(index, { name: v })} placeholder="item" className="h-8 w-40" />
+                        <EditableText
+                          value={item.description ?? ""}
+                          onSave={(v) => updateItem(index, { description: v || undefined })}
+                          placeholder="descrição"
+                          className="h-8 min-w-[8rem] flex-1"
+                        />
+                      </>
+                    ) : (
+                      <span className="min-w-0 flex-1">
+                        <strong>{item.name}</strong>
+                        {item.description ? <span className="ml-1 text-xs text-zinc-500">— {item.description}</span> : null}
+                      </span>
+                    )}
+                    <select
+                      className={smallSelect}
+                      aria-label={`Categoria de ${item.name}`}
+                      value={item.category ?? ""}
+                      onChange={(event) =>
+                        updateItem(index, { category: (event.target.value || undefined) as InventoryCategory | undefined })
+                      }
+                    >
+                      <option value="">auto: {INVENTORY_CATEGORY_LABELS[inventoryCategory({ ...item, category: undefined })]}</option>
+                      {INVENTORY_CATEGORY_ORDER.map((category) => (
+                        <option key={category} value={category}>
+                          {INVENTORY_CATEGORY_LABELS[category]}
+                        </option>
+                      ))}
+                    </select>
+                    <EditableNumber
+                      value={item.quantity ?? 1}
+                      min={0}
+                      onSave={(v) => updateItem(index, { quantity: v })}
+                      className="h-7 w-14"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Remover item"
+                      onClick={() => setInv({ items: inv.items.filter((_, idx) => idx !== index) })}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </li>
                 ) : (
-                  <span className="flex-1"><strong>{it.name}</strong>{it.description ? <span className="ml-1 text-xs text-zinc-500">— {it.description}</span> : null}</span>
-                )}
-                <EditableNumber value={it.quantity ?? 1} min={0} onSave={(v) => updateItem(i, { quantity: v })} className="h-7 w-14" />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Remover item"
-                  onClick={() => setInv({ items: inv.items.filter((_, idx) => idx !== i) })}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
+                  <li key={`${index}:${item.name}`} className="flex items-baseline gap-2">
+                    <span className="min-w-0 flex-1">
+                      <strong className="text-zinc-900 dark:text-zinc-100">{item.name}</strong>
+                      {item.description && <span className="ml-1 text-xs text-zinc-500">— {item.description}</span>}
+                    </span>
+                    {(item.quantity ?? 1) > 1 && <span className="shrink-0 font-mono text-xs text-zinc-500">×{item.quantity}</span>}
+                  </li>
+                ),
+              )}
+            </ul>
+          </section>
+        ))}
+
+        {editMode && (
+          <div className="space-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <InventoryCatalogAdd items={inv.items} onChange={(items) => setInv({ items })} />
             {isMaster && (
-              <Button variant="outline" size="sm" onClick={() => setInv({ items: [...inv.items, { name: "Item homebrew", quantity: 1 }] })}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setInv({ items: [...inv.items, { name: "Item homebrew", quantity: 1 }] })}
+              >
                 + Item custom/homebrew
               </Button>
             )}
-          </>
-        ) : (
-          <>
-            <div className="font-mono text-xs text-zinc-500">
-              {inv.coins.gp} po · {inv.coins.sp} pp · {inv.coins.cp} pc
-            </div>
-            <ul className="space-y-1">
-              {inv.items.map((it, i) => (
-                <li key={i} className="text-sm">
-                  <strong className="text-zinc-900 dark:text-zinc-100">{it.name}</strong>
-                  {it.description && (
-                    <span className="ml-1 text-xs text-zinc-500">— {it.description}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
+          </div>
         )}
       </CardBody>
     </Card>
@@ -177,35 +235,38 @@ function InventoryCatalogAdd({ items, onChange }: { items: Item[]; onChange: (it
     if (!catalog) return;
     const existing = items.find((item) => item.name === catalog.name);
     if (existing) {
-      onChange(items.map((item) => item === existing ? { ...item, quantity: (item.quantity ?? 1) + 1 } : item));
+      onChange(items.map((item) => (item === existing ? { ...item, quantity: (item.quantity ?? 1) + 1 } : item)));
     } else {
       onChange([...items, { name: catalog.name, description: catalog.detail, quantity: 1 }]);
     }
   };
   return (
     <div className="flex gap-2">
-      <select className="h-8 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900" value={name} onChange={(event) => setName(event.target.value)}>
-        {ITEMS_CATALOG.map((item) => <option key={item.name} value={item.name}>{item.name} — {item.detail}</option>)}
+      <select
+        className="h-8 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+      >
+        {ITEMS_CATALOG.map((item) => (
+          <option key={item.name} value={item.name}>
+            {item.name} — {item.detail}
+          </option>
+        ))}
       </select>
-      <Button variant="outline" size="sm" onClick={add}>Adicionar</Button>
+      <Button variant="outline" size="sm" onClick={add}>
+        Adicionar
+      </Button>
     </div>
   );
 }
 
+/** Personalidade e história. A aparência saiu da ficha: agora é a foto de perfil no topo. */
 export function Personality({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const editMode = useStore((s) => s.editMode);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
   const p = c.sheet.personality;
-  const ap = c.sheet.appearance;
-  const blocks: [string, string][] = [
-    ["Personalidade", p.trait],
-    ["Ideal", p.ideal],
-    ["Defeito", p.flaw],
-    ["Por que estou aqui", p.why],
-    ["Backstory", p.backstory],
-  ];
   const persKeys: [string, keyof typeof p][] = [
     ["Personalidade", "trait"],
     ["Ideal", "ideal"],
@@ -218,25 +279,9 @@ export function Personality({ id }: { id: string }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Aparência & História</CardTitle>
+          <CardTitle>Personalidade & História</CardTitle>
         </CardHeader>
         <CardBody className="space-y-2 text-sm">
-          <AppearanceImageEditor id={id} />
-          <div className="flex gap-1">
-            <select
-              className="h-9 w-28 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-              value={CREATURE_SIZES.includes(ap.size as (typeof CREATURE_SIZES)[number]) ? ap.size : "Médio"}
-              onChange={(e) => void patchSheet(id, { appearance: { ...ap, size: e.target.value } })}
-            >
-              {CREATURE_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <EditableText value={ap.height} onSave={(v) => void patchSheet(id, { appearance: { ...ap, height: v } })} placeholder="altura" className="w-28" />
-          </div>
-          <EditableText value={ap.description ?? ""} onSave={(v) => void patchSheet(id, { appearance: { ...ap, description: v || undefined } })} placeholder="aparência" multiline />
           {persKeys.map(([label, key]) => (
             <label key={key} className="block text-xs text-zinc-500">
               {label}
@@ -251,102 +296,21 @@ export function Personality({ id }: { id: string }) {
       </Card>
     );
   }
+  const blocks = persKeys.filter(([, key]) => p[key] && p[key] !== "—");
+  if (blocks.length === 0) return null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Aparência & História</CardTitle>
+        <CardTitle>Personalidade & História</CardTitle>
       </CardHeader>
       <CardBody className="space-y-2 text-sm">
-        {ap.imageUrl && (
-          <img
-            src={ap.imageUrl}
-            alt={`Aparência de ${c.characterName}`}
-            className="mx-auto max-h-72 w-auto rounded-lg border border-zinc-200 object-contain dark:border-zinc-800"
-          />
-        )}
-        <div className="text-xs text-zinc-500">
-          {c.sheet.appearance.size} · {c.sheet.appearance.height}
-        </div>
-        {c.sheet.appearance.description && (
-          <p className="text-zinc-700 dark:text-zinc-300">
-            {c.sheet.appearance.description}
-          </p>
-        )}
-        {blocks.map(([k, v]) =>
-          v && v !== "—" ? (
-            <div key={k}>
-              <div className="text-xs uppercase text-zinc-500">{k}</div>
-              <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{v}</p>
-            </div>
-          ) : null,
-        )}
+        {blocks.map(([label, key]) => (
+          <div key={key}>
+            <div className="text-xs uppercase text-zinc-500">{label}</div>
+            <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">{p[key]}</p>
+          </div>
+        ))}
       </CardBody>
     </Card>
-  );
-}
-
-/** Upload/edição da imagem de aparência (mostrado no modo de edição). */
-function AppearanceImageEditor({ id }: { id: string }) {
-  const c = useStore((s) => s.characters[id]);
-  const patchSheet = useStore((s) => s.patchSheet);
-  const pushToast = useStore((s) => s.pushToast);
-  const [busy, setBusy] = useState(false);
-  if (!c) return null;
-  const ap = c.sheet.appearance;
-
-  const onPick = async (file: File | undefined) => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const imageUrl = await fileToCompressedDataUrl(file);
-      await patchSheet(id, { appearance: { ...ap, imageUrl } });
-    } catch (e) {
-      pushToast({
-        title: "Não foi possível carregar a imagem",
-        description: e instanceof Error ? e.message : undefined,
-        tone: "danger",
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      {ap.imageUrl && (
-        <img
-          src={ap.imageUrl}
-          alt="Aparência"
-          className="mx-auto max-h-56 w-auto rounded-lg border border-zinc-200 object-contain dark:border-zinc-800"
-        />
-      )}
-      <div className="flex items-center gap-2">
-        <label className="inline-flex">
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            disabled={busy}
-            onChange={(e) => {
-              void onPick(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-          <span className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-md border border-zinc-300 px-3 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
-            <ImagePlus className="h-3 w-3" />
-            {busy ? "Enviando…" : ap.imageUrl ? "Trocar imagem" : "Enviar imagem"}
-          </span>
-        </label>
-        {ap.imageUrl && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void patchSheet(id, { appearance: { ...ap, imageUrl: undefined } })}
-          >
-            <Trash2 className="h-3 w-3" /> Remover
-          </Button>
-        )}
-      </div>
-    </div>
   );
 }

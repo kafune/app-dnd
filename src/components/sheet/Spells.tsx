@@ -114,6 +114,14 @@ function SpellRow({ spell }: { spell: Spell }) {
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           <span className="font-medium">{spell.name}</span>
           <span className="text-xs text-zinc-500">{spell.school}</span>
+          {(spell.granted || spell.classSource) && (
+            <span
+              className="rounded bg-zinc-100 px-1 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+              title={spell.granted ? `Concedida por ${spell.granted}` : `Lista de magias de ${spell.classSource}`}
+            >
+              {spell.granted ?? spell.classSource}
+            </span>
+          )}
           {spell.concentration && (
             <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
               C

@@ -7,6 +7,7 @@ import Home from "@/pages/Home";
 // Cada página vira um chunk próprio: a home (a mais acessada) fica minúscula.
 const CriarFicha = lazy(() => import("@/pages/CriarFicha"));
 const Personagem = lazy(() => import("@/pages/Personagem"));
+const Mestre = lazy(() => import("@/pages/Mestre"));
 
 function Loading() {
   return (
@@ -30,6 +31,7 @@ export function App() {
           <Route path="/" element={<Home />} />
           <Route path="/criar-ficha" element={<CriarFicha />} />
           <Route path="/personagem/:id" element={<Personagem />} />
+          <Route path="/mestre" element={<Mestre />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>

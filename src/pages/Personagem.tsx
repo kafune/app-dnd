@@ -2,9 +2,13 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ABILITY_LABELS, ABILITY_ORDER, ALIGNMENTS, type AbilityKey, type AsiDecision } from "@/lib/types";
+import { ALIGNMENTS, CREATURE_SIZES, type AbilityKey, type AsiDecision } from "@/lib/types";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
+import { PointAllocator, allocatedPoints } from "@/components/PointAllocator";
+import { fromAllocation, toAllocation } from "@/components/create/AdvancementChoices";
 import { HpTracker } from "@/components/sheet/HpTracker";
 import { Abilities } from "@/components/sheet/Abilities";
 import { Skills } from "@/components/sheet/Skills";
@@ -16,11 +20,7 @@ import { Spells } from "@/components/sheet/Spells";
 import { Features } from "@/components/sheet/Features";
 import { Notes } from "@/components/sheet/Notes";
 import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
-import {
-  ProficienciesAndLanguages,
-  Inventory,
-  Personality,
-} from "@/components/sheet/Misc";
+import { ProficienciesAndLanguages, Inventory, Personality } from "@/components/sheet/Misc";
 import { PinLock } from "@/components/sheet/PinLock";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 import { DiceRoller } from "@/components/dice/DiceRoller";
@@ -28,8 +28,9 @@ import { RollHistory } from "@/components/dice/RollHistory";
 import { ChangeLog } from "@/components/sheet/ChangeLog";
 import { useIsMaster, useUnlocked } from "@/lib/store";
 import { CLASSES_CATALOG, findClassDef, subclassNames } from "@/data/classesCatalog";
-import { FEATS_CATALOG, findFeat } from "@/data/featsCatalog";
+import { allFeats, findFeat } from "@/data/featsCatalog";
 import {
+  applyAbilityIncrease,
   applyAsiDecision,
   applyClassChange,
   clampClassLevels,
@@ -38,12 +39,16 @@ import {
   totalLevelOf,
 } from "@/lib/progression";
 
+const selectCls =
+  "h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+
 export default function CharacterPage() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const character = useStore((s) => s.characters[id]);
   const clearRolls = useStore((s) => s.clearRolls);
   const deleteCharacter = useStore((s) => s.deleteCharacter);
+  const removeAvatar = useStore((s) => s.removeAvatar);
   const pushToast = useStore((s) => s.pushToast);
   const editMode = useStore((s) => s.editMode);
   const setEditMode = useStore((s) => s.setEditMode);
@@ -51,27 +56,27 @@ export default function CharacterPage() {
   const patchSheet = useStore((s) => s.patchSheet);
   const unlocked = useUnlocked(id);
   const isMaster = useIsMaster(id);
-
-  const limparHistorico = (scope: "player" | "mesa") => {
-    const msg =
-      scope === "mesa"
-        ? "Limpar TODAS as rolagens da mesa? Isso afeta todos os jogadores."
-        : "Limpar as rolagens desta ficha?";
-    // O PIN desta ficha autoriza os dois casos: a própria e a mesa toda.
-    if (window.confirm(msg)) void clearRolls(scope === "mesa" ? undefined : id, id);
-  };
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [clearScope, setClearScope] = useState<"player" | "mesa" | null>(null);
 
   const onDelete = async () => {
-    if (!character) return;
-    const name = character.characterName || "esta ficha";
-    if (!window.confirm(`Deletar ${name} permanentemente? Esta ação não pode ser desfeita.`)) {
-      return;
-    }
+    const name = character?.characterName || "A ficha";
+    setDeleting(true);
     const ok = await deleteCharacter(id);
-    if (ok) {
-      pushToast({ title: `${name} foi deletado.`, tone: "success" });
-      navigate("/");
-    }
+    setDeleting(false);
+    if (!ok) return; // a store já mostrou o motivo num toast
+    setConfirmDelete(false);
+    setEditMode(false);
+    pushToast({ title: `${name} foi deletado.`, tone: "success" });
+    navigate("/");
+  };
+
+  const onClearRolls = () => {
+    if (!clearScope) return;
+    // O PIN desta ficha autoriza os dois casos: a própria e a mesa toda.
+    void clearRolls(clearScope === "mesa" ? undefined : id, id);
+    setClearScope(null);
   };
 
   if (!character) {
@@ -92,6 +97,7 @@ export default function CharacterPage() {
   const cls = character.sheet.classes
     .map((k) => `${k.name}${k.subclass ? ` (${k.subclass})` : ""} ${k.level}`)
     .join(" / ");
+  const size = character.sheet.appearance?.size;
 
   const classes = character.sheet.classes;
   const setClasses = async (raw: typeof classes, changed = Math.max(0, raw.length - 1)) => {
@@ -111,12 +117,15 @@ export default function CharacterPage() {
       .map((spell) => `${spell.className}: +${spell.deltaCantrips} truque(s), +${spell.deltaSpells} magia(s), até ${spell.maxLevel}º`);
     pushToast({
       title: `Nível total ${result.summary.prevLevel} → ${result.summary.nextLevel}`,
-      description: [
-        gained.length ? `Ganhou: ${gained.join(", ")}.` : "",
-        spellNews.join(" "),
-        result.summary.pendingAsi.length ? `${result.summary.pendingAsi.length} aumento(s) de atributo/talento pendente(s).` : "",
-        result.summary.warnings.join(" "),
-      ].filter(Boolean).join(" ") || "Progressão recalculada.",
+      description:
+        [
+          gained.length ? `Ganhou: ${gained.join(", ")}.` : "",
+          spellNews.join(" "),
+          result.summary.pendingAsi.length ? `${result.summary.pendingAsi.length} aumento(s) de atributo/talento pendente(s).` : "",
+          result.summary.warnings.join(" "),
+        ]
+          .filter(Boolean)
+          .join(" ") || "Progressão recalculada.",
       tone: result.summary.warnings.length ? "danger" : "success",
     });
   };
@@ -139,7 +148,7 @@ export default function CharacterPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
         <Link to="/">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-3 w-3" /> Mesa
@@ -148,15 +157,11 @@ export default function CharacterPage() {
         <PinLock id={id} />
         <div className="ml-auto flex items-center gap-2">
           {editMode && (
-            <Button variant="danger" size="sm" onClick={() => void onDelete()}>
-              <Trash2 className="h-3 w-3" /> Deletar
+            <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="h-3 w-3" /> Deletar ficha
             </Button>
           )}
-          <Button
-            variant={editMode ? "success" : "outline"}
-            size="sm"
-            onClick={() => setEditMode(!editMode)}
-          >
+          <Button variant={editMode ? "success" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
             {editMode ? (
               <>
                 <Check className="h-3 w-3" /> Concluir edição
@@ -176,20 +181,25 @@ export default function CharacterPage() {
       >
         {editMode ? (
           <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <CharacterAvatar character={character} size={72} editable />
+              <div className="space-y-1 text-xs text-zinc-500">
+                <div>Toque na foto para enviar ou trocar a foto de perfil.</div>
+                {character.avatarVersion && (
+                  <Button variant="ghost" size="sm" onClick={() => void removeAvatar(id)}>
+                    <Trash2 className="h-3 w-3" /> Remover foto
+                  </Button>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="text-xs text-zinc-500">
                 Jogador
-                <EditableText
-                  value={character.playerName}
-                  onSave={(v) => patchCharacter(id, { playerName: v })}
-                />
+                <EditableText value={character.playerName} onSave={(v) => patchCharacter(id, { playerName: v })} />
               </label>
               <label className="text-xs text-zinc-500">
                 Personagem
-                <EditableText
-                  value={character.characterName}
-                  onSave={(v) => patchCharacter(id, { characterName: v })}
-                />
+                <EditableText value={character.characterName} onSave={(v) => patchCharacter(id, { characterName: v })} />
               </label>
               <label className="text-xs text-zinc-500">
                 Espécie/Raça
@@ -208,13 +218,29 @@ export default function CharacterPage() {
                 )}
               </label>
               <label className="text-xs text-zinc-500">
+                Tamanho
+                {isMaster ? (
+                  <select
+                    className={selectCls}
+                    value={CREATURE_SIZES.includes(size as (typeof CREATURE_SIZES)[number]) ? size : "Médio"}
+                    onChange={(e) => patchSheet(id, { appearance: { ...character.sheet.appearance, size: e.target.value } })}
+                  >
+                    {CREATURE_SIZES.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="block py-2 text-sm text-zinc-800 dark:text-zinc-200">{size || "—"}</span>
+                )}
+              </label>
+              <label className="text-xs text-zinc-500">
                 Tendência
                 <select
-                  className="h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  className={selectCls}
                   value={
-                    ALIGNMENTS.includes(
-                      (character.sheet.alignment ?? "") as (typeof ALIGNMENTS)[number],
-                    )
+                    ALIGNMENTS.includes((character.sheet.alignment ?? "") as (typeof ALIGNMENTS)[number])
                       ? character.sheet.alignment
                       : ""
                   }
@@ -241,7 +267,9 @@ export default function CharacterPage() {
             {/* Classes */}
             <div>
               <div className="mb-1 text-xs text-zinc-500">Classes</div>
-              <div className="mb-2 text-xs text-zinc-500">Nível total: {totalLevelOf(classes)}/{isMaster ? "∞ (Mestre)" : MAX_LEVEL}</div>
+              <div className="mb-2 text-xs text-zinc-500">
+                Nível total: {totalLevelOf(classes)}/{isMaster ? "∞ (Mestre)" : MAX_LEVEL}
+              </div>
               <div className="space-y-1">
                 {classes.map((c, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-1">
@@ -253,11 +281,20 @@ export default function CharacterPage() {
                         value={c.name}
                         onChange={(event) => updateClassEntry(i, { name: event.target.value, subclass: undefined })}
                       >
-                        {CLASSES_CATALOG.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}
+                        {CLASSES_CATALOG.map((entry) => (
+                          <option key={entry.name} value={entry.name}>
+                            {entry.name}
+                          </option>
+                        ))}
                       </select>
                     )}
                     {isMaster ? (
-                      <EditableText value={c.subclass ?? ""} onSave={(v) => updateClassEntry(i, { subclass: v || undefined })} placeholder="subclasse" className="w-40" />
+                      <EditableText
+                        value={c.subclass ?? ""}
+                        onSave={(v) => updateClassEntry(i, { subclass: v || undefined })}
+                        placeholder="subclasse"
+                        className="w-40"
+                      />
                     ) : (
                       <select
                         className="h-9 w-40 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -266,16 +303,14 @@ export default function CharacterPage() {
                         onChange={(event) => updateClassEntry(i, { subclass: event.target.value || undefined })}
                       >
                         <option value="">— subclasse —</option>
-                        {subclassNames(c.name).map((name) => <option key={name} value={name}>{name}</option>)}
+                        {subclassNames(c.name).map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
                       </select>
                     )}
-                    <EditableNumber
-                      value={c.level}
-                      min={1}
-                      max={20}
-                      onSave={(v) => updateClassEntry(i, { level: v })}
-                      className="w-16"
-                    />
+                    <EditableNumber value={c.level} min={1} max={20} onSave={(v) => updateClassEntry(i, { level: v })} className="w-16" />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -303,19 +338,21 @@ export default function CharacterPage() {
             )}
           </div>
         ) : (
-          <>
-            <div className="text-xs uppercase tracking-wider text-zinc-500">
-              {character.playerName}
+          <div className="flex items-center gap-4">
+            <CharacterAvatar character={character} size={80} editable />
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-wider text-zinc-500">{character.playerName}</div>
+              <h1 className="break-words font-mono text-3xl font-bold">{character.characterName}</h1>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                {[character.sheet.species, size, cls, character.sheet.background].filter(Boolean).join(" · ")}
+              </p>
             </div>
-            <h1 className="font-mono text-3xl font-bold">{character.characterName}</h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              {character.sheet.species} · {cls} · {character.sheet.background}
-            </p>
-          </>
+          </div>
         )}
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* grid-cols-1 = minmax(0, 1fr): selects com opções longas (modo edição) não alargam a página no celular */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <HpTracker id={id} />
           <Abilities id={id} />
@@ -353,7 +390,7 @@ export default function CharacterPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => limparHistorico("player")}
+                    onClick={() => setClearScope("player")}
                     aria-label="Limpar rolagens desta ficha"
                     title="Limpar rolagens desta ficha"
                   >
@@ -376,7 +413,7 @@ export default function CharacterPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => limparHistorico("mesa")}
+                    onClick={() => setClearScope("mesa")}
                     aria-label="Limpar todas as rolagens da mesa"
                     title="Limpar todas as rolagens da mesa"
                   >
@@ -393,16 +430,33 @@ export default function CharacterPage() {
           <ChangeLog id={id} />
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Deletar ${character.characterName}?`}
+        description="A ficha, a foto de perfil, o log de alterações e as rolagens dela serão apagados para sempre. Não dá para desfazer."
+        confirmLabel="Deletar para sempre"
+        busy={deleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void onDelete()}
+      />
+      <ConfirmDialog
+        open={clearScope !== null}
+        title={clearScope === "mesa" ? "Limpar TODAS as rolagens da mesa?" : "Limpar as rolagens desta ficha?"}
+        description={clearScope === "mesa" ? "Isso apaga o histórico de todos os jogadores." : undefined}
+        confirmLabel="Limpar"
+        onCancel={() => setClearScope(null)}
+        onConfirm={onClearRolls}
+      />
     </main>
   );
 }
 
 type PendingChoice = {
   kind: "asi" | "feat";
-  first?: AbilityKey;
-  second?: AbilityKey;
+  /** Incrementos já no formato da ficha (+1 por ponto; talento: +amount). */
+  abilities: Partial<Record<AbilityKey, number>>;
   feat?: string;
-  featAbility?: AbilityKey;
 };
 
 function PendingAdvancement({
@@ -413,106 +467,96 @@ function PendingAdvancement({
   onSave: (decision: AsiDecision) => Promise<void>;
 }) {
   const character = useStore((state) => state.characters[characterId]);
+  useStore((state) => state.homebrew); // talentos homebrew novos aparecem sem recarregar
   const [choices, setChoices] = useState<Record<string, PendingChoice>>({});
   if (!character) return null;
   const pending = pendingAsis(character.sheet.classes, character.sheet.advancement);
+  const raceName = character.sheet.raceInfo?.race ?? character.sheet.species;
+  const feats = allFeats().filter((entry) => !entry.races || entry.races.includes(raceName));
   return (
     <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
       <div className="text-sm font-medium">Progressão pendente</div>
       {pending.map((slot) => {
         const key = `${slot.className}:${slot.level}`;
-        const choice = choices[key] ?? { kind: "asi" };
-        const feat = choice.feat ? findFeat(choice.feat) : undefined;
+        const choice = choices[key] ?? { kind: "asi", abilities: {} };
+        const feat = choice.kind === "feat" && choice.feat ? findFeat(choice.feat) : undefined;
         const setChoice = (patch: Partial<PendingChoice>) =>
           setChoices((state) => ({ ...state, [key]: { ...choice, ...patch } }));
-        const valid = choice.kind === "asi"
-          ? !!choice.first && !!choice.second
-          : !!choice.feat && (!feat?.abilityIncrease || !!choice.featAbility);
+        const preview = applyAbilityIncrease(character.sheet.abilityScores, choice.abilities);
+        const valid =
+          choice.kind === "asi"
+            ? allocatedPoints(choice.abilities) === 2
+            : !!choice.feat && (!feat?.abilityIncrease || allocatedPoints(choice.abilities) === feat.abilityIncrease.amount);
         return (
           <div key={key} className="space-y-2 rounded border border-amber-200 bg-white p-2 dark:border-amber-900 dark:bg-zinc-900">
-            <div className="text-xs font-medium">{slot.className} · nível {slot.level}</div>
-            <select
-              className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-              value={choice.kind}
-              onChange={(event) => setChoice({ kind: event.target.value as "asi" | "feat", first: undefined, second: undefined, feat: undefined, featAbility: undefined })}
-            >
-              <option value="asi">Aumentar atributos</option>
-              <option value="feat">Ganhar talento</option>
-            </select>
+            <div className="text-xs font-medium">
+              {slot.className} · nível {slot.level}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                variant={choice.kind === "asi" ? "success" : "outline"}
+                onClick={() => choice.kind !== "asi" && setChoice({ kind: "asi", abilities: {}, feat: undefined })}
+              >
+                Pontos de atributo
+              </Button>
+              <Button
+                size="sm"
+                variant={choice.kind === "feat" ? "success" : "outline"}
+                onClick={() => choice.kind !== "feat" && setChoice({ kind: "feat", abilities: {}, feat: undefined })}
+              >
+                Talento
+              </Button>
+            </div>
             {choice.kind === "asi" ? (
-              <div className="grid grid-cols-2 gap-2">
-                {(["first", "second"] as const).map((field) => (
-                  <select
-                    key={field}
-                    className="h-8 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                    value={choice[field] ?? ""}
-                    onChange={(event) => setChoice({ [field]: event.target.value as AbilityKey })}
-                  >
-                    <option value="">— atributo +1 —</option>
-                    {ABILITY_ORDER.map((ability) => (
-                      <option
-                        key={ability}
-                        value={ability}
-                        disabled={
-                          character.sheet.abilityScores[ability] >= 20 ||
-                          (field === "second" && choice.first === ability && character.sheet.abilityScores[ability] >= 19)
-                        }
-                      >
-                        {ABILITY_LABELS[ability]}
-                      </option>
-                    ))}
-                  </select>
-                ))}
-              </div>
+              <PointAllocator
+                points={2}
+                maxPerAbility={2}
+                allocation={choice.abilities}
+                scores={preview}
+                onChange={(abilities) => setChoice({ abilities })}
+              />
             ) : (
               <div className="space-y-2">
                 <select
                   className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
                   value={choice.feat ?? ""}
-                  onChange={(event) => setChoice({ feat: event.target.value, featAbility: undefined })}
+                  onChange={(event) => setChoice({ feat: event.target.value || undefined, abilities: {} })}
                 >
                   <option value="">— talento —</option>
-                  {FEATS_CATALOG.filter((entry) => !entry.races || entry.races.includes(character.sheet.raceInfo?.race ?? character.sheet.species)).map((entry) => (
+                  {feats.map((entry) => (
                     <option key={entry.name} value={entry.name}>
-                      {entry.name}{entry.prerequisite ? ` — pré-requisito: ${entry.prerequisite}` : ""}
+                      {entry.name}
+                      {entry.source === "Homebrew" ? " (homebrew)" : ""}
+                      {entry.prerequisite ? ` — pré-requisito: ${entry.prerequisite}` : ""}
                     </option>
                   ))}
                 </select>
                 {feat?.abilityIncrease && (
-                  <select
-                    className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                    value={choice.featAbility ?? ""}
-                    onChange={(event) => setChoice({ featAbility: event.target.value as AbilityKey })}
-                  >
-                    <option value="">— atributo do talento —</option>
-                    {feat.abilityIncrease.choose.map((ability) => (
-                      <option key={ability} value={ability} disabled={character.sheet.abilityScores[ability] >= 20}>
-                        {ABILITY_LABELS[ability]}
-                      </option>
-                    ))}
-                  </select>
+                  <PointAllocator
+                    points={1}
+                    amount={feat.abilityIncrease.amount}
+                    allowed={feat.abilityIncrease.choose}
+                    allocation={toAllocation(choice.abilities, feat.abilityIncrease.amount)}
+                    scores={preview}
+                    onChange={(allocation) => setChoice({ abilities: fromAllocation(allocation, feat.abilityIncrease!.amount) })}
+                  />
                 )}
+                {feat && <p className="whitespace-pre-line text-xs text-zinc-600 dark:text-zinc-300">{feat.description}</p>}
               </div>
             )}
             <Button
               size="sm"
               disabled={!valid}
-              onClick={() => {
-                const abilities: Partial<Record<AbilityKey, number>> = {};
-                if (choice.kind === "asi") {
-                  if (choice.first) abilities[choice.first] = (abilities[choice.first] ?? 0) + 1;
-                  if (choice.second) abilities[choice.second] = (abilities[choice.second] ?? 0) + 1;
-                } else if (feat?.abilityIncrease && choice.featAbility) {
-                  abilities[choice.featAbility] = feat.abilityIncrease.amount;
-                }
+              onClick={() =>
                 void onSave({
                   className: slot.className,
                   level: slot.level,
                   kind: choice.kind,
                   ...(choice.kind === "feat" ? { feat: choice.feat } : {}),
-                  ...(Object.keys(abilities).length ? { abilities } : {}),
-                });
-              }}
+                  ...(Object.keys(choice.abilities).length ? { abilities: choice.abilities } : {}),
+                })
+              }
             >
               Aplicar escolha
             </Button>

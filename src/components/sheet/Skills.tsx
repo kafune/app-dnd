@@ -9,7 +9,7 @@ import {
 } from "@/lib/types";
 import { roll } from "@/lib/dice";
 import { backgroundSkills, findBackground } from "@/data/backgroundsCatalog";
-import { findRace, findSubrace } from "@/data/racesCatalog";
+import { resolveRace } from "@/data/racesCatalog";
 import { classSkillBudget, featSkillChoices } from "@/lib/progression";
 
 const ALL_SKILLS = Object.keys(SKILL_TO_ABILITY) as SkillName[];
@@ -24,21 +24,24 @@ export function Skills({ id }: { id: string }) {
 
   const profMap = new Map(c.sheet.skills.map((s) => [s.name, s]));
   const background = backgroundSkills(findBackground(c.sheet.background));
-  const race = findRace(c.sheet.raceInfo?.race ?? c.sheet.species);
-  const subrace = findSubrace(race?.name ?? "", c.sheet.raceInfo?.subrace ?? "");
-  const raceTraits = [...(race?.traits ?? []), ...(subrace?.traits ?? [])];
+  const raceTraits = resolveRace(c.sheet.raceInfo?.race ?? c.sheet.species, c.sheet.raceInfo?.subrace)?.traits ?? [];
   const fixed = new Set<SkillName>([
     ...background.fixed,
     ...raceTraits.flatMap((trait) => trait.skills ?? []),
   ]);
-  const parts = classSkillBudget(c.sheet.classes);
+  const parts = classSkillBudget(c.sheet.classes, { fullMulticlassSkills: c.sheet.houseRules?.multiclassSkills });
   const raceChoices = raceTraits.reduce((sum, trait) => sum + (trait.skillChoices ?? 0), 0);
-  const freeChoices = raceChoices + featSkillChoices(c.sheet.features);
-  const maximum = fixed.size + background.choose + parts.reduce((sum, part) => sum + part.count, 0) + freeChoices;
+  const featChoices = featSkillChoices(c.sheet.features);
+  const maximum =
+    fixed.size + background.choose + parts.reduce((sum, part) => sum + part.count, 0) + raceChoices + featChoices;
   const allowed = new Set<SkillName>(fixed);
   for (const part of parts) for (const skill of part.from ?? ALL_SKILLS) allowed.add(skill);
   for (const skill of background.from) allowed.add(skill);
-  if (freeChoices > 0) for (const skill of ALL_SKILLS) allowed.add(skill);
+  for (const trait of raceTraits) {
+    if (!trait.skillChoices) continue;
+    for (const skill of trait.skillChoiceFrom ?? ALL_SKILLS) allowed.add(skill);
+  }
+  if (featChoices > 0) for (const skill of ALL_SKILLS) allowed.add(skill);
 
   // ciclo: nenhuma -> proficiente -> especialista -> nenhuma
   const cycleSkill = (name: SkillName) => {

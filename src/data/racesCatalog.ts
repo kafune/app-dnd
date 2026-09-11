@@ -1,4 +1,14 @@
-import type { RaceDef, RaceTraitDef, SubraceDef } from "@/lib/types";
+import {
+  ABILITY_ORDER,
+  type AbilityKey,
+  type CreatureSize,
+  type RaceDef,
+  type RaceNoteField,
+  type RaceTraitDef,
+  type SourceBook,
+  type SubraceDef,
+} from "@/lib/types";
+import { homebrewItems, homebrewVersion } from "./homebrewRegistry";
 
 /**
  * Catálogo de raças (PT-BR) com traços completos e efeitos mecânicos.
@@ -7,7 +17,14 @@ import type { RaceDef, RaceTraitDef, SubraceDef } from "@/lib/types";
  *   a partir do texto do livro.
  * - Guia de Volo (VGtM), Elemental Evil (EEPC), Tomo de Mordenkainen (MToF) e
  *   The Tortle Package: raças usadas na mesa, autoradas a partir das regras oficiais.
+ * - Monstros do Multiverso (MPMM): Shadar-Kai e Kenku revisados, como variantes.
+ * - Eberron (ERLW): Marca da Descoberta, variante de meio-orc.
+ * - Midgard Heroes Handbook (Kobold Press): Shade.
  * - Homebrew: Thri-kreen (não existe versão oficial em 5e 2014).
+ * - Raças e traços homebrew do Mestre entram por `allRaces()` / `findRace()`.
+ *
+ * Variantes (`replaceBase`) substituem a raça base em vez de somar a ela; use
+ * `resolveRace()` para obter atributos, traços e idiomas já combinados.
  *
  * Nomes de magias em `spells` são idênticos aos de `spellsCatalog.json`.
  */
@@ -482,7 +499,7 @@ const MEIO_ELFO: RaceDef = {
   source: "PHB",
   description:
     "Vagando entre dois mundos sem pertencer a nenhum, os meio-elfos combinam a curiosidade, inventividade e ambição humanas com os sentidos refinados, o amor à natureza e o gosto artístico dos elfos. Costumam ser excelentes embaixadores e intermediadores.",
-  abilityScoreIncrease: { cha: 2, choose: { count: 2, amount: 1 } },
+  abilityScoreIncrease: { cha: 2, choose: { count: 2, amount: 1, exclude: ["cha"] } },
   size: "Médio",
   speed: 9,
   languages: ["Comum", "Élfico"],
@@ -499,11 +516,41 @@ const MEIO_ELFO: RaceDef = {
   subraces: [],
 };
 
+const MARCA_DA_DESCOBERTA: SubraceDef = {
+  name: "Marca da Descoberta",
+  source: "ERLW",
+  description:
+    "Variante dracomarcada de Eberron: Ascensão do Último Conflito, ligada à Casa Tharashk. Substitui os traços de meio-orc do Livro do Jogador; confirme com o Mestre se Eberron vale na mesa.",
+  replaceBase: true,
+  abilityScoreIncrease: { wis: 2, con: 1 },
+  languages: ["Comum", "Goblin"],
+  extraLanguages: 0,
+  traits: [
+    visaoNoEscuro("Graças ao seu sangue orc,"),
+    {
+      name: "Intuição do Caçador",
+      description:
+        "Sempre que fizer um teste de Sabedoria (Percepção) ou de Sabedoria (Sobrevivência), você pode rolar um d4 e somar o número obtido ao total do teste.",
+    },
+    {
+      name: "Magia do Descobridor",
+      description:
+        "Você pode conjurar a magia marca do caçador com este traço. A partir do 3º nível, você também pode conjurar a magia localizar objeto com ele. Depois de conjurar qualquer uma dessas magias com este traço, você não pode conjurar essa mesma magia com ele de novo até terminar um descanso longo. Sabedoria é sua habilidade de conjuração para essas magias.",
+      spells: ["Marca do Caçador", "Localizar Objeto"],
+    },
+    {
+      name: "Magias da Marca",
+      description:
+        "Se você tiver a característica Conjuração ou Magia de Pacto, as magias a seguir são adicionadas à lista de magias de cada classe conjuradora que você tiver. 1º círculo: fogo das fadas, passos longos. 2º círculo: localizar animais ou plantas, localizar objeto. 3º círculo: clarividência, falar com plantas. 4º círculo: adivinhação, localizar criatura. 5º círculo: comunhão com a natureza.",
+    },
+  ],
+};
+
 const MEIO_ORC: RaceDef = {
   name: "Meio-orc",
   source: "PHB",
   description:
-    "Marcados pela herança orc, os meio-orcs sentem emoções poderosas e se firmam pela força física, pela resistência e pela pura determinação herdada dos ancestrais humanos. Vivem entre orcs ou em terras humanas, conquistando aceitação a duras penas.",
+    "Marcados pela herança orc, os meio-orcs sentem emoções poderosas e se firmam pela força física, pela resistência e pela pura determinação herdada dos ancestrais humanos. Vivem entre orcs ou em terras humanas, conquistando aceitação a duras penas. Sem sub-raça vale o Livro do Jogador; a Marca da Descoberta (Eberron) é uma variante opcional.",
   abilityScoreIncrease: { str: 2, con: 1 },
   size: "Médio",
   speed: 9,
@@ -520,6 +567,7 @@ const MEIO_ORC: RaceDef = {
       name: "Resistência Implacável",
       description:
         "Quando você é reduzido a 0 pontos de vida mas não é completamente morto, você pode voltar para 1 ponto de vida. Você não pode usar essa característica novamente até completar um descanso longo.",
+      resource: { max: 1, recharge: "long" },
     },
     {
       name: "Ataques Selvagens",
@@ -527,7 +575,7 @@ const MEIO_ORC: RaceDef = {
         "Quando você atinge um acerto crítico com uma arma corpo-a-corpo, você pode rolar um dos dados de dano da arma mais uma vez e adicioná-lo ao dano extra causado pelo acerto crítico.",
     },
   ],
-  subraces: [],
+  subraces: [MARCA_DA_DESCOBERTA],
 };
 
 const TIEFLING: RaceDef = {
@@ -940,11 +988,8 @@ const HOMEM_LAGARTO: RaceDef = {
       name: "Conhecimento do Caçador",
       description:
         "Você ganha proficiência em duas das seguintes perícias, à sua escolha: Adestrar Animais, Natureza, Percepção, Furtividade e Sobrevivência.",
-      choice: {
-        label: "Perícias do caçador (escolha duas)",
-        options: ["Adestrar Animais", "Natureza", "Percepção", "Furtividade", "Sobrevivência"],
-      },
       skillChoices: 2,
+      skillChoiceFrom: ["Adestrar Animais", "Natureza", "Percepção", "Furtividade", "Sobrevivência"],
     },
     {
       name: "Armadura Natural",
@@ -964,11 +1009,46 @@ const HOMEM_LAGARTO: RaceDef = {
   subraces: [],
 };
 
+const KENKU_MPMM: SubraceDef = {
+  name: "Monstros do Multiverso",
+  source: "MPMM",
+  description:
+    "Versão revisada de Mordenkainen Apresenta: Monstros do Multiverso (2022). Substitui os traços do Guia de Volo: aumento de atributo flexível, tamanho Pequeno ou Médio, fala normalmente e usa a Lembrança Kenku.",
+  replaceBase: true,
+  abilityScoreIncrease: { choose: { count: 3, amount: 1, maxPerAbility: 2 } },
+  sizeOptions: ["Pequeno", "Médio"],
+  languages: ["Comum"],
+  extraLanguages: 1,
+  traits: [
+    {
+      name: "Tipo de Criatura",
+      description: "Você é um Humanoide. Seu tamanho é Médio ou Pequeno, à sua escolha ao selecionar esta raça.",
+    },
+    {
+      name: "Duplicação Especializada",
+      description:
+        "Quando você copia escrita ou trabalho artesanal produzido por você ou por outra pessoa, você tem vantagem em quaisquer testes de habilidade que fizer para produzir uma cópia exata.",
+    },
+    {
+      name: "Lembrança Kenku",
+      description:
+        "Graças à sua memória de corvídeo, você tem proficiência em duas perícias à sua escolha. Além disso, quando fizer um teste de habilidade usando qualquer perícia em que tenha proficiência, você pode se dar vantagem no teste antes de rolar o d20. Você pode se dar vantagem dessa forma um número de vezes igual ao seu bônus de proficiência e recupera todos os usos gastos quando termina um descanso longo.",
+      skillChoices: 2,
+      resource: { max: "prof", recharge: "long" },
+    },
+    {
+      name: "Mímica",
+      description:
+        "Você pode imitar com precisão sons que ouviu, incluindo vozes. Uma criatura que ouça os sons que você faz só percebe que são imitações com um teste bem-sucedido de Sabedoria (Intuição) contra CD 8 + seu bônus de proficiência + seu modificador de Carisma.",
+    },
+  ],
+};
+
 const KENKU: RaceDef = {
   name: "Kenku",
   source: "VGtM",
   description:
-    "Humanoides corvídeos amaldiçoados há eras: perderam as asas, a voz própria e a criatividade, e só falam imitando sons que já ouviram. Vivem nas margens das cidades como ladrões, falsificadores e mensageiros.",
+    "Humanoides corvídeos amaldiçoados há eras: perderam as asas, a voz própria e a criatividade, e só falam imitando sons que já ouviram. Vivem nas margens das cidades como ladrões, falsificadores e mensageiros. Sem sub-raça vale o Guia de Volo; a versão de Monstros do Multiverso é uma variante.",
   abilityScoreIncrease: { dex: 2, wis: 1 },
   size: "Médio",
   speed: 9,
@@ -984,11 +1064,8 @@ const KENKU: RaceDef = {
       name: "Treinamento Kenku",
       description:
         "Você tem proficiência em duas das seguintes perícias, à sua escolha: Acrobacia, Enganação, Furtividade e Prestidigitação.",
-      choice: {
-        label: "Perícias kenku (escolha duas)",
-        options: ["Acrobacia", "Enganação", "Furtividade", "Prestidigitação"],
-      },
       skillChoices: 2,
+      skillChoiceFrom: ["Acrobacia", "Enganação", "Furtividade", "Prestidigitação"],
     },
     {
       name: "Mímica",
@@ -1001,7 +1078,7 @@ const KENKU: RaceDef = {
         "Você pode ler e escrever Comum e Aéreo (Auran), mas só consegue falar usando o traço Mímica.",
     },
   ],
-  subraces: [],
+  subraces: [KENKU_MPMM],
 };
 
 const KOBOLD: RaceDef = {
@@ -1179,6 +1256,158 @@ const THRI_KREEN: RaceDef = {
 };
 
 // ---------------------------------------------------------------------------
+// Monstros do Multiverso / Tomo de Mordenkainen: Shadar-Kai
+// ---------------------------------------------------------------------------
+
+const SHADAR_KAI: RaceDef = {
+  name: "Shadar-Kai",
+  source: "MPMM",
+  description:
+    "Elfos a serviço da Rainha Corvo que vivem no Pendor das Sombras (Shadowfell). O plano sombrio os marcou com pele pálida ou acinzentada, olhar distante e um vínculo com a morte que lhes permite atravessar as sombras. Escolha em Sub-raça a versão do livro usada na mesa.",
+  abilityScoreIncrease: {},
+  size: "Médio",
+  speed: 9,
+  languages: ["Comum"],
+  extraLanguages: 1,
+  subraceRequired: true,
+  traits: [],
+  subraces: [
+    {
+      name: "Monstros do Multiverso",
+      source: "MPMM",
+      description:
+        "Versão de Mordenkainen Apresenta: Monstros do Multiverso (2022): aumento de atributo flexível, Bênção da Rainha Corvo várias vezes por dia e Transe que rende proficiências temporárias.",
+      replaceBase: true,
+      abilityScoreIncrease: { choose: { count: 3, amount: 1, maxPerAbility: 2 } },
+      languages: ["Comum"],
+      extraLanguages: 1,
+      traits: [
+        {
+          name: "Tipo de Criatura",
+          description:
+            "Você é um Humanoide. Você também é considerado um elfo para qualquer pré-requisito ou efeito que exija que você seja um elfo.",
+        },
+        {
+          name: "Bênção da Rainha Corvo",
+          description:
+            "Com uma ação bônus, você se teleporta magicamente até 9 metros para um espaço desocupado que possa ver. Você pode usar este traço um número de vezes igual ao seu bônus de proficiência e recupera todos os usos gastos quando termina um descanso longo. A partir do 3º nível, você também ganha resistência a todo dano quando se teleporta com este traço. A resistência dura até o início do seu próximo turno; durante esse tempo, você parece fantasmagórico e translúcido.",
+          resource: { max: "prof", recharge: "long" },
+        },
+        {
+          name: "Visão no Escuro",
+          description:
+            "Você enxerga na penumbra a até 18 metros como se fosse luz plena, e no escuro como se fosse penumbra. Você não discerne cores no escuro, apenas tons de cinza.",
+        },
+        {
+          name: "Ancestral Feérico",
+          description:
+            "Você tem vantagem nos testes de resistência que fizer para evitar ou encerrar a condição enfeitiçado em si mesmo.",
+        },
+        {
+          name: "Sentidos Aguçados",
+          description: "Você tem proficiência na perícia Percepção.",
+          skills: ["Percepção"],
+        },
+        {
+          name: "Resistência Necrótica",
+          description: "Você tem resistência a dano necrótico.",
+        },
+        {
+          name: "Transe",
+          description:
+            "Você não precisa dormir, e magia não pode colocá-lo para dormir. Você pode terminar um descanso longo em 4 horas se passar essas horas numa meditação semelhante a um transe, durante a qual permanece consciente. Sempre que terminar esse transe, você pode ganhar duas proficiências que não possui, cada uma com uma arma ou uma ferramenta à sua escolha dentre as do Livro do Jogador. Você as adquire misticamente, a partir da memória compartilhada élfica, e as mantém até terminar seu próximo descanso longo.",
+        },
+      ],
+    },
+    {
+      name: "Tomo dos Inimigos de Mordenkainen",
+      source: "MToF",
+      description:
+        "Versão original (2018), uma sub-raça de elfo: Destreza +2 e Constituição +1, idioma Élfico e a Bênção da Rainha Corvo uma vez por descanso longo.",
+      replaceBase: true,
+      abilityScoreIncrease: { dex: 2, con: 1 },
+      languages: ["Comum", "Élfico"],
+      extraLanguages: 0,
+      traits: [
+        visaoNoEscuro("Acostumado às sombras do Pendor das Sombras,"),
+        ANCESTRAL_FEERICO,
+        ELFO.traits.find((trait) => trait.name === "Transe")!,
+        {
+          name: "Sentidos Aguçados",
+          description: "Você tem proficiência na perícia Percepção.",
+          skills: ["Percepção"],
+        },
+        {
+          name: "Resistência Necrótica",
+          description: "Você tem resistência a dano necrótico.",
+        },
+        {
+          name: "Bênção da Rainha Corvo",
+          description:
+            "Com uma ação bônus, você pode se teleportar magicamente até 9 metros para um espaço desocupado que possa ver. Depois de usar este traço, você não pode usá-lo novamente até terminar um descanso longo. A partir do 3º nível, você também ganha resistência a todo dano quando se teleporta com este traço; a resistência dura até o início do seu próximo turno, e durante esse tempo você parece fantasmagórico e translúcido.",
+          resource: { max: 1, recharge: "long" },
+        },
+      ],
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Midgard Heroes Handbook (Kobold Press): Shade
+// ---------------------------------------------------------------------------
+
+const SHADE: RaceDef = {
+  name: "Shade",
+  source: "MHH",
+  description:
+    "Espíritos de pessoas que morreram mas se recusaram a partir. Presos entre a vida e a morte, conservam a aparência da raça que tinham em vida (a Origem em Vida) e carregam o frio do além. Raça do Midgard Heroes Handbook (Kobold Press), fora do Livro do Jogador: confirme com o Mestre.",
+  abilityScoreIncrease: { cha: 1, choose: { count: 1, amount: 1, exclude: ["cha"] } },
+  size: "Médio",
+  sizeOptions: ["Pequeno", "Médio"],
+  speed: 9,
+  speedEditable: true,
+  languages: ["Comum"],
+  extraLanguages: 1,
+  noteField: {
+    label: "Origem em Vida: raça cuja aparência você assume",
+    placeholder: "Ex.: Thri-kreen\nDescreva também como essa aparência se manifesta, se quiser.",
+    help: "A primeira linha vira o nome da raça de origem na ficha. Ajuste o tamanho e o deslocamento para os dessa raça e escolha um idioma dela nos idiomas adicionais.",
+    traitName: "Origem em Vida",
+  },
+  traits: [
+    {
+      name: "Origem em Vida",
+      description:
+        "Escolha outra raça para representar quem você era em vida. Você mantém a aparência dessa raça, e seu tamanho e deslocamento são os dela. Você fala, lê e escreve Comum e um idioma da sua raça de origem.",
+    },
+    visaoNoEscuro("Acostumado à escuridão entre a vida e a morte,"),
+    {
+      name: "Carne Fantasmagórica",
+      description:
+        "A partir do 3º nível, você pode usar sua ação para dissolver seu corpo físico na matéria efêmera dos espíritos. Você fica translúcido e sem cor, e o ar ao seu redor esfria. A transformação dura 1 minuto ou até você encerrá-la com uma ação bônus. Enquanto durar, você ganha deslocamento de voo de 9 metros e pode pairar; tem resistência a dano de concussão, cortante e perfurante de ataques não mágicos que não sejam de prata; tem vantagem em testes para escapar de uma agarrada ou de ficar impedido; e pode atravessar criaturas e objetos como se fossem terreno difícil. Se terminar o turno dentro de um objeto, você sofre 1d10 de dano de energia. Depois de usar este traço, você não pode usá-lo novamente até terminar um descanso longo.",
+      resource: { max: 1, recharge: "long" },
+    },
+    {
+      name: "Morte Imperfeita",
+      description:
+        "Você é um humanoide, mas sua transição parcial para a morte-viva o torna suscetível a efeitos que afetam mortos-vivos. Você pode recuperar pontos de vida com magias como curar ferimentos, mas também é afetado por efeitos de jogo que miram especificamente mortos-vivos, como a característica Expulsar Mortos-Vivos do clérigo.",
+    },
+    {
+      name: "Drenagem de Vida",
+      description:
+        "Quando você causa dano a uma criatura com um ataque ou magia, pode escolher causar dano necrótico extra igual ao seu nível. Se a raça da criatura for a mesma da sua Origem em Vida, você ganha pontos de vida temporários iguais ao dano necrótico causado. Depois de usar este traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
+      resource: { max: 1, recharge: "short" },
+    },
+    {
+      name: "Resiliência Espectral",
+      description:
+        "Você tem vantagem em testes de resistência contra veneno e doenças, e tem resistência a dano necrótico.",
+    },
+  ],
+  subraces: [],
+};
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -1203,6 +1432,8 @@ export const RACES_CATALOG: RaceDef[] = [
   MEIO_ELFO,
   MEIO_ORC,
   ORC,
+  SHADAR_KAI,
+  SHADE,
   TABAXI,
   THRI_KREEN,
   TIEFLING,
@@ -1218,10 +1449,95 @@ function normalize(s: string): string {
     .trim();
 }
 
-const BY_NAME = new Map<string, RaceDef>(RACES_CATALOG.map((r) => [normalize(r.name), r]));
+const OFFICIAL_BY_NAME = new Map<string, RaceDef>(RACES_CATALOG.map((r) => [normalize(r.name), r]));
+
+/** Traços raciais oficiais, um por nome (a primeira versão encontrada), para montar raças homebrew. */
+export const OFFICIAL_RACE_TRAITS: RaceTraitDef[] = (() => {
+  const byName = new Map<string, RaceTraitDef>();
+  for (const race of RACES_CATALOG) {
+    for (const trait of [...race.traits, ...race.subraces.flatMap((subrace) => subrace.traits)]) {
+      const key = normalize(trait.name);
+      if (!byName.has(key)) byName.set(key, trait);
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+})();
+
+type HomebrewRaces = {
+  version: number;
+  all: RaceDef[];
+  byName: Map<string, RaceDef>;
+  traits: RaceTraitDef[];
+};
+
+let homebrewCache: HomebrewRaces | null = null;
+
+/** Converte as raças/traços homebrew do registro (traços por nome) em `RaceDef`, com cache por versão. */
+function homebrewRaces(): HomebrewRaces {
+  const version = homebrewVersion();
+  if (homebrewCache?.version === version) return homebrewCache;
+  const items = homebrewItems();
+  const traits = items.flatMap((item) => (item.kind === "trait" ? [item.data] : []));
+  const homebrewTraitByName = new Map(traits.map((trait) => [normalize(trait.name), trait]));
+  const officialTraitByName = new Map(OFFICIAL_RACE_TRAITS.map((trait) => [normalize(trait.name), trait]));
+  const traitFor = (name: string): RaceTraitDef =>
+    homebrewTraitByName.get(normalize(name)) ??
+    officialTraitByName.get(normalize(name)) ?? {
+      name,
+      description: "Traço não encontrado: ele foi apagado ou renomeado na biblioteca homebrew.",
+    };
+  const races: RaceDef[] = [];
+  for (const item of items) {
+    // Homebrew nunca sobrescreve uma raça oficial com o mesmo nome.
+    if (item.kind !== "race" || OFFICIAL_BY_NAME.has(normalize(item.data.name))) continue;
+    const data = item.data;
+    races.push({
+      name: data.name,
+      source: "Homebrew",
+      description: data.description?.trim() || "Raça homebrew criada pelo Mestre.",
+      abilityScoreIncrease: data.abilityScoreIncrease ?? {},
+      size: data.size ?? "Médio",
+      ...(data.sizeOptions?.length ? { sizeOptions: data.sizeOptions } : {}),
+      speed: Number(data.speed) || 9,
+      ...(data.speedEditable ? { speedEditable: true } : {}),
+      languages: data.languages ?? ["Comum"],
+      extraLanguages: data.extraLanguages ?? 0,
+      traits: (data.traitNames ?? []).map(traitFor),
+      subraces: (data.subraces ?? []).map((subrace) => ({
+        name: subrace.name,
+        source: "Homebrew" as const,
+        description: subrace.description,
+        abilityScoreIncrease: subrace.abilityScoreIncrease ?? {},
+        traits: (subrace.traitNames ?? []).map(traitFor),
+        ...(subrace.speed ? { speed: subrace.speed } : {}),
+      })),
+      ...(data.subraceRequired ? { subraceRequired: true } : {}),
+      ...(data.noteField?.label ? { noteField: data.noteField } : {}),
+      homebrewId: item.id,
+    });
+  }
+  homebrewCache = {
+    version,
+    all: [...RACES_CATALOG, ...races].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    byName: new Map(races.map((race) => [normalize(race.name), race])),
+    traits,
+  };
+  return homebrewCache;
+}
+
+/** Raças oficiais + homebrew do Mestre, em ordem alfabética. */
+export function allRaces(): RaceDef[] {
+  return homebrewRaces().all;
+}
+
+/** Traços da biblioteca homebrew do Mestre. */
+export function homebrewRaceTraits(): RaceTraitDef[] {
+  return homebrewRaces().traits;
+}
 
 export function findRace(name: string): RaceDef | undefined {
-  return BY_NAME.get(normalize(name));
+  const key = normalize(name);
+  return OFFICIAL_BY_NAME.get(key) ?? homebrewRaces().byName.get(key);
 }
 
 export function findSubrace(race: string, sub: string): SubraceDef | undefined {
@@ -1229,4 +1545,67 @@ export function findSubrace(race: string, sub: string): SubraceDef | undefined {
   if (!r) return undefined;
   const key = normalize(sub);
   return r.subraces.find((s) => normalize(s.name) === key);
+}
+
+/** Raça + sub-raça já combinadas: o que a criação e a ficha precisam saber. */
+export type ResolvedRace = {
+  race: RaceDef;
+  subrace?: SubraceDef;
+  source: SourceBook;
+  /** Bônus fixos somados (ou só os da variante, se ela substitui a base). */
+  fixedBonuses: Partial<Record<AbilityKey, number>>;
+  /** Pontos à escolha somados. */
+  choose?: { count: number; amount: number; maxPerAbility: number; exclude: AbilityKey[] };
+  size: CreatureSize;
+  sizeOptions: CreatureSize[];
+  speed: number;
+  speedEditable: boolean;
+  languages: string[];
+  extraLanguages: number;
+  traits: RaceTraitDef[];
+  noteField?: RaceNoteField;
+};
+
+export function resolveRace(raceName: string, subraceName?: string): ResolvedRace | undefined {
+  const race = findRace(raceName);
+  if (!race) return undefined;
+  const subrace = subraceName ? findSubrace(race.name, subraceName) : undefined;
+  const replace = !!subrace?.replaceBase;
+  const increases = replace
+    ? [subrace!.abilityScoreIncrease]
+    : [race.abilityScoreIncrease, ...(subrace ? [subrace.abilityScoreIncrease] : [])];
+  const fixedBonuses: Partial<Record<AbilityKey, number>> = {};
+  let choose: ResolvedRace["choose"];
+  for (const increase of increases) {
+    for (const key of ABILITY_ORDER) {
+      const amount = increase[key];
+      if (amount) fixedBonuses[key] = (fixedBonuses[key] ?? 0) + amount;
+    }
+    const extra = increase.choose;
+    if (!extra || extra.count <= 0) continue;
+    choose = choose
+      ? {
+          count: choose.count + extra.count,
+          amount: choose.amount,
+          maxPerAbility: Math.max(choose.maxPerAbility, extra.maxPerAbility ?? 1),
+          exclude: choose.exclude.filter((key) => (extra.exclude ?? []).includes(key)),
+        }
+      : { count: extra.count, amount: extra.amount, maxPerAbility: extra.maxPerAbility ?? 1, exclude: extra.exclude ?? [] };
+  }
+  const size = subrace?.size ?? race.size;
+  return {
+    race,
+    ...(subrace ? { subrace } : {}),
+    source: subrace?.source ?? race.source,
+    fixedBonuses,
+    ...(choose ? { choose } : {}),
+    size,
+    sizeOptions: subrace?.sizeOptions ?? race.sizeOptions ?? [size],
+    speed: subrace?.speed ?? race.speed,
+    speedEditable: !!race.speedEditable,
+    languages: subrace?.languages ?? race.languages,
+    extraLanguages: subrace?.extraLanguages ?? race.extraLanguages,
+    traits: replace ? [...subrace!.traits] : [...race.traits, ...(subrace?.traits ?? [])],
+    ...(race.noteField ? { noteField: race.noteField } : {}),
+  };
 }

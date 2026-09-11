@@ -1,4 +1,5 @@
 import type { FeatDef } from "@/lib/types";
+import { homebrewItems, homebrewVersion } from "./homebrewRegistry";
 
 // Catálogo de talentos (feats) em PT-BR, autorado a partir dos livros:
 // - PHB: Livro do Jogador, cap. 6 "Opções de Personalização" (42 talentos)
@@ -718,7 +719,35 @@ const FEATS_BY_KEY: ReadonlyMap<string, FeatDef> = new Map(
   FEATS_CATALOG.map((f) => [normalizeName(f.name), f]),
 );
 
-/** Busca um talento pelo nome, ignorando acentos, caixa e espaços nas pontas. */
+type HomebrewFeats = { version: number; all: FeatDef[]; byKey: Map<string, FeatDef> };
+
+let homebrewCache: HomebrewFeats | null = null;
+
+/** Talentos homebrew do Mestre (do registro), com cache por versão. */
+function homebrewFeats(): HomebrewFeats {
+  const version = homebrewVersion();
+  if (homebrewCache?.version === version) return homebrewCache;
+  const feats: FeatDef[] = homebrewItems().flatMap((item) =>
+    // Homebrew nunca sobrescreve um talento oficial com o mesmo nome.
+    item.kind === "feat" && !FEATS_BY_KEY.has(normalizeName(item.data.name))
+      ? [{ ...item.data, source: "Homebrew" as const, homebrewId: item.id }]
+      : [],
+  );
+  homebrewCache = {
+    version,
+    all: [...FEATS_CATALOG, ...feats].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    byKey: new Map(feats.map((feat) => [normalizeName(feat.name), feat])),
+  };
+  return homebrewCache;
+}
+
+/** Talentos oficiais + homebrew do Mestre, em ordem alfabética. */
+export function allFeats(): FeatDef[] {
+  return homebrewFeats().all;
+}
+
+/** Busca um talento pelo nome (oficial ou homebrew), ignorando acentos, caixa e espaços nas pontas. */
 export function findFeat(name: string): FeatDef | undefined {
-  return FEATS_BY_KEY.get(normalizeName(name));
+  const key = normalizeName(name);
+  return FEATS_BY_KEY.get(key) ?? homebrewFeats().byKey.get(key);
 }

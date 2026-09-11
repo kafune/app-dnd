@@ -24,6 +24,7 @@ import {
   grantedSpellsFor,
   hitDieValue,
   proficiencyBonusForLevel,
+  raceResourcesFor,
   spellSlotsFor,
   totalLevelOf,
   norm,
@@ -31,6 +32,7 @@ import {
 import { findBackground, backgroundSkills } from "@/data/backgroundsCatalog";
 import { findFeat } from "@/data/featsCatalog";
 import { findTrait } from "@/data/traitsCatalog";
+import { resolveRace } from "@/data/racesCatalog";
 
 export { proficiencyBonusForLevel, hitDieValue, spellSlotsFor as spellSlotsForClasses };
 
@@ -79,6 +81,10 @@ export type CharacterDraft = {
   raceFeat?: string;
   /** Perícias escolhidas por traços raciais (ex.: Versatilidade em Perícia). */
   raceSkillChoices: SkillName[];
+  /** Anotação livre pedida pela raça (ex.: Shade: raça de origem cuja aparência assume). */
+  raceNote?: string;
+  /** Regra da casa: na multiclasse, cada classe dá a escolha completa de perícias dela. */
+  multiclassFullSkills?: boolean;
   // Classes (uma ou mais — multiclasse)
   classes: DraftClass[];
   /** Decisões de ASI/talento nos níveis já alcançados. */
@@ -233,31 +239,58 @@ export function fixedSkills(draft: Pick<CharacterDraft, "background" | "raceTrai
  * Perícias "à escolha" do rascunho: por parte (classe, multiclasse, antecedente, talentos),
  * com o total. As fixas não entram.
  */
-export function skillBudget(draft: Pick<CharacterDraft, "classes" | "background" | "advancement" | "raceFeat">) {
-  const parts = classSkillBudget(draft.classes.map((c) => ({ name: c.name, level: c.level, subclass: c.subclass })));
+export function skillBudget(
+  draft: Pick<CharacterDraft, "classes" | "background" | "advancement" | "raceFeat" | "multiclassFullSkills">,
+) {
+  const parts = classSkillBudget(
+    draft.classes.map((c) => ({ name: c.name, level: c.level, subclass: c.subclass })),
+    { fullMulticlassSkills: draft.multiclassFullSkills },
+  );
   const bg = backgroundSkills(findBackground(draft.background));
-  if (bg.choose > 0) parts.push({ label: `Antecedente: ${draft.background}`, count: bg.choose, from: bg.from });
+  if (bg.choose > 0) parts.push({ label: `Antecedente: ${draft.background}`, count: bg.choose, from: bg.from, rule: "background" });
   const featNames = [...draft.advancement.filter((d) => d.kind === "feat" && d.feat).map((d) => d.feat!), ...(draft.raceFeat ? [draft.raceFeat] : [])];
   for (const f of featNames) {
     const n = FEAT_SKILLS[norm(findFeat(f)?.name ?? f)] ?? 0;
-    if (n > 0) parts.push({ label: `Talento: ${f}`, count: n });
+    if (n > 0) parts.push({ label: `Talento: ${f}`, count: n, rule: "feat" });
   }
   return { parts, total: parts.reduce((n, p) => n + p.count, 0) };
 }
 const FEAT_SKILLS: Record<string, number> = { talentoso: 3, "perito em aptidao": 1, "perito em pericias": 1, "perito em habilidades": 1 };
 
-/** Traços raciais viram características da ficha (com a escolha embutida no nome). */
-export function raceFeatures(draft: Pick<CharacterDraft, "raceName" | "subraceName" | "raceTraits" | "traitChoices">): Feature[] {
+/** Primeira linha de uma anotação, se for curta o bastante para caber num nome ("Shade (Thri-kreen)"). */
+export function shortNote(note: string | undefined, max = 32): string {
+  const first = (note ?? "").split(/\r?\n/)[0].trim();
+  return first.length > 0 && first.length <= max ? first : "";
+}
+
+/** Traços raciais viram características da ficha (com a escolha ou a anotação embutida no nome). */
+export function raceFeatures(
+  draft: Pick<CharacterDraft, "raceName" | "subraceName" | "raceTraits" | "traitChoices" | "raceNote">,
+): Feature[] {
   const source = draft.subraceName ? `${draft.raceName} (${draft.subraceName})` : draft.raceName || "Raça";
-  return resolvedRaceTraits(draft.raceTraits).map((t) => {
-    const choice = draft.traitChoices[t.name];
+  const note = draft.raceNote?.trim() ?? "";
+  const noteField = resolveRace(draft.raceName, draft.subraceName)?.noteField;
+  const traits = resolvedRaceTraits(draft.raceTraits);
+  const noteTrait =
+    note && noteField?.traitName ? traits.find((t) => norm(t.name) === norm(noteField.traitName!)) : undefined;
+  const features: Feature[] = traits.map((t) => {
+    const choice = draft.traitChoices[t.name] || (t === noteTrait ? shortNote(note) : "");
     return {
       name: choice ? `${t.name} (${choice})` : t.name,
       source,
-      description: t.description,
+      description: t === noteTrait ? `${t.description}\n\nAnotação do jogador: ${note}` : t.description,
       origin: { kind: "race", name: draft.raceName },
     };
   });
+  if (note && !noteTrait) {
+    features.push({
+      name: noteField?.label ?? "Anotação da raça",
+      source,
+      description: note,
+      origin: { kind: "race", name: draft.raceName },
+    });
+  }
+  return features;
 }
 
 /** Monta um `Character` completo e bem-formado a partir do rascunho. */
@@ -322,10 +355,18 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
   const skillNames = [...new Set([...fixedSkills(draft), ...draft.skills])];
   const skills: Skill[] = skillNames.map((name) => ({ name, proficient: true }));
 
+  const raceNote = draft.raceNote?.trim() ?? "";
+  const speciesDetails = [draft.subraceName, shortNote(raceNote)].filter(Boolean);
   const sheet: Sheet = {
-    species: draft.subraceName ? `${draft.raceName} (${draft.subraceName})` : draft.raceName,
-    raceInfo: { race: draft.raceName, ...(draft.subraceName ? { subrace: draft.subraceName } : {}), choices: draft.traitChoices },
+    species: speciesDetails.length ? `${draft.raceName} (${speciesDetails.join(", ")})` : draft.raceName,
+    raceInfo: {
+      race: draft.raceName,
+      ...(draft.subraceName ? { subrace: draft.subraceName } : {}),
+      choices: draft.traitChoices,
+      ...(raceNote ? { note: raceNote } : {}),
+    },
     advancement: draft.advancement,
+    ...(draft.multiclassFullSkills && classEntries.length > 1 ? { houseRules: { multiclassSkills: true } } : {}),
     classes: classEntries,
     background: draft.background,
     ...(draft.alignment ? { alignment: draft.alignment } : {}),
@@ -346,18 +387,23 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     personality: { trait: "", ideal: "", flaw: "", why: "", backstory: "" },
   };
 
+  // PIN com espaço sobrando travava o dono fora da própria ficha (o servidor compara aparado).
+  const pin = draft.pin.trim();
   return {
     id,
-    playerName: draft.playerName,
-    characterName: draft.characterName,
-    ...(draft.pin ? { pin: draft.pin } : {}),
+    playerName: draft.playerName.trim(),
+    characterName: draft.characterName.trim(),
+    ...(pin ? { pin } : {}),
     ...(draft.color ? { color: draft.color } : {}),
     sheet,
     hpCurrent: hpMax,
     hpMax,
     hpTemp: 0,
     spellSlots: spellSlotsFor(classEntries),
-    resources: classResourcesFor(classEntries, scores),
+    resources: [
+      ...classResourcesFor(classEntries, scores),
+      ...raceResourcesFor(resolvedRaceTraits(draft.raceTraits), level, scores, draft.raceName),
+    ],
   };
 }
 

@@ -194,7 +194,10 @@ export type CatalogTrait = {
 /** Incremento de atributos de uma raça/sub-raça (chave de atributo -> bônus).
  *  `choose` representa incrementos à escolha (ex.: meio-elfo: +1 em dois à escolha). */
 export type AbilityScoreIncrease = Partial<Record<AbilityKey, number>> & {
-  choose?: { count: number; amount: number };
+  /** Pontos à escolha: `count` pontos de +`amount`. `maxPerAbility` (padrão 1) limita quantos pontos
+   *  vão no mesmo atributo (Monstros do Multiverso: 3 pontos, até 2 no mesmo = +2/+1 ou +1/+1/+1).
+   *  `exclude` lista atributos que não podem receber os pontos (Meio-elfo: não Carisma). */
+  choose?: { count: number; amount: number; maxPerAbility?: number; exclude?: AbilityKey[] };
 };
 
 /** Uma sub-raça (ex.: Anão da Colina). */
@@ -229,7 +232,21 @@ export type Item = {
   description?: string;
   quantity?: number;
   weight?: number;
+  /** Categoria escolhida à mão; sem ela a categoria é inferida pelo nome/catálogo. */
+  category?: InventoryCategory;
 };
+
+/** Grupos do inventário na ficha. */
+export type InventoryCategory =
+  | "armas"
+  | "armaduras"
+  | "magicos"
+  | "kits"
+  | "ferramentas"
+  | "consumiveis"
+  | "materiais"
+  | "tesouro"
+  | "outros";
 
 export type Coins = {
   gp: number;
@@ -275,6 +292,14 @@ export type RaceInfo = {
   subrace?: string;
   /** Escolhas embutidas em traços (ex.: "Ancestral Dracônico" -> "Vermelho"). */
   choices?: Record<string, string>;
+  /** Anotação livre pedida pela raça (ex.: Shade: raça de origem cuja aparência assume). */
+  note?: string;
+};
+
+/** Regras da casa aplicadas na criação (ficam na ficha para a edição respeitar o mesmo limite). */
+export type HouseRules = {
+  /** Cada classe de multiclasse dá a escolha completa de perícias dela (o PHB só dá para Bardo, Ladino e Patrulheiro). */
+  multiclassSkills?: boolean;
 };
 
 export type Sheet = {
@@ -283,6 +308,8 @@ export type Sheet = {
   raceInfo?: RaceInfo;
   /** Decisões de ASI/talento por nível de classe. */
   advancement?: AsiDecision[];
+  /** Regras da casa escolhidas na criação. */
+  houseRules?: HouseRules;
   classes: ClassEntry[];
   background: string;
   alignment?: string;
@@ -329,6 +356,8 @@ export type Character = {
   pin?: string;
   protected?: boolean;
   color?: string; // tailwind hex pra header
+  /** Versão da foto de perfil (gerida pelo servidor; a imagem fica em /api/characters/:id/avatar). */
+  avatarVersion?: string | null;
   sheet: Sheet;
   hpCurrent: number;
   hpMax: number;
@@ -392,6 +421,9 @@ export type SourceBook =
   | "MToF" // Tomo dos Inimigos de Mordenkainen
   | "SCAG" // Guia da Costa da Espada
   | "EEPC" // Elemental Evil
+  | "MPMM" // Monstros do Multiverso
+  | "ERLW" // Eberron: Ascensão do Último Conflito
+  | "MHH" // Midgard Heroes Handbook (Kobold Press)
   | "Homebrew";
 
 export const SOURCE_LABELS: Record<SourceBook, string> = {
@@ -402,6 +434,9 @@ export const SOURCE_LABELS: Record<SourceBook, string> = {
   MToF: "Tomo de Mordenkainen",
   SCAG: "Costa da Espada",
   EEPC: "Elemental Evil",
+  MPMM: "Monstros do Multiverso",
+  ERLW: "Eberron",
+  MHH: "Midgard (Kobold Press)",
   Homebrew: "Homebrew",
 };
 
@@ -484,6 +519,8 @@ export type FeatDef = {
   abilityIncrease?: { choose: AbilityKey[]; amount: number };
   /** Talento racial: raças que podem escolhê-lo. */
   races?: string[];
+  /** Presente quando o talento é homebrew do Mestre (id no servidor). */
+  homebrewId?: string;
 };
 
 /** Traço racial com descrição e efeitos mecânicos automáticos. */
@@ -504,6 +541,21 @@ export type RaceTraitDef = {
   spells?: string[];
   /** Proficiências textuais (armas, armaduras, ferramentas). */
   proficiencies?: string[];
+  /** Restringe as perícias à escolha (`skillChoices`) a esta lista. */
+  skillChoiceFrom?: SkillName[];
+  /** Usos rastreáveis do traço (viram recurso na ficha). "prof"/"level" usam o nível total. */
+  resource?: FeatureResource;
+};
+
+export type CreatureSize = "Pequeno" | "Médio";
+
+/** Campo de anotação livre que a raça pede na criação (ex.: Shade). */
+export type RaceNoteField = {
+  label: string;
+  placeholder?: string;
+  help?: string;
+  /** Traço que recebe a anotação no nome/descrição (ex.: "Origem em Vida"). */
+  traitName?: string;
 };
 
 export type SubraceDef = {
@@ -514,6 +566,13 @@ export type SubraceDef = {
   traits: RaceTraitDef[];
   /** Sobrescreve o deslocamento da raça. */
   speed?: number;
+  /** Variante que SUBSTITUI a raça base (atributos, traços, idiomas), em vez de somar a ela. */
+  replaceBase?: boolean;
+  /** Sobrescrevem os da raça (usados sobretudo por variantes). */
+  languages?: string[];
+  extraLanguages?: number;
+  size?: CreatureSize;
+  sizeOptions?: CreatureSize[];
 };
 
 export type RaceDef = {
@@ -522,9 +581,13 @@ export type RaceDef = {
   /** Descrição curta (1–2 frases). */
   description: string;
   abilityScoreIncrease: AbilityScoreIncrease;
-  size: "Pequeno" | "Médio";
+  size: CreatureSize;
+  /** Tamanhos à escolha do jogador (ex.: Shade usa o da raça de origem). */
+  sizeOptions?: CreatureSize[];
   /** Deslocamento em metros. */
   speed: number;
+  /** O jogador informa o deslocamento (ex.: Shade usa o da raça de origem). */
+  speedEditable?: boolean;
   /** Idiomas fixos (ex.: ["Comum", "Anão"]). */
   languages: string[];
   /** Quantos idiomas adicionais à escolha a raça concede. */
@@ -533,6 +596,10 @@ export type RaceDef = {
   subraces: SubraceDef[];
   /** true quando é obrigatório escolher uma sub-raça. */
   subraceRequired?: boolean;
+  /** Anotação livre pedida na criação. */
+  noteField?: RaceNoteField;
+  /** Presente quando a raça é homebrew do Mestre (id no servidor). */
+  homebrewId?: string;
 };
 
 /** Idiomas do PHB (padrão e exóticos) + os das raças de Volo. */
@@ -559,6 +626,49 @@ export const LANGUAGES: readonly string[] = [
   "Ígneo (Ignan)",
   "Terrano (Terran)",
 ];
+
+// ============================================================================
+// Homebrew do Mestre (guardado no servidor em /api/homebrew)
+// ============================================================================
+
+export type HomebrewKind = "race" | "feat" | "trait";
+
+/** Sub-raça de uma raça homebrew: traços referenciados por nome. */
+export type HomebrewSubraceData = {
+  name: string;
+  description?: string;
+  abilityScoreIncrease: AbilityScoreIncrease;
+  traitNames: string[];
+  speed?: number;
+};
+
+/** Raça homebrew como fica no servidor: os traços são referências por nome à
+ *  biblioteca de traços homebrew ou aos traços oficiais, então editar um traço
+ *  atualiza todas as raças que o usam. */
+export type HomebrewRaceData = {
+  name: string;
+  description: string;
+  abilityScoreIncrease: AbilityScoreIncrease;
+  size: CreatureSize;
+  sizeOptions?: CreatureSize[];
+  speed: number;
+  speedEditable?: boolean;
+  languages: string[];
+  extraLanguages: number;
+  traitNames: string[];
+  subraces: HomebrewSubraceData[];
+  subraceRequired?: boolean;
+  noteField?: RaceNoteField;
+};
+
+export type HomebrewFeatData = Omit<FeatDef, "source" | "homebrewId">;
+
+export type HomebrewTraitData = RaceTraitDef;
+
+export type HomebrewItem =
+  | { id: string; kind: "race"; data: HomebrewRaceData; updatedAt: string }
+  | { id: string; kind: "feat"; data: HomebrewFeatData; updatedAt: string }
+  | { id: string; kind: "trait"; data: HomebrewTraitData; updatedAt: string };
 
 /** Referência a um item do equipamento inicial de uma classe. */
 export type EquipmentRef =

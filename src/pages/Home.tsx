@@ -1,7 +1,9 @@
 import { Link } from "react-router";
+import { Crown } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/lib/store";
 import { Card, CardBody } from "@/components/ui/Card";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { abilityMod, formatMod } from "@/lib/types";
 
 export default function Home() {
@@ -11,19 +13,26 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10">
       <header className="mb-8">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="font-mono text-3xl font-bold tracking-tight">Mundo Pankleos</h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              D&D 5e · Reino de Solus · 4 desocupados nível 3
-            </p>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">D&D 5e · Reino de Solus · 4 desocupados nível 3</p>
           </div>
-          <Link
-            to="/criar-ficha"
-            className="shrink-0 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
-          >
-            + Criar ficha
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              to="/mestre"
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              title="Homebrew do Mestre: raças, talentos e traços"
+            >
+              <Crown className="h-4 w-4" /> Mestre
+            </Link>
+            <Link
+              to="/criar-ficha"
+              className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+            >
+              + Criar ficha
+            </Link>
+          </div>
         </div>
         <div className="mt-3 inline-flex items-center gap-2 text-xs">
           <span
@@ -38,7 +47,8 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      {/* grid-cols-1 = minmax(0, 1fr): nome longo não alarga a coluna no celular */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {characters.map((c) => {
           const cls = c.sheet.classes
             .map((k) => `${k.name}${k.subclass ? ` (${k.subclass})` : ""} ${k.level}`)
@@ -50,26 +60,21 @@ export default function Home() {
                 style={{ borderTopColor: c.color, borderTopWidth: 4 }}
               >
                 <CardBody>
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-zinc-500">
-                        {c.playerName}
+                  <div className="flex items-center gap-3">
+                    <CharacterAvatar character={c} size={56} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-xs uppercase tracking-wide text-zinc-500">{c.playerName}</div>
+                        <div className="truncate text-right text-xs text-zinc-500">{c.sheet.species}</div>
                       </div>
-                      <div className="font-mono text-xl font-semibold">
-                        {c.characterName}
-                      </div>
-                    </div>
-                    <div className="text-right text-xs text-zinc-500">
-                      {c.sheet.species}
+                      <div className="break-words font-mono text-xl font-semibold">{c.characterName}</div>
                     </div>
                   </div>
                   <div className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{cls}</div>
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-400">
                     {c.protected ? (
                       <span>
-                        <strong className="text-zinc-900 dark:text-zinc-200">
-                          PIN necessário
-                        </strong>
+                        <strong className="text-zinc-900 dark:text-zinc-200">PIN necessário</strong>
                       </span>
                     ) : (
                       <>
@@ -80,10 +85,7 @@ export default function Home() {
                         </span>
                         <span>CA {c.sheet.ac}</span>
                         <span>
-                          Iniciativa{" "}
-                          {formatMod(
-                            c.sheet.initiativeBonus || abilityMod(c.sheet.abilityScores.dex),
-                          )}
+                          Iniciativa {formatMod(c.sheet.initiativeBonus || abilityMod(c.sheet.abilityScores.dex))}
                         </span>
                       </>
                     )}

@@ -16,6 +16,7 @@ import {
   type ClassEntry,
   type Feature,
   type FeatureResource,
+  type RaceTraitDef,
   type Resource,
   type SkillName,
   type Spell,
@@ -32,6 +33,7 @@ import {
 } from "@/data/classesCatalog";
 import { findSpell } from "@/data/spellsCatalog";
 import { findFeat } from "@/data/featsCatalog";
+import { resolveRace } from "@/data/racesCatalog";
 
 export const MAX_LEVEL = 20;
 
@@ -493,6 +495,29 @@ export function classResourcesFor(classes: ClassEntry[], scores: AbilityScores):
   return [...byName.values()];
 }
 
+/** Recursos rastreáveis dos traços raciais (ex.: Bênção da Rainha Corvo = bônus de proficiência por descanso longo). */
+export function raceResourcesFor(
+  traits: RaceTraitDef[],
+  totalLevel: number,
+  scores: AbilityScores,
+  raceName: string,
+): Resource[] {
+  const prof = proficiencyBonusForLevel(totalLevel);
+  return traits.flatMap((trait) => {
+    if (!trait.resource) return [];
+    const max = resourceMax(trait.resource, Math.max(1, totalLevel), scores, prof);
+    return [
+      {
+        name: trait.resource.name ?? trait.name,
+        current: max,
+        max,
+        recharge: trait.resource.recharge,
+        description: `${raceName || "Raça"}: ${trait.name}`,
+      },
+    ];
+  });
+}
+
 /** ASIs alcançados pelas classes (className + level), em ordem de nível. */
 export function reachedAsis(classes: ClassEntry[]): { className: string; level: number }[] {
   const out: { className: string; level: number }[] = [];
@@ -551,29 +576,52 @@ export function featFeature(featName: string, className: string, level: number):
 /** Perícias concedidas por talentos conhecidos (nome normalizado do talento -> quantidade à escolha). */
 const FEAT_SKILL_CHOICES: Record<string, number> = { talentoso: 3, "perito em aptidao": 1, "perito em pericias": 1, "perito em habilidades": 1 };
 
-export type SkillBudgetPart = { label: string; count: number; from?: SkillName[] };
+export type SkillBudgetPart = {
+  label: string;
+  count: number;
+  from?: SkillName[];
+  /** De onde vem a escolha (para explicar na tela). */
+  rule?: "class" | "multiclass" | "house" | "background" | "feat";
+};
+
+export type SkillBudgetOptions = {
+  /** Regra da casa: cada classe extra dá a escolha completa de perícias dela.
+   *  Pelo PHB (cap. 6), só Bardo, Ladino e Patrulheiro dão perícia ao entrar por multiclasse. */
+  fullMulticlassSkills?: boolean;
+};
 
 /**
  * Orçamento de perícias à escolha da ficha: 1ª classe (escolha da classe), demais
- * classes (regra de multiclasse), talentos que dão perícias. Perícias fixas de
- * antecedente/raça não entram aqui (são automáticas), então o total de proficiências
- * permitido = orçamento + fixas.
+ * classes (regra de multiclasse, ou regra da casa), talentos que dão perícias. Perícias
+ * fixas de antecedente/raça não entram aqui (são automáticas), então o total de
+ * proficiências permitido = orçamento + fixas.
  */
-export function classSkillBudget(classes: ClassEntry[]): SkillBudgetPart[] {
+export function classSkillBudget(classes: ClassEntry[], options: SkillBudgetOptions = {}): SkillBudgetPart[] {
   const parts: SkillBudgetPart[] = [];
   classes.forEach((c, i) => {
     if (!c.name.trim()) return;
     const cat = findClass(c.name);
+    const from = cat?.skillProficiencies?.from as SkillName[] | undefined;
     if (i === 0) {
-      if (cat?.skillProficiencies)
-        parts.push({ label: c.name, count: cat.skillProficiencies.choose, from: cat.skillProficiencies.from as SkillName[] });
-    } else {
-      const n = findClassDef(c.name)?.multiclass.skills ?? 0;
-      if (n > 0)
-        parts.push({ label: `${c.name} (multiclasse)`, count: n, from: cat?.skillProficiencies?.from as SkillName[] | undefined });
+      if (cat?.skillProficiencies) parts.push({ label: c.name, count: cat.skillProficiencies.choose, from, rule: "class" });
+      return;
     }
+    if (options.fullMulticlassSkills && cat?.skillProficiencies) {
+      parts.push({ label: `${c.name} (multiclasse, regra da casa)`, count: cat.skillProficiencies.choose, from, rule: "house" });
+      return;
+    }
+    const phb = findClassDef(c.name)?.multiclass.skills ?? 0;
+    if (phb > 0) parts.push({ label: `${c.name} (multiclasse)`, count: phb, from, rule: "multiclass" });
   });
   return parts;
+}
+
+/** Classes extras (2ª em diante) que, pelo PHB, não dão perícia nenhuma ao entrar por multiclasse. */
+export function multiclassWithoutSkills(classes: ClassEntry[]): string[] {
+  return classes
+    .slice(1)
+    .filter((c) => c.name.trim() && (findClassDef(c.name)?.multiclass.skills ?? 0) === 0)
+    .map((c) => c.name);
 }
 
 export function featSkillChoices(features: Feature[]): number {
@@ -733,6 +781,17 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
     else {
       const used = Math.max(0, resources[i].max - resources[i].current);
       resources[i] = { ...resources[i], max: a.max, current: Math.max(0, a.max - used), recharge: a.recharge };
+    }
+  }
+
+  // --- recursos de traços raciais que escalam com o nível (ex.: bônus de proficiência)
+  const race = sheet.raceInfo ? resolveRace(sheet.raceInfo.race, sheet.raceInfo.subrace) : undefined;
+  if (race) {
+    for (const raceResource of raceResourcesFor(race.traits, nextLevel, scores, race.race.name)) {
+      const index = resources.findIndex((r) => norm(r.name) === norm(raceResource.name));
+      if (index === -1) continue; // removido da ficha à mão: respeita
+      const used = Math.max(0, resources[index].max - resources[index].current);
+      resources[index] = { ...resources[index], max: raceResource.max, current: Math.max(0, raceResource.max - used) };
     }
   }
 
