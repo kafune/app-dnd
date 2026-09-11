@@ -11,6 +11,8 @@ import { AvatarPicker } from "@/components/create/AvatarPicker";
 import { ClassProgression } from "@/components/create/ClassProgression";
 import { Field, selectCls } from "@/components/create/common";
 import { EquipmentPicker } from "@/components/create/EquipmentPicker";
+import { BackgroundEquipment } from "@/components/create/BackgroundEquipment";
+import { missingToolChoice } from "@/data/backgroundEquipment";
 import {
   extraLanguageCount,
   raceAbilityChoiceCount,
@@ -141,12 +143,18 @@ export default function CriarFicha() {
   function onSelectBackground(value: string) {
     if (value === CUSTOM) {
       setBgMode("custom");
-      upd({ background: "", skills: [], extraLanguages: [] });
+      upd({ background: "", skills: [], extraLanguages: [], backgroundEquipmentChoices: [], backgroundToolPicks: [] });
       return;
     }
     setBgMode("catalog");
     const b = findBackground(value);
-    upd({ background: b?.name ?? value, skills: [], extraLanguages: [] });
+    upd({
+      background: b?.name ?? value,
+      skills: [],
+      extraLanguages: [],
+      backgroundEquipmentChoices: [],
+      backgroundToolPicks: [],
+    });
   }
 
   function setClasses(next: DraftClass[]) {
@@ -217,6 +225,8 @@ export default function CriarFicha() {
       return setError(`Escolha exatamente ${extraLanguageMax} idioma(s) adicional(is).`);
     if (draft.raceSkillChoices.length !== raceSkillMax)
       return setError(`Escolha exatamente ${raceSkillMax} perícia(s) racial(is).`);
+    const missingTools = missingToolChoice(draft.background, draft.backgroundToolPicks);
+    if (missingTools) return setError(`Complete a escolha do antecedente: ${missingTools}.`);
     if (draft.skills.length !== budget.total || !skillSelectionFits(draft.skills, budget.parts))
       return setError(`Escolha exatamente ${budget.total} perícia(s) permitida(s) pelas classes e antecedente.`);
     if (reachedAsis(draft.classes).length !== draft.advancement.length)
@@ -502,6 +512,11 @@ export default function CriarFicha() {
             <CardTitle>Equipamento & inventário</CardTitle>
           </CardHeader>
           <CardBody>
+            {draft.background.trim() && (
+              <div className="mb-4">
+                <BackgroundEquipment draft={draft} upd={upd} />
+              </div>
+            )}
             <EquipmentPicker
               key={draft.classes.map((entry) => entry.name).join("|")}
               classNames={draft.classes.map((entry) => entry.name).filter(Boolean)}

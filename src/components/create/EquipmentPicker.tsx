@@ -16,6 +16,7 @@ import {
   type CatalogItem,
 } from "@/data/itemsCatalog";
 import { STARTING_EQUIPMENT } from "@/data/startingEquipment";
+import { itemFromName, mergeItems as addItems } from "@/lib/items";
 
 const selectCls =
   "h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -44,22 +45,6 @@ function norm(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-function itemFromName(name: string, quantity = 1): Item {
-  const catalog = findItem(name);
-  return catalog
-    ? { name: catalog.name, description: catalog.detail, quantity }
-    : { name, quantity };
-}
-
-function addItems(existing: Item[], additions: Item[]): Item[] {
-  const next = existing.map((item) => ({ ...item }));
-  for (const addition of additions) {
-    const found = next.find((item) => norm(item.name) === norm(addition.name));
-    if (found) found.quantity = (found.quantity ?? 1) + (addition.quantity ?? 1);
-    else next.push(addition);
-  }
-  return next;
-}
 
 function refLabel(ref: EquipmentRef): string {
   if ("any" in ref) return `Escolher ${ref.any}${(ref.qty ?? 1) > 1 ? ` ×${ref.qty}` : ""}`;

@@ -33,6 +33,8 @@ import { findBackground, backgroundSkills } from "@/data/backgroundsCatalog";
 import { findFeat } from "@/data/featsCatalog";
 import { findTrait } from "@/data/traitsCatalog";
 import { resolveRace } from "@/data/racesCatalog";
+import { backgroundGrants } from "@/data/backgroundEquipment";
+import { mergeItems } from "./items";
 
 export { proficiencyBonusForLevel, hitDieValue, spellSlotsFor as spellSlotsForClasses };
 
@@ -99,6 +101,10 @@ export type CharacterDraft = {
   // Inventário inicial
   inventoryItems: Item[];
   coins: Coins;
+  /** Opção escolhida em cada grupo "um ou outro" do equipamento do antecedente (padrão: a primeira). */
+  backgroundEquipmentChoices?: number[];
+  /** Ferramentas escolhidas em cada escolha de ferramenta do antecedente. */
+  backgroundToolPicks?: string[][];
   /** Características homebrew de rascunhos antigos. Na criação normal fica vazio. */
   extraFeatures?: Feature[];
   // Overrides opcionais de derivados
@@ -225,6 +231,8 @@ export function emptyDraft(): CharacterDraft {
     knownSpells: [],
     inventoryItems: [],
     coins: { gp: 0, sp: 0, cp: 0 },
+    backgroundEquipmentChoices: [],
+    backgroundToolPicks: [],
   };
 }
 
@@ -314,11 +322,17 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     if (feats.some((f) => norm(f) === "robusto")) hpMax += 2 * level;
   }
 
-  // Salvaguardas vêm da 1ª classe (regra 5e); proficiências são a união das classes + traços.
+  // Salvaguardas vêm da 1ª classe (regra 5e); proficiências são a união das classes + traços + antecedente.
   const saves = classes[0]?.saves ?? [];
-  const proficiencies = [
-    ...new Set([...classes.flatMap((c) => c.proficiencies), ...resolvedRaceTraits(draft.raceTraits).flatMap((t) => t.proficiencies ?? [])]),
-  ];
+  const background = backgroundGrants(draft.background, draft.backgroundEquipmentChoices, draft.backgroundToolPicks);
+  const proficiencies: string[] = [];
+  for (const entry of [
+    ...classes.flatMap((c) => c.proficiencies),
+    ...resolvedRaceTraits(draft.raceTraits).flatMap((t) => t.proficiencies ?? []),
+    ...background.tools,
+  ]) {
+    if (!proficiencies.some((existing) => norm(existing) === norm(entry))) proficiencies.push(entry);
+  }
 
   // Magias: classe de conjuração principal = 1ª classe conjuradora
   const caps = allSpellCaps(classEntries, scores);
@@ -382,7 +396,11 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     weapons: [],
     features,
     spells,
-    inventory: { coins: draft.coins, items: draft.inventoryItems },
+    // Equipamento e ouro do antecedente entram sozinhos (antes ficavam só no texto do catálogo).
+    inventory: {
+      coins: { ...draft.coins, gp: draft.coins.gp + background.gold },
+      items: mergeItems(draft.inventoryItems, background.items),
+    },
     appearance: { size: draft.size, height: "" },
     personality: { trait: "", ideal: "", flaw: "", why: "", backstory: "" },
   };
