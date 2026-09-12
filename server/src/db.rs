@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS homebrew (
 );
 
 CREATE INDEX IF NOT EXISTS homebrew_kind_idx ON homebrew (kind, created_at);
+
+CREATE TABLE IF NOT EXISTS creatures (
+  id TEXT PRIMARY KEY,
+  folder_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  hp_current INTEGER NOT NULL,
+  hp_max INTEGER NOT NULL,
+  ac INTEGER NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS creatures_folder_idx ON creatures (folder_id, created_at);
 "#;
 
 impl Db {
@@ -183,6 +197,7 @@ impl Db {
         }
         migrate_appearance_images(&conn)?;
         migrate_legacy_folder(&conn)?;
+        migrate_armor_slots(&conn)?;
         Ok(Db { conn })
     }
 
@@ -501,6 +516,7 @@ impl Db {
         if used > 0 {
             return Ok(FolderDelete::NotEmpty);
         }
+        self.conn.execute("DELETE FROM creatures WHERE folder_id = ?", [id])?;
         self.conn.execute("DELETE FROM folders WHERE id = ?", [id])?;
         Ok(FolderDelete::Deleted)
     }
@@ -555,6 +571,102 @@ impl Db {
             }
         }
         Ok(out)
+    }
+
+    // === Criaturas do Hub do Mestre ===
+
+    /// Fichas completas das fichas de uma pasta (o Hub do Mestre lê PV, CA, espaços
+    /// e recursos de todo mundo). Sai com o `pin` removido, como em `to_authorized`.
+    pub fn list_folder_characters_full(&self, folder_id: &str) -> rusqlite::Result<Vec<Value>> {
+        let mut st = self
+            .conn
+            .prepare_cached("SELECT data FROM characters WHERE folder_id = ? ORDER BY id")?;
+        let rows = st.query_map([folder_id], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for data in rows {
+            if let Ok(c) = serde_json::from_str::<CharMap>(&data?) {
+                out.push(to_authorized(c));
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn list_creatures(&self, folder_id: &str) -> rusqlite::Result<Vec<Value>> {
+        let mut st = self.conn.prepare_cached(
+            "SELECT id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at
+             FROM creatures WHERE folder_id = ? ORDER BY created_at",
+        )?;
+        let rows = st.query_map([folder_id], creature_row)?;
+        rows.collect()
+    }
+
+    pub fn get_creature(&self, folder_id: &str, id: &str) -> rusqlite::Result<Option<Value>> {
+        self.conn
+            .prepare_cached(
+                "SELECT id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at
+                 FROM creatures WHERE folder_id = ? AND id = ?",
+            )?
+            .query_row(params![folder_id, id], creature_row)
+            .optional()
+    }
+
+    pub fn insert_creature(
+        &self,
+        folder_id: &str,
+        name: &str,
+        hp: i64,
+        ac: i64,
+        note: Option<&str>,
+    ) -> rusqlite::Result<Value> {
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        let now = now_iso();
+        self.conn
+            .prepare_cached(
+                "INSERT INTO creatures (id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )?
+            .execute(params![id, folder_id, name, hp, hp, ac, note, now, now])?;
+        self.get_creature(folder_id, &id)?
+            .ok_or(rusqlite::Error::QueryReturnedNoRows)
+    }
+
+    /// Aplica o patch e devolve a criatura. `None` = não existe.
+    pub fn update_creature(
+        &self,
+        folder_id: &str,
+        id: &str,
+        name: Option<&str>,
+        hp_current: Option<i64>,
+        hp_max: Option<i64>,
+        ac: Option<i64>,
+        note: Option<&str>,
+    ) -> rusqlite::Result<Option<Value>> {
+        let Some(current) = self.get_creature(folder_id, id)? else { return Ok(None) };
+        let pick = |key: &str| current.get(key).and_then(Value::as_i64).unwrap_or(0);
+        let next_max = hp_max.unwrap_or_else(|| pick("hpMax")).max(1);
+        let next_hp = hp_current.unwrap_or_else(|| pick("hpCurrent")).clamp(0, next_max);
+        let next_name = name
+            .map(str::to_string)
+            .unwrap_or_else(|| current.get("name").and_then(Value::as_str).unwrap_or("").to_string());
+        let next_ac = ac.unwrap_or_else(|| pick("ac")).max(0);
+        let next_note = note
+            .map(str::to_string)
+            .or_else(|| current.get("note").and_then(Value::as_str).map(str::to_string));
+        self.conn
+            .prepare_cached(
+                "UPDATE creatures SET name = ?, hp_current = ?, hp_max = ?, ac = ?, note = ?, updated_at = ?
+                 WHERE folder_id = ? AND id = ?",
+            )?
+            .execute(params![next_name, next_hp, next_max, next_ac, next_note, now_iso(), folder_id, id])?;
+        self.get_creature(folder_id, id)
+    }
+
+    pub fn delete_creature(&self, folder_id: &str, id: &str) -> rusqlite::Result<bool> {
+        Ok(self
+            .conn
+            .prepare_cached("DELETE FROM creatures WHERE folder_id = ? AND id = ?")?
+            .execute(params![folder_id, id])?
+            > 0)
     }
 
     /// Alguma ficha da pasta tem exatamente este PIN? O PIN fixo do seed vale no lugar
@@ -718,6 +830,20 @@ fn roll_row(r: &rusqlite::Row) -> rusqlite::Result<DiceRoll> {
 const FOLDER_SELECT: &str = "SELECT f.id, f.name, f.pin <> '', f.avatar_version, f.created_at, f.updated_at,
   (SELECT COUNT(*) FROM characters c WHERE c.folder_id = f.id) FROM folders f";
 
+fn creature_row(r: &rusqlite::Row) -> rusqlite::Result<Value> {
+    Ok(json!({
+        "id": r.get::<_, String>(0)?,
+        "folderId": r.get::<_, String>(1)?,
+        "name": r.get::<_, String>(2)?,
+        "hpCurrent": r.get::<_, i64>(3)?,
+        "hpMax": r.get::<_, i64>(4)?,
+        "ac": r.get::<_, i64>(5)?,
+        "note": r.get::<_, Option<String>>(6)?,
+        "createdAt": r.get::<_, String>(7)?,
+        "updatedAt": r.get::<_, String>(8)?,
+    }))
+}
+
 fn folder_row(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     Ok(json!({
         "id": r.get::<_, String>(0)?,
@@ -835,6 +961,43 @@ fn migrate_appearance_images(conn: &Connection) -> rusqlite::Result<()> {
         c.insert("avatarVersion".into(), Value::String(version));
         tx.prepare_cached("UPDATE characters SET data = ? WHERE id = ?")?
             .execute(params![serde_json::to_string(&c).unwrap(), id])?;
+    }
+    tx.commit()
+}
+
+/// A CA passou a ser calculada a partir da armadura equipada. Fichas antigas não
+/// têm o slot de armadura: marcam-no como vazio e, quando a CA gravada não bate com
+/// a fórmula automática de antes (10 + Des), ela vira `acOverride` para o número
+/// autorado não mudar sozinho. Ao equipar uma armadura o jogador desfaz esse trava.
+fn migrate_armor_slots(conn: &Connection) -> rusqlite::Result<()> {
+    let rows: Vec<(String, String)> = {
+        let mut st = conn.prepare("SELECT id, data FROM characters")?;
+        let iter = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        iter.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let tx = conn.unchecked_transaction()?;
+    for (id, data) in rows {
+        let Ok(mut c) = serde_json::from_str::<CharMap>(&data) else { continue };
+        let Some(sheet) = c.get_mut("sheet").and_then(Value::as_object_mut) else { continue };
+        if sheet.contains_key("equippedArmor") {
+            continue; // já migrada
+        }
+        let ac = sheet.get("ac").and_then(Value::as_i64).unwrap_or(0);
+        let dex = sheet
+            .get("abilityScores")
+            .and_then(|s| s.get("dex"))
+            .and_then(Value::as_i64)
+            .unwrap_or(10);
+        let automatic = 10 + (dex - 10).div_euclid(2);
+        if ac > 0 && ac != automatic && !sheet.contains_key("acOverride") {
+            sheet.insert("acOverride".into(), Value::from(ac));
+        }
+        sheet.insert("equippedArmor".into(), Value::Null);
+        sheet.insert("equippedShield".into(), Value::Null);
+        tx.execute(
+            "UPDATE characters SET data = ? WHERE id = ?",
+            params![serde_json::to_string(&c).unwrap(), id],
+        )?;
     }
     tx.commit()
 }
@@ -1080,6 +1243,79 @@ mod tests {
         db.set_avatar("a", "image/png", &png, "jogador").unwrap().unwrap();
         db.delete("a").unwrap();
         assert!(db.get_avatar("a").unwrap().is_none(), "deletar a ficha apaga a foto");
+    }
+
+
+    #[test]
+    fn creatures_live_inside_a_folder() {
+        let db = Db::open(":memory:", "[]").unwrap();
+        db.insert_folder("Mesa", "1234").unwrap();
+        let folder = db.list_folders().unwrap()[0]["id"].as_str().unwrap().to_string();
+
+        let goblin = db.insert_creature(&folder, "Goblin 1", 7, 15, None).unwrap();
+        let id = goblin["id"].as_str().unwrap().to_string();
+        assert_eq!(goblin["hpCurrent"], 7);
+        assert_eq!(goblin["hpMax"], 7);
+        assert_eq!(goblin["ac"], 15);
+        assert_eq!(db.list_creatures(&folder).unwrap().len(), 1);
+
+        let hurt = db
+            .update_creature(&folder, &id, None, Some(3), None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(hurt["hpCurrent"], 3);
+
+        // O PV nunca passa do máximo nem fica negativo.
+        let healed = db
+            .update_creature(&folder, &id, None, Some(99), None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(healed["hpCurrent"], 7);
+        let dead = db
+            .update_creature(&folder, &id, None, Some(-5), None, None, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(dead["hpCurrent"], 0, "o servidor zera; quem remove é a rota");
+
+        assert!(db.delete_creature(&folder, &id).unwrap());
+        assert!(!db.delete_creature(&folder, &id).unwrap());
+        assert!(db.list_creatures(&folder).unwrap().is_empty());
+    }
+
+    #[test]
+    fn folder_removal_takes_its_creatures() {
+        let db = Db::open(":memory:", "[]").unwrap();
+        db.insert_folder("Mesa", "1234").unwrap();
+        let folder = db.list_folders().unwrap()[0]["id"].as_str().unwrap().to_string();
+        db.insert_creature(&folder, "Lobo", 11, 13, None).unwrap();
+        assert_eq!(db.delete_folder(&folder).unwrap(), FolderDelete::Deleted);
+        assert!(db.list_creatures(&folder).unwrap().is_empty());
+    }
+
+    #[test]
+    fn armor_migration_keeps_authored_ac() {
+        // "a" tem CA autorada (18); "b" está na fórmula automática de antes (10 + Des).
+        let seed = json!([
+            {
+                "id": "a", "playerName": "P", "characterName": "Rudá",
+                "sheet": { "species": "Anão", "classes": [], "ac": 18,
+                  "abilityScores": { "str": 16, "dex": 10, "con": 16, "int": 8, "wis": 12, "cha": 8 } }
+            },
+            {
+                "id": "b", "playerName": "P", "characterName": "Novato",
+                "sheet": { "species": "Humano", "classes": [], "ac": 12,
+                  "abilityScores": { "str": 10, "dex": 14, "con": 10, "int": 10, "wis": 10, "cha": 10 } }
+            }
+        ]);
+        let db = Db::open(":memory:", &seed.to_string()).unwrap();
+
+        let a = db.get_stored("a").unwrap().unwrap();
+        assert_eq!(a["sheet"]["acOverride"], 18, "CA autorada vira CA manual do Mestre");
+        assert!(a["sheet"]["equippedArmor"].is_null());
+
+        let b = db.get_stored("b").unwrap().unwrap();
+        assert!(b["sheet"].get("acOverride").is_none(), "CA automática deixa o cálculo assumir");
+        assert!(b["sheet"]["equippedShield"].is_null());
     }
 
     #[test]

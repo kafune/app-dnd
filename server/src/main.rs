@@ -32,11 +32,11 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
     },
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
     Json, Router,
 };
 use bytes::Bytes;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
@@ -52,6 +52,8 @@ const HOMEBREW_LIMIT: usize = 256 * 1024;
 const HOMEBREW_KINDS: [&str; 3] = ["race", "feat", "trait"];
 const FOLDER_NAME_MAX: usize = 60;
 const FOLDER_PIN_MAX: usize = 64;
+/// Criatura do Hub do Mestre: só nome, PV e CA — é um lembrete de cena, não uma ficha.
+const CREATURE_NAME_MAX: usize = 60;
 
 /// Evento já serializado, compartilhado entre todos os clientes SSE (serializa 1x).
 /// Com `folder`, só chega a quem está inscrito naquela pasta.
@@ -424,6 +426,164 @@ async fn character_summary(State(st): State<Shared>, Path(id): Path<String>) -> 
     }
 }
 
+/// Campos da ficha que só o Mestre muda, sempre.
+const SHEET_LOCKED: [&str; 11] = [
+    "classes",
+    "inventory",
+    "weapons",
+    "proficiencyBonus",
+    "initiativeBonus",
+    "speed",
+    "saves",
+    "proficiencies",
+    "languages",
+    "acBonus",
+    "raceInfo",
+];
+
+/// Campos da ficha que o jogador só mexe junto com uma decisão de progressão
+/// (escolher talento/atributo num nível que o Mestre abriu) ou ao adotar uma
+/// característica opcional.
+const SHEET_PROGRESSION: [&str; 2] = ["abilityScores", "features"];
+
+fn field<'a>(map: &'a CharMap, key: &str) -> Option<&'a Value> {
+    map.get(key)
+}
+
+fn same(a: Option<&Value>, b: Option<&Value>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Nomes das perícias proficientes (o jogador pode ligar/desligar só a especialização).
+fn skill_names(v: Option<&Value>) -> Option<Vec<String>> {
+    let mut names: Vec<String> = v
+        .and_then(Value::as_array)?
+        .iter()
+        .filter(|s| s.get("proficient").and_then(Value::as_bool).unwrap_or(false))
+        .filter_map(|s| s.get("name").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    names.sort();
+    Some(names)
+}
+
+/// Um recurso com os campos que o jogador não pode mexer (só o `current` é dele).
+fn resource_shape(v: &Value) -> (String, i64, String, String, bool) {
+    (
+        v.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+        v.get("max").and_then(Value::as_i64).unwrap_or(0),
+        v.get("recharge").and_then(Value::as_str).unwrap_or("").to_string(),
+        v.get("kind").and_then(Value::as_str).unwrap_or("recarregavel").to_string(),
+        v.get("masterOnly").and_then(Value::as_bool).unwrap_or(false),
+    )
+}
+
+/// O jogador pode aplicar este patch? Devolve o código do erro quando não.
+///
+/// A ideia: o jogador cuida do estado do personagem (PV, contadores gastos, notas,
+/// história) e das escolhas que a progressão abriu. Tudo que define o poder da
+/// ficha — níveis, atributos, perícias, itens, máximos de recurso e de espaço de
+/// magia — é do Mestre. Sem isso, bastava abrir o modo de edição para trapacear.
+fn player_patch_violation(current: &CharMap, patch: &CharMap) -> Option<&'static str> {
+    // PV máximo e nível são do Mestre; o PV atual é livre.
+    if let Some(next) = patch.get("hpMax") {
+        if Some(next) != current.get("hpMax") {
+            return Some("master_only_hp_max");
+        }
+    }
+
+    if let Some(next) = patch.get("spellSlots").and_then(Value::as_object) {
+        let now = current.get("spellSlots").and_then(Value::as_object);
+        let empty = Map::new();
+        let now = now.unwrap_or(&empty);
+        if next.len() != now.len() {
+            return Some("master_only_spell_slots");
+        }
+        for (level, slot) in next {
+            let Some(before) = now.get(level) else { return Some("master_only_spell_slots") };
+            let max = before.get("max").and_then(Value::as_i64).unwrap_or(0);
+            if slot.get("max").and_then(Value::as_i64).unwrap_or(0) != max {
+                return Some("master_only_spell_slots");
+            }
+            let value = slot.get("current").and_then(Value::as_i64).unwrap_or(0);
+            if value < 0 || value > max {
+                return Some("bad_request");
+            }
+        }
+    }
+
+    if let Some(next) = patch.get("resources").and_then(Value::as_array) {
+        let now: Vec<Value> = current
+            .get("resources")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if next.len() != now.len() {
+            return Some("master_only_resources");
+        }
+        for (i, resource) in next.iter().enumerate() {
+            let before = &now[i];
+            if resource_shape(resource) != resource_shape(before) {
+                return Some("master_only_resources");
+            }
+            let (_, max, _, kind, master_only) = resource_shape(resource);
+            let value = resource.get("current").and_then(Value::as_i64).unwrap_or(0);
+            let previous = before.get("current").and_then(Value::as_i64).unwrap_or(0);
+            let ceiling = if kind == "moeda" && max <= 0 { i64::MAX } else { max };
+            if value < 0 || value > ceiling {
+                return Some("bad_request");
+            }
+            // Inspiração e afins: quem dá é o Mestre, o jogador só gasta.
+            if master_only && value > previous {
+                return Some("master_only_resources");
+            }
+        }
+    }
+
+    let (Some(next_sheet), Some(now_sheet)) = (
+        patch.get("sheet").and_then(Value::as_object),
+        current.get("sheet").and_then(Value::as_object),
+    ) else {
+        return None;
+    };
+
+    for key in SHEET_LOCKED {
+        if !same(field(next_sheet, key), field(now_sheet, key)) {
+            return Some("master_only_sheet");
+        }
+    }
+
+    // CA manual: o jogador só pode APAGAR (ao equipar uma armadura a CA volta a ser
+    // calculada), nunca definir um número à mão.
+    if !same(field(next_sheet, "acOverride"), field(now_sheet, "acOverride"))
+        && !matches!(field(next_sheet, "acOverride"), None | Some(Value::Null))
+    {
+        return Some("master_only_sheet");
+    }
+
+    // Progressão: só muda junto com uma nova decisão de ASI/talento ou ao adotar
+    // uma característica opcional (ambas nascem de níveis que o Mestre concedeu).
+    let advanced = !same(field(next_sheet, "advancement"), field(now_sheet, "advancement"));
+    let adopted = !same(field(next_sheet, "optionalFeatures"), field(now_sheet, "optionalFeatures"));
+    if !advanced && !adopted {
+        for key in SHEET_PROGRESSION {
+            if !same(field(next_sheet, key), field(now_sheet, key)) {
+                return Some("master_only_sheet");
+            }
+        }
+        // Perícias: o conjunto de proficiências fica; só a especialização pode mudar.
+        if !same(field(next_sheet, "skills"), field(now_sheet, "skills"))
+            && skill_names(field(next_sheet, "skills")) != skill_names(field(now_sheet, "skills"))
+        {
+            return Some("master_only_sheet");
+        }
+    }
+    None
+}
+
 async fn patch_character(
     State(st): State<Shared>,
     Path(id): Path<String>,
@@ -452,7 +612,13 @@ async fn patch_character(
         if !st.pins.ok(&current, pin.as_deref()) {
             return error(StatusCode::FORBIDDEN, "bad_pin");
         }
-        let by = if st.pins.is_master(pin.as_deref()) { "mestre" } else { "jogador" };
+        let master = st.pins.is_master(pin.as_deref());
+        if !master {
+            if let Some(code) = player_patch_violation(&current, &safe) {
+                return error(StatusCode::FORBIDDEN, code);
+            }
+        }
+        let by = if master { "mestre" } else { "jogador" };
         match db.patch(&id, &safe, by) {
             Ok(Some(n)) => n,
             Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
@@ -788,6 +954,141 @@ async fn delete_folder_avatar(State(st): State<Shared>, Path(id): Path<String>, 
         st.publish("folder", json!({ "folder": folder }));
     }
     Json(json!({ "folder": folder })).into_response()
+}
+
+// === Hub do Mestre ===
+
+/// Nome e números de uma criatura vindos do corpo do request.
+fn creature_fields(body: &Value) -> (Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<String>) {
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.chars().take(CREATURE_NAME_MAX).collect::<String>())
+    };
+    let number = |key: &str| body.get(key).and_then(Value::as_i64);
+    (text("name"), number("hpCurrent"), number("hpMax"), number("ac"), text("note"))
+}
+
+/// Fichas completas da pasta + criaturas da cena. Só com a chave mestra: é o
+/// painel onde o Mestre vê PV, CA, espaços e recursos de todo mundo.
+async fn folder_hub(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let db = st.db();
+    let folder = match db.folder_public(&id) {
+        Ok(Some(f)) => f,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "folder_not_found"),
+        Err(e) => return db_error(e),
+    };
+    let characters = match db.list_folder_characters_full(&id) {
+        Ok(c) => c,
+        Err(e) => return db_error(e),
+    };
+    let creatures = match db.list_creatures(&id) {
+        Ok(c) => c,
+        Err(e) => return db_error(e),
+    };
+    Json(json!({ "folder": folder, "characters": characters, "creatures": creatures })).into_response()
+}
+
+/// Criaturas da cena desta pasta. Só o Mestre.
+async fn list_creatures(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    match st.db().list_creatures(&id) {
+        Ok(creatures) => Json(json!({ "creatures": creatures })).into_response(),
+        Err(e) => db_error(e),
+    }
+}
+
+/// Cria uma criatura simples da cena (nome, PV e CA). Só o Mestre.
+async fn create_creature(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let (name, _, hp_max, ac, note) = creature_fields(&body);
+    let Some(name) = name else { return error(StatusCode::BAD_REQUEST, "bad_request") };
+    let hp = hp_max.unwrap_or(1).clamp(1, 100_000);
+    let ac = ac.unwrap_or(10).clamp(0, 100);
+
+    let creature = {
+        let db = st.db();
+        match db.get_folder(&id) {
+            Ok(Some(_)) => {}
+            Ok(None) => return error(StatusCode::NOT_FOUND, "folder_not_found"),
+            Err(e) => return db_error(e),
+        }
+        match db.insert_creature(&id, &name, hp, ac, note.as_deref()) {
+            Ok(c) => c,
+            Err(e) => return db_error(e),
+        }
+    };
+    st.publish_in(Some(id), "creature", json!({ "creature": creature }));
+    (StatusCode::CREATED, Json(json!({ "creature": creature }))).into_response()
+}
+
+/// Atualiza a criatura. Ao chegar a 0 PV ela sai do hub sozinha — morreu, sumiu.
+async fn update_creature(
+    State(st): State<Shared>,
+    Path((id, creature_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let (name, hp_current, hp_max, ac, note) = creature_fields(&body);
+    let updated = {
+        let db = st.db();
+        match db.update_creature(&id, &creature_id, name.as_deref(), hp_current, hp_max, ac, note.as_deref()) {
+            Ok(Some(c)) => c,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        }
+    };
+    if updated.get("hpCurrent").and_then(Value::as_i64).unwrap_or(0) <= 0 {
+        if let Err(e) = st.db().delete_creature(&id, &creature_id) {
+            return db_error(e);
+        }
+        st.publish_in(Some(id), "creature-deleted", json!({ "id": creature_id }));
+        return Json(json!({ "creature": Value::Null, "removed": true })).into_response();
+    }
+    st.publish_in(Some(id), "creature", json!({ "creature": updated }));
+    Json(json!({ "creature": updated, "removed": false })).into_response()
+}
+
+async fn delete_creature(
+    State(st): State<Shared>,
+    Path((id, creature_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    match st.db().delete_creature(&id, &creature_id) {
+        Ok(true) => {}
+        Ok(false) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    }
+    st.publish_in(Some(id), "creature-deleted", json!({ "id": creature_id }));
+    Json(json!({ "ok": true })).into_response()
 }
 
 // === Chave mestra e homebrew ===
@@ -1206,6 +1507,12 @@ async fn main() {
             "/api/folders/{id}",
             get(get_folder).put(update_folder).delete(delete_folder),
         )
+        .route("/api/folders/{id}/hub", get(folder_hub))
+        .route("/api/folders/{id}/creatures", get(list_creatures).post(create_creature))
+        .route(
+            "/api/folders/{id}/creatures/{creatureId}",
+            patch(update_creature).delete(delete_creature),
+        )
         .route(
             "/api/folders/{id}/avatar",
             get(get_folder_avatar)
@@ -1255,4 +1562,165 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn map(v: Value) -> CharMap {
+        v.as_object().unwrap().clone()
+    }
+
+    /// Ficha de jogador mínima, com o que as regras de edição olham.
+    fn character() -> CharMap {
+        map(json!({
+            "id": "teste",
+            "hpCurrent": 10,
+            "hpMax": 20,
+            "spellSlots": { "1": { "current": 2, "max": 3 } },
+            "resources": [
+                { "name": "Inspiração", "current": 1, "max": 0, "recharge": "none", "kind": "moeda", "masterOnly": true },
+                { "name": "Fúria", "current": 2, "max": 3, "recharge": "long" }
+            ],
+            "sheet": {
+                "classes": [{ "name": "Bárbaro", "level": 3 }],
+                "abilityScores": { "str": 16, "dex": 14, "con": 14, "int": 8, "wis": 10, "cha": 10 },
+                "skills": [{ "name": "Atletismo", "proficient": true }],
+                "features": [],
+                "advancement": [],
+                "inventory": { "coins": { "gp": 0, "sp": 0, "cp": 0 }, "items": [] },
+                "weapons": [],
+                "proficiencyBonus": 2,
+                "initiativeBonus": 2,
+                "speed": 9,
+                "saves": ["str"],
+                "proficiencies": [],
+                "languages": ["Comum"],
+                "ac": 12,
+                "acOverride": 15
+            }
+        }))
+    }
+
+    /// Patch que troca um campo do `sheet`, mantendo o resto igual.
+    fn sheet_patch(current: &CharMap, key: &str, value: Value) -> CharMap {
+        let mut sheet = current.get("sheet").unwrap().as_object().unwrap().clone();
+        sheet.insert(key.into(), value);
+        map(json!({ "sheet": sheet }))
+    }
+
+    #[test]
+    fn player_may_change_current_state() {
+        let c = character();
+        assert_eq!(player_patch_violation(&c, &map(json!({ "hpCurrent": 3 }))), None);
+        assert_eq!(player_patch_violation(&c, &map(json!({ "notes": "oi" }))), None);
+        assert_eq!(
+            player_patch_violation(&c, &map(json!({ "spellSlots": { "1": { "current": 0, "max": 3 } } }))),
+            None
+        );
+    }
+
+    #[test]
+    fn player_may_not_cheat_the_numbers() {
+        let c = character();
+        assert_eq!(
+            player_patch_violation(&c, &map(json!({ "hpMax": 200 }))),
+            Some("master_only_hp_max")
+        );
+        assert_eq!(
+            player_patch_violation(&c, &map(json!({ "spellSlots": { "1": { "current": 9, "max": 9 } } }))),
+            Some("master_only_spell_slots")
+        );
+        assert_eq!(
+            player_patch_violation(&c, &sheet_patch(&c, "classes", json!([{ "name": "Bárbaro", "level": 20 }]))),
+            Some("master_only_sheet")
+        );
+        assert_eq!(
+            player_patch_violation(
+                &c,
+                &sheet_patch(&c, "abilityScores", json!({ "str": 20, "dex": 14, "con": 14, "int": 8, "wis": 10, "cha": 10 }))
+            ),
+            Some("master_only_sheet")
+        );
+        assert_eq!(
+            player_patch_violation(
+                &c,
+                &sheet_patch(&c, "inventory", json!({ "coins": { "gp": 9999, "sp": 0, "cp": 0 }, "items": [] }))
+            ),
+            Some("master_only_sheet")
+        );
+    }
+
+    #[test]
+    fn only_the_master_grants_inspiration() {
+        let c = character();
+        let spend = json!([
+            { "name": "Inspiração", "current": 0, "max": 0, "recharge": "none", "kind": "moeda", "masterOnly": true },
+            { "name": "Fúria", "current": 2, "max": 3, "recharge": "long" }
+        ]);
+        assert_eq!(player_patch_violation(&c, &map(json!({ "resources": spend }))), None);
+
+        let grant = json!([
+            { "name": "Inspiração", "current": 5, "max": 0, "recharge": "none", "kind": "moeda", "masterOnly": true },
+            { "name": "Fúria", "current": 2, "max": 3, "recharge": "long" }
+        ]);
+        assert_eq!(
+            player_patch_violation(&c, &map(json!({ "resources": grant }))),
+            Some("master_only_resources")
+        );
+
+        let inflate = json!([
+            { "name": "Inspiração", "current": 1, "max": 0, "recharge": "none", "kind": "moeda", "masterOnly": true },
+            { "name": "Fúria", "current": 9, "max": 9, "recharge": "long" }
+        ]);
+        assert_eq!(
+            player_patch_violation(&c, &map(json!({ "resources": inflate }))),
+            Some("master_only_resources")
+        );
+    }
+
+    #[test]
+    fn player_equips_armor_and_picks_expertise() {
+        let c = character();
+        // Equipar: muda o slot, espelha a CA e desfaz a CA manual.
+        let mut sheet = c.get("sheet").unwrap().as_object().unwrap().clone();
+        sheet.insert("equippedArmor".into(), json!("Couro"));
+        sheet.insert("acOverride".into(), Value::Null);
+        sheet.insert("ac".into(), json!(13));
+        assert_eq!(player_patch_violation(&c, &map(json!({ "sheet": sheet }))), None);
+
+        // Especialização: as proficiências continuam as mesmas, só o `expert` muda.
+        let expert = sheet_patch(&c, "skills", json!([{ "name": "Atletismo", "proficient": true, "expert": true }]));
+        assert_eq!(player_patch_violation(&c, &expert), None);
+
+        // Ganhar uma perícia nova sem subir de nível, não.
+        let extra = sheet_patch(
+            &c,
+            "skills",
+            json!([
+                { "name": "Atletismo", "proficient": true },
+                { "name": "Furtividade", "proficient": true }
+            ]),
+        );
+        assert_eq!(player_patch_violation(&c, &extra), Some("master_only_sheet"));
+    }
+
+    #[test]
+    fn player_may_not_set_manual_ac() {
+        let c = character();
+        assert_eq!(
+            player_patch_violation(&c, &sheet_patch(&c, "acOverride", json!(30))),
+            Some("master_only_sheet")
+        );
+    }
+
+    #[test]
+    fn advancement_unlocks_the_progression_fields() {
+        let c = character();
+        let mut sheet = c.get("sheet").unwrap().as_object().unwrap().clone();
+        sheet.insert("advancement".into(), json!([{ "className": "Bárbaro", "level": 4, "kind": "asi", "abilities": { "str": 2 } }]));
+        sheet.insert("abilityScores".into(), json!({ "str": 18, "dex": 14, "con": 14, "int": 8, "wis": 10, "cha": 10 }));
+        assert_eq!(player_patch_violation(&c, &map(json!({ "sheet": sheet }))), None);
+    }
 }
