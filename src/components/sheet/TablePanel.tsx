@@ -2,70 +2,48 @@ import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/Button";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useStore } from "@/lib/store";
 import { actionEconomy } from "@/lib/actions";
 import { formatRollDetail } from "@/lib/dice";
 import type { DiceRoll } from "@/lib/types";
 
-type Tab = "mesa" | "acoes";
-
-/**
- * Painel da direita: a mesa (todas as rolagens das fichas da pasta, em tempo real)
- * e as ações (o que cabe no turno deste personagem).
- */
-export function TablePanel({ id, onClear }: { id: string; onClear: () => void }) {
-  const [tab, setTab] = useState<Tab>("mesa");
+/** Ações: o que cabe no turno deste personagem. Fica logo acima da mesa. */
+export function ActionsPanel({ id }: { id: string }) {
   return (
     <Card>
-      <CardHeader className="px-2 py-2">
-        <div className="flex items-center gap-1">
-          <TabButton active={tab === "mesa"} onClick={() => setTab("mesa")}>
-            Mesa
-          </TabButton>
-          <TabButton active={tab === "acoes"} onClick={() => setTab("acoes")}>
-            Ações
-          </TabButton>
-          {tab === "mesa" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto"
-              onClick={onClear}
-              aria-label="Limpar todas as rolagens da mesa"
-              title="Limpar todas as rolagens da mesa"
-            >
-              <Trash2 className="h-3 w-3" /> Limpar
-            </Button>
-          )}
-        </div>
+      <CardHeader className="px-3 py-2">
+        <CardTitle>Ações</CardTitle>
       </CardHeader>
-      <CardBody>{tab === "mesa" ? <TableRolls /> : <ActionsTab id={id} />}</CardBody>
+      <CardBody>
+        <ActionsTab id={id} />
+      </CardBody>
     </Card>
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+/** Mesa: todas as rolagens das fichas da pasta, em tempo real. */
+export function TablePanel({ onClear }: { onClear: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ${
-        active
-          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-          : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      }`}
-    >
-      {children}
-    </button>
+    <Card>
+      <CardHeader className="px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>Mesa</CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClear}
+            aria-label="Limpar todas as rolagens da mesa"
+            title="Limpar todas as rolagens da mesa"
+          >
+            <Trash2 className="h-3 w-3" /> Limpar
+          </Button>
+        </div>
+      </CardHeader>
+      <CardBody>
+        <TableRolls />
+      </CardBody>
+    </Card>
   );
 }
 

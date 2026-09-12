@@ -17,13 +17,25 @@ nem nginx servindo arquivos estáticos em produção.
 ## Quem manda em quê
 
 A ficha tem dois donos. O **jogador** cuida do estado do personagem: PV, contadores de
-recurso e de espaço de magia, notas da sessão, equipar/desequipar armadura e escudo, a
-história do personagem e as escolhas que a progressão abriu (talento × atributo,
-especialização em perícia, características opcionais do Tasha, magias — se a classe
-trocar magias livremente). O **Mestre** (chave mestra) cuida do que define o poder da
-ficha: níveis, atributos, perícias, itens, armas, máximos de PV/recurso/espaço e a
-Inspiração. O servidor aplica essas regras no `PATCH` (`server/src/main.rs`,
+recurso e de espaço de magia, a quantidade dos itens que ele já tem (vendeu, perdeu,
+achou mais um), notas da sessão, equipar/desequipar armadura e escudo, a história do
+personagem e as escolhas que a progressão abriu (talento × atributo, especialização em
+perícia ou em ferramenta, características opcionais do Tasha, magias — se a classe
+trocar magias livremente, ou para preencher as vagas que um nível novo abriu). O
+**Mestre** (chave mestra) cuida do que define o poder da ficha: níveis, atributos,
+perícias, quais itens existem no inventário, armas, moedas, máximos de PV/recurso/espaço
+e a Inspiração. O servidor aplica essas regras no `PATCH` (`server/src/main.rs`,
 `player_patch_violation`) — a tela só esconde o que já seria recusado.
+
+### Subir de nível
+
+Quando o Mestre sobe o nível, a ficha abre a escolha de **atributo × talento** no modo de
+edição; ela é aplicada sozinha ao clicar em **Concluir edição** (não existe botão
+separado de "aplicar"), e o aviso some depois de decidida. Talentos que concedem magias
+(Tocado pelas Sombras, Iniciado em Magia, Tocado pelas Fadas…) mostram ali mesmo a lista
+do que dá para escolher e põem as magias na ficha marcadas com a origem, fora do limite
+de magias conhecidas — igual às magias de subclasse (Trapaceiro Arcano, Domínio da
+Sepultura…) e às de traço racial.
 
 ### Hub do Mestre
 

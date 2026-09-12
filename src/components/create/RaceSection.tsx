@@ -1,7 +1,7 @@
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { PointAllocator } from "@/components/PointAllocator";
 import { allRaces, resolveRace } from "@/data/racesCatalog";
-import { allFeats } from "@/data/featsCatalog";
+import { findFeat, allFeats } from "@/data/featsCatalog";
 import { backgroundLanguages, backgroundSkills, findBackground } from "@/data/backgroundsCatalog";
 import { useStore } from "@/lib/store";
 import { ALL_SKILL_NAMES } from "@/lib/skillChoice";
@@ -16,6 +16,7 @@ import {
   type SkillName,
 } from "@/lib/types";
 import { ChoiceGrid, Field, selectCls, SourceBadge, textareaCls } from "./common";
+import { FeatSpellChoices, featHasSpells } from "./FeatSpellChoices";
 import { Input } from "@/components/ui/Input";
 
 type Props = {
@@ -111,6 +112,7 @@ export function RaceSection({ draft, upd, scores }: Props) {
     ...traits.flatMap((trait) => trait.skills ?? []),
   ]);
   const feats = allFeats().filter((feat) => !feat.races || feat.races.includes(draft.raceName));
+  const raceFeatDef = draft.raceFeat ? findFeat(draft.raceFeat) : undefined;
 
   return (
     <Card>
@@ -287,19 +289,30 @@ export function RaceSection({ draft, upd, scores }: Props) {
                   </select>
                 )}
                 {trait.feat && (
-                  <select
-                    className={`${selectCls} mt-2`}
-                    value={draft.raceFeat ?? ""}
-                    onChange={(event) => upd({ raceFeat: event.target.value || undefined })}
-                  >
-                    <option value="">— escolha o talento concedido —</option>
-                    {feats.map((feat) => (
-                      <option key={feat.name} value={feat.name}>
-                        {feat.name}
-                        {feat.source === "Homebrew" ? " (homebrew)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <select
+                      className={`${selectCls} mt-2`}
+                      value={draft.raceFeat ?? ""}
+                      onChange={(event) => upd({ raceFeat: event.target.value || undefined, raceFeatSpells: [] })}
+                    >
+                      <option value="">— escolha o talento concedido —</option>
+                      {feats.map((feat) => (
+                        <option key={feat.name} value={feat.name}>
+                          {feat.name}
+                          {feat.source === "Homebrew" ? " (homebrew)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {raceFeatDef && featHasSpells(raceFeatDef) && (
+                      <div className="mt-2">
+                        <FeatSpellChoices
+                          feat={raceFeatDef}
+                          chosen={draft.raceFeatSpells ?? []}
+                          onChange={(raceFeatSpells) => upd({ raceFeatSpells })}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}

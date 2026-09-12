@@ -589,7 +589,8 @@ export const CLERIGO: ClassDef = {
       description:
         "Deuses da sepultura – Kelemvor, Wee Jas, os Espíritos Ancestrais da Corte Divina, Hades, Anúbis e Osíris – guardam a linha entre a vida e a morte. Seus seguidores colocam espíritos errantes para descansar, destroem mortos-vivos e aliviam o sofrimento dos moribundos, e sua magia permite adiar a morte por um tempo – um atraso, não uma negação.",
       spells: {
-        "1": ["Vitalidade Falsa", "Perdição"],
+        // Estabilizar vem do Círculo da Mortalidade e não conta nos truques.
+        "1": ["Estabilizar", "Vitalidade Falsa", "Perdição"],
         "3": ["Raio do Enfraquecimento", "Repouso Tranquilo"],
         "5": ["Revivificar", "Toque Vampírico"],
         "7": ["Malogro", "Proteção Contra a Morte"],

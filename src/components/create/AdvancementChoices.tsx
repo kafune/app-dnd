@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/cn";
 import { ABILITY_ORDER, type AbilityKey, type AbilityScores, type AsiDecision, type ClassEntry } from "@/lib/types";
 import { selectCls, SourceBadge } from "./common";
+import { FeatSpellChoices, featHasSpells } from "./FeatSpellChoices";
 
 type Allocation = Partial<Record<AbilityKey, number>>;
 
@@ -106,7 +107,9 @@ export function AdvancementChoices({ classes, advancement, raceName, scores, onC
                   <select
                     className={selectCls}
                     value={decision.feat ?? ""}
-                    onChange={(event) => replace(slot, { ...decision, feat: event.target.value || undefined, abilities: undefined })}
+                    onChange={(event) =>
+                      replace(slot, { ...decision, feat: event.target.value || undefined, abilities: undefined, spells: undefined })
+                    }
                   >
                     <option value="">— talento —</option>
                     {feats.map((entry) => (
@@ -135,6 +138,13 @@ export function AdvancementChoices({ classes, advancement, raceName, scores, onC
                       <SourceBadge source={feat.source} />
                       <p className="whitespace-pre-line text-zinc-600 dark:text-zinc-300">{feat.description}</p>
                     </div>
+                  )}
+                  {feat && featHasSpells(feat) && (
+                    <FeatSpellChoices
+                      feat={feat}
+                      chosen={decision.spells ?? []}
+                      onChange={(spells) => replace(slot, { ...decision, spells })}
+                    />
                   )}
                 </div>
               )}

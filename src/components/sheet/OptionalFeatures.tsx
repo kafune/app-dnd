@@ -16,10 +16,12 @@ export function OptionalFeatures({ id }: { id: string }) {
   const editMode = useStore((s) => s.editMode);
   if (!character) return null;
 
+  // Opcional é opcional: fora do modo de edição a ficha não fica insistindo. Quem
+  // quiser adotar uma delas depois abre "Editar ficha" e marca aqui.
+  if (!editMode) return null;
   const available = optionalFeaturesFor(character.sheet.classes);
   if (available.length === 0) return null;
   const adopted = new Set(character.sheet.optionalFeatures ?? []);
-  if (!editMode && adopted.size === available.length) return null;
 
   const toggle = async (name: string) => {
     const next = adopted.has(name)
@@ -55,7 +57,8 @@ export function OptionalFeatures({ id }: { id: string }) {
       </CardHeader>
       <CardBody className="space-y-2">
         <p className="text-xs text-zinc-500">
-          Regras opcionais do Caldeirão de Tasha. Combine com o Mestre antes de ligar: elas só entram na ficha se você quiser.
+          Regras opcionais do Caldeirão de Tasha. Combine com o Mestre antes de ligar: elas só entram na ficha se você
+          quiser, e o que você não adotar não aparece fora do modo de edição.
         </p>
         {available.map((feature) => {
           const on = adopted.has(feature.name);

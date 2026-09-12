@@ -21,6 +21,9 @@ type Props = {
   spellsMax?: number | null;
   /** Mestre: ignora classe, círculo e quantidade. */
   unrestricted?: boolean;
+  /** Só deixa ADICIONAR: as magias que já estão na ficha não podem ser desmarcadas.
+   *  É assim que o jogador preenche as vagas novas de um nível sem refazer a lista. */
+  lockSelected?: boolean;
   onChange: (cantrips: Spell[], known: Spell[]) => void;
 };
 
@@ -62,6 +65,7 @@ export function SpellPicker({
   cantripsMax = null,
   spellsMax = null,
   unrestricted = false,
+  lockSelected = false,
   onChange,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -150,6 +154,7 @@ export function SpellPicker({
   function toggle(spell: CatalogSpell) {
     const isSel = selected.has(spell.name.toLowerCase());
     const stored = [...cantrips, ...known].find((entry) => entry.name.toLowerCase() === spell.name.toLowerCase());
+    if (isSel && lockSelected) return; // modo "só preencher as vagas novas"
     if (isSel && stored?.granted && !unrestricted) return;
     if (!isSel && disabledFor(spell)) return; // respeita o limite da classe
     if (spell.level === 0) {
@@ -187,7 +192,7 @@ export function SpellPicker({
         : [];
     return {
       checked,
-      disabled: !checked && disabledFor(spell),
+      disabled: checked ? lockSelected : disabledFor(spell),
       lists: listText(spell),
       countsFor: stored?.granted ? `concedida por ${stored.granted}` : owner,
       reassign:

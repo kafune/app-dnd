@@ -16,6 +16,7 @@ import {
   type Spell,
 } from "./types";
 import {
+  allFeatGrantedSpells,
   allSpellCaps,
   applyAbilityIncrease,
   classFeaturesFor,
@@ -25,6 +26,9 @@ import {
   featFeature,
   grantedSpellsFor,
   hitDieValue,
+  mergeSpellLists,
+  featNamesOf,
+  raceGrantedSpells,
   proficiencyBonusForLevel,
   raceResourcesFor,
   spellSlotsFor,
@@ -96,6 +100,8 @@ export type CharacterDraft = {
   traitChoices: Record<string, string>;
   /** Talento concedido pela raça (Humano variante). */
   raceFeat?: string;
+  /** Magias escolhidas nas opções que o talento racial abre. */
+  raceFeatSpells?: string[];
   /** Perícias escolhidas por traços raciais (ex.: Versatilidade em Perícia). */
   raceSkillChoices: SkillName[];
   /** Anotação livre pedida pela raça (ex.: Shade: raça de origem cuja aparência assume). */
@@ -126,6 +132,8 @@ export type CharacterDraft = {
   optionalFeatures?: string[];
   /** Perícias escolhidas para Especialização (bônus de proficiência dobrado). */
   expertise?: SkillName[];
+  /** Ferramentas escolhidas para Especialização (Ladino: ferramentas de ladrão). */
+  expertiseTools?: string[];
   /** História do personagem (bloco de texto livre; vai para `personality.backstory`). */
   backstory?: string;
   // Overrides opcionais de derivados
@@ -359,22 +367,6 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     if (!proficiencies.some((existing) => norm(existing) === norm(entry))) proficiencies.push(entry);
   }
 
-  // Magias: classe de conjuração principal = 1ª classe conjuradora
-  const caps = allSpellCaps(classEntries, scores);
-  const castAbility = caps[0]?.profile.ability ?? null;
-  const granted = classEntries.flatMap(grantedSpellsFor);
-  const known = [...draft.knownSpells];
-  for (const g of granted) if (!known.some((s) => norm(s.name) === norm(g.name))) known.push(g);
-  const spells: Sheet["spells"] = castAbility
-    ? {
-        saveDC: 8 + profBonus + abilityMod(scores[castAbility]),
-        attackMod: profBonus + abilityMod(scores[castAbility]),
-        castingAbility: castAbility,
-        cantrips: draft.cantrips,
-        known,
-      }
-    : { saveDC: 8, attackMod: 0, castingAbility: "int", cantrips: draft.cantrips, known };
-
   // Características: raça + classe/subclasse + talentos + antecedente
   const bg = findBackground(draft.background);
   const featFeatures: Feature[] = [
@@ -391,15 +383,43 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
       : []),
   ];
 
+  // Magias: classe de conjuração principal = 1ª classe conjuradora. Subclasse, raça
+  // e talentos concedem magias de graça (não contam no limite de conhecidas).
+  const caps = allSpellCaps(classEntries, scores);
+  const castAbility = caps[0]?.profile.ability ?? null;
+  const granted = [
+    ...classEntries.flatMap(grantedSpellsFor),
+    ...raceGrantedSpells(resolvedRaceTraits(draft.raceTraits), draft.raceName),
+    ...allFeatGrantedSpells(features, [
+      ...draft.advancement,
+      ...(draft.raceFeat ? [{ className: draft.raceName || "Raça", level: 1, kind: "feat" as const, feat: draft.raceFeat, spells: draft.raceFeatSpells ?? [] }] : []),
+    ]),
+  ];
+  const { cantrips, known } = mergeSpellLists(
+    [...draft.cantrips, ...draft.knownSpells],
+    granted,
+    featNamesOf(features),
+  );
+  const spells: Sheet["spells"] = castAbility
+    ? {
+        saveDC: 8 + profBonus + abilityMod(scores[castAbility]),
+        attackMod: profBonus + abilityMod(scores[castAbility]),
+        castingAbility: castAbility,
+        cantrips,
+        known,
+      }
+    : { saveDC: 8, attackMod: 0, castingAbility: "int", cantrips, known };
+
   const skillNames = [...new Set([...fixedSkills(draft), ...draft.skills])];
   // Especialização escolhida na criação + as automáticas (ex.: Batedor: Natureza e Sobrevivência).
   const expertBudget = expertiseBudget(classEntries, {
     adopted: draft.optionalFeatures,
     feats: [...(draft.raceFeat ? [draft.raceFeat] : []), ...draft.advancement.filter((d) => d.feat).map((d) => d.feat!)],
   });
+  const chosenTools = (draft.expertiseTools ?? []).slice(0, expertBudget.total);
   const expert = new Set<SkillName>([
     ...expertBudget.fixed,
-    ...(draft.expertise ?? []).slice(0, expertBudget.total),
+    ...(draft.expertise ?? []).slice(0, Math.max(0, expertBudget.total - chosenTools.length)),
   ]);
   const skills: Skill[] = skillNames.map((name) => ({
     name,
@@ -430,6 +450,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     ac: 0, // preenchido logo abaixo, com a armadura equipada já na conta
     ...(draft.acOverride != null ? { acOverride: draft.acOverride } : {}),
     ...(draft.optionalFeatures?.length ? { optionalFeatures: draft.optionalFeatures } : {}),
+    ...(chosenTools.length ? { expertTools: chosenTools } : {}),
     equippedArmor: startingArmor,
     equippedShield: startingShield,
     speed: draft.speed,

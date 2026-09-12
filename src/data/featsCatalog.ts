@@ -114,6 +114,10 @@ const FEATS: FeatDef[] = [
     name: "Conjurador de Ritual",
     source: "PHB",
     prerequisite: "Inteligência ou Sabedoria 13 ou maior",
+    spells: {
+      pickList: ["Bardo", "Bruxo", "Clérigo", "Druida", "Feiticeiro", "Mago"],
+      choices: [{ count: 2, level: 1, ritual: true, label: "duas magias de 1º círculo com o descritor ritual" }],
+    },
     description:
       "Você aprendeu um número de magias que você pode conjurar como rituais. Essas magias são escritas em um livro de rituais, o qual deve estar em suas mãos enquanto você conjura uma dessas magias.\n" +
       "Quando você escolhe esse talento, você adquire um livro de rituais que contém duas magias de 1º nível, à sua escolha. Escolha uma das seguintes classes: bardo, bruxo, clérigo, druida, feiticeiro ou mago. Você deve escolher suas magias da lista de magias dessa classe e as magias escolhidas devem ter o descritor ritual. A classe que você escolheu também determina a habilidade de conjuração dessas magias: Carisma para bardo, bruxo ou feiticeiro; Sabedoria para clérigo ou druida; ou Inteligência para mago.\n" +
@@ -175,6 +179,13 @@ const FEATS: FeatDef[] = [
   {
     name: "Iniciado em Magia",
     source: "PHB",
+    spells: {
+      pickList: ["Bardo", "Bruxo", "Clérigo", "Druida", "Feiticeiro", "Mago"],
+      choices: [
+        { count: 2, level: 0, label: "dois truques da lista escolhida" },
+        { count: 1, level: 1, label: "uma magia de 1º círculo da mesma lista" },
+      ],
+    },
     description:
       "Escolha uma classe: bardo, bruxo, clérigo, druida, feiticeiro ou mago. Você aprende dois truques da lista de magias da classe escolhida.\n" +
       "Além disso, escolha uma magia de 1º nível da mesma lista. Você aprende essa magia e pode conjurá-la com o menor nível possível. Uma vez que a conjure, você precisa terminar um descanso longo para poder conjurá-la novamente. Essa restrição aplica-se apenas à magia adquirida através desse talento.\n" +
@@ -407,6 +418,7 @@ const FEATS: FeatDef[] = [
     source: "XGtE",
     prerequisite: "Elfo (Drow)",
     races: ["Elfo"],
+    spells: { fixed: ["Detectar Magia", "Levitação", "Dissipar Magia"] },
     description:
       "Você aprende mais da magia típica dos elfos negros. Aprende a magia detectar magia e pode conjurá-la à vontade, sem gastar um espaço de magia. Também aprende as magias levitação e dissipar magia, podendo conjurar cada uma delas uma vez sem gastar espaços de magia. Recupera a capacidade de conjurar essas duas magias dessa maneira assim que terminar um descanso longo. O Carisma é a sua habilidade de conjuração para as três magias.",
   },
@@ -495,6 +507,10 @@ const FEATS: FeatDef[] = [
     source: "XGtE",
     prerequisite: "Elfo (floresta)",
     races: ["Elfo"],
+    spells: {
+      fixed: ["Passos Longos", "Passos Sem Pegadas"],
+      choices: [{ count: 1, level: 0, lists: ["Druida"], label: "um truque de druida" }],
+    },
     description:
       "Você aprende a magia das florestas primitivas, que são reverenciadas e protegidas pelo seu povo. Aprende um truque de druida à sua escolha. Também aprende passos longos e passos sem pegadas, cada uma das quais pode conjurar uma vez sem gastar espaços de magia. Recupera a capacidade de conjurar essas duas magias desta maneira quando terminar um descanso longo. A Sabedoria é a sua habilidade de conjuração para as três magias.",
   },
@@ -537,6 +553,7 @@ const FEATS: FeatDef[] = [
     source: "XGtE",
     prerequisite: "Elfo (alto)",
     races: ["Elfo"],
+    spells: { fixed: ["Passo Nebuloso"] },
     abilityIncrease: { choose: ["int", "cha"], amount: 1 },
     description:
       "Seu estudo de combate dos altos elfos desbloqueou um poder feérico que apenas poucos elfos possuem, exceto seus primos eladrin. Com base em sua ascendência feérica, pode caminhar momentaneamente pela Agrestia das Fadas para encurtar seu caminho de um lugar para outro. Você ganha os seguintes benefícios:\n" +
@@ -621,6 +638,12 @@ const FEATS: FeatDef[] = [
   {
     name: "Iniciado Artífice",
     source: "TCoE",
+    spells: {
+      choices: [
+        { count: 1, level: 0, lists: ["Artífice"], label: "um truque da lista do artífice" },
+        { count: 1, level: 1, lists: ["Artífice"], label: "uma magia de 1º círculo da lista do artífice" },
+      ],
+    },
     description:
       "Você aprendeu algumas das engenhosidades dos artífices:\n" +
       "• Você aprende um truque da lista do artífice, bem como uma magia de 1º círculo dessa mesma lista, ambos à sua escolha. Inteligência é seu atributo de conjuração para essas magias.\n" +
@@ -669,6 +692,7 @@ const FEATS: FeatDef[] = [
   {
     name: "Telecinético",
     source: "TCoE",
+    spells: { fixed: ["Mãos Mágicas"] },
     abilityIncrease: { choose: ["int", "wis", "cha"], amount: 1 },
     description:
       "Você aprende a mover coisas com sua mente, concedendo a você os seguintes benefícios:\n" +
@@ -679,6 +703,7 @@ const FEATS: FeatDef[] = [
   {
     name: "Telepático",
     source: "TCoE",
+    spells: { fixed: ["Detectar Pensamentos"] },
     abilityIncrease: { choose: ["int", "wis", "cha"], amount: 1 },
     description:
       "Você despertou a habilidade de se conectar mentalmente com os outros, concedendo a você os seguintes benefícios:\n" +
@@ -689,6 +714,17 @@ const FEATS: FeatDef[] = [
   {
     name: "Tocado pelas Fadas",
     source: "TCoE",
+    spells: {
+      fixed: ["Passo Nebuloso"],
+      choices: [
+        {
+          count: 1,
+          level: 1,
+          schools: ["Adivinhação", "Encantamento"],
+          label: "uma magia de 1º círculo de Adivinhação ou Encantamento",
+        },
+      ],
+    },
     abilityIncrease: { choose: ["int", "wis", "cha"], amount: 1 },
     description:
       "Sua exposição à magia de Faéria o modificou, fornecendo a você os seguintes benefícios:\n" +
@@ -698,6 +734,17 @@ const FEATS: FeatDef[] = [
   {
     name: "Tocado pelas Sombras",
     source: "TCoE",
+    spells: {
+      fixed: ["Invisibilidade"],
+      choices: [
+        {
+          count: 1,
+          level: 1,
+          schools: ["Ilusão", "Necromancia"],
+          label: "uma magia de 1º círculo de Ilusão ou Necromancia",
+        },
+      ],
+    },
     abilityIncrease: { choose: ["int", "wis", "cha"], amount: 1 },
     description:
       "Sua exposição à magia do Sombral o modificou, fornecendo a você os seguintes benefícios:\n" +

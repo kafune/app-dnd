@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { AbilityScoresEditor, type AbilityMode } from "@/components/create/AbilityScoresEditor";
 import { AdvancementChoices, sumIncrease } from "@/components/create/AdvancementChoices";
 import { AvatarPicker } from "@/components/create/AvatarPicker";
+import { featSpellsComplete } from "@/components/create/FeatSpellChoices";
 import { ClassProgression } from "@/components/create/ClassProgression";
 import { ExpertisePicker, OptionalFeaturesPicker } from "@/components/create/ClassOptions";
 import { Field, selectCls } from "@/components/create/common";
@@ -119,6 +120,14 @@ export default function CriarFicha() {
     ...raceTraitDefs.flatMap((trait) =>
       (trait.spells ?? []).map((name) => ({ name, origin: `${trait.name} (${draft.raceName})` })),
     ),
+    ...[
+      ...(draft.raceFeat ? [{ feat: draft.raceFeat, spells: draft.raceFeatSpells ?? [] }] : []),
+      ...draft.advancement
+        .filter((decision) => decision.kind === "feat" && decision.feat)
+        .map((decision) => ({ feat: decision.feat!, spells: decision.spells ?? [] })),
+    ].flatMap(({ feat, spells }) =>
+      [...(findFeat(feat)?.spells?.fixed ?? []), ...spells].map((name) => ({ name, origin: `Talento: ${feat}` })),
+    ),
   ];
 
   function onFreePoint(key: AbilityKey, delta: 1 | -1) {
@@ -173,6 +182,7 @@ export default function CriarFicha() {
       knownSpells: [],
       advancement: [],
       expertise: [],
+      expertiseTools: [],
       optionalFeatures: [],
     });
   }
@@ -237,6 +247,8 @@ export default function CriarFicha() {
     if (raceTraitDefs.some((trait) => trait.choice && !draft.traitChoices[trait.name]))
       return setError("Complete as escolhas dos traços raciais.");
     if (raceTraitDefs.some((trait) => trait.feat) && !draft.raceFeat) return setError("Escolha o talento concedido pela raça.");
+    if (draft.raceFeat && !featSpellsComplete(findFeat(draft.raceFeat), draft.raceFeatSpells))
+      return setError(`Escolha as magias do talento ${draft.raceFeat}.`);
     if (draft.extraLanguages.length !== extraLanguageMax)
       return setError(`Escolha exatamente ${extraLanguageMax} idioma(s) adicional(is).`);
     if (draft.raceSkillChoices.length !== raceSkillMax)
@@ -252,8 +264,8 @@ export default function CriarFicha() {
         feats: [...(draft.raceFeat ? [draft.raceFeat] : []), ...draft.advancement.filter((d) => d.feat).map((d) => d.feat!)],
       },
     );
-    if (expertise.total > 0 && (draft.expertise ?? []).length !== expertise.total)
-      return setError(`Escolha exatamente ${expertise.total} perícia(s) para a Especialização.`);
+    if (expertise.total > 0 && (draft.expertise ?? []).length + (draft.expertiseTools ?? []).length !== expertise.total)
+      return setError(`Escolha exatamente ${expertise.total} proficiência(s) para a Especialização.`);
     if (reachedAsis(draft.classes).length !== draft.advancement.length)
       return setError("Decida todos os aumentos de atributo ou talentos da progressão.");
     if (!draft.advancement.every((decision) => validAdvancementDecision(decision, scores)))
@@ -650,6 +662,7 @@ function validAdvancementDecision(decision: AsiDecision, scores: AbilityScores):
   if (decision.kind === "feat") {
     if (!decision.feat) return false;
     const feat = findFeat(decision.feat);
+    if (!featSpellsComplete(feat, decision.spells)) return false;
     if (!feat?.abilityIncrease) return true;
     return ABILITY_ORDER.some(
       (key) => (decision.abilities?.[key] ?? 0) === feat.abilityIncrease!.amount && scores[key] <= 20,

@@ -320,7 +320,8 @@ export const BRUXO: ClassDef = {
       description:
         "Seu patrono é um poderoso ser dos Planos Superiores – um empíreo, solar, ki-rin, unicórnio ou outra entidade dos planos das bênçãos eternas. Seu pacto permite que você toque a luz sagrada que ilumina o multiverso e o obriga a trazer luz aos lugares escuros do mundo.",
       spells: {
-        "1": ["Curar Ferimentos", "Raio Guiador"],
+        // Luz e chama sagrada vêm de Truques Adicionais (1º nível), de graça.
+        "1": ["Luz", "Chama Sagrada", "Curar Ferimentos", "Raio Guiador"],
         "2": ["Esfera Flamejante", "Restauração Menor"],
         "3": ["Luz do Dia", "Revivificar"],
         "4": ["Guardião da Fé", "Muralha de Fogo"],

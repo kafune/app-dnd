@@ -8,7 +8,7 @@ import { EditableNumber } from "@/components/sheet/edit/EditControls";
 const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
-import { allSpellCaps } from "@/lib/progression";
+import { allSpellCaps, spellRoom } from "@/lib/progression";
 import { sheetPermissions } from "@/lib/permissions";
 
 const selectCls =
@@ -34,6 +34,10 @@ export function Spells({ id }: { id: string }) {
   // Mesmo limite de truques/magias usado na criação — assim a edição também
   // respeita a capacidade da(s) classe(s) conjuradora(s) do personagem.
   const caps = allSpellCaps(c.sheet.classes, c.sheet.abilityScores);
+  // Subiu de nível e sobrou vaga? Mesmo quem não troca magias livremente (Trapaceiro
+  // Arcano, Cavaleiro Arcano) escolhe as magias novas — só não pode mexer nas antigas.
+  const room = spellRoom(c.sheet.classes, c.sheet.abilityScores, cantrips, known);
+  const fillOnly = !canSwap && (room.cantrips > 0 || room.spells > 0);
 
   const byLevel = new Map<number, Spell[]>();
   for (const sp of all) {
@@ -78,10 +82,12 @@ export function Spells({ id }: { id: string }) {
       <CardBody className="space-y-3">
         {editMode && !canSwap && (
           <p className="rounded-md border border-zinc-200 p-2 text-xs text-zinc-500 dark:border-zinc-800">
-            A sua classe não escolhe magias livremente — quem muda a lista é o Mestre.
+            {fillOnly
+              ? `A sua classe não troca magias livremente, mas o nível novo abriu ${room.cantrips} truque(s) e ${room.spells} magia(s): escolha abaixo. Depois de preencher, só o Mestre muda a lista.`
+              : "A sua classe não escolhe magias livremente — quem muda a lista é o Mestre."}
           </p>
         )}
-        {editMode && canSwap && (
+        {editMode && (canSwap || fillOnly) && (
           <Suspense fallback={<p className="text-xs text-zinc-500">Carregando catálogo de magias…</p>}>
             <SpellPicker
               classNames={classNames}
@@ -89,11 +95,12 @@ export function Spells({ id }: { id: string }) {
               cantrips={cantrips}
               known={known}
               unrestricted={isMaster}
+              lockSelected={fillOnly}
               onChange={(cantrips, known) => setSpells({ cantrips, known })}
             />
           </Suspense>
         )}
-        {(!editMode || !canSwap) &&
+        {(!editMode || (!canSwap && !fillOnly)) &&
           sortedLevels.map((lvl) => (
           <div key={lvl}>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">

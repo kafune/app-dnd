@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { PointAllocator, allocatedPoints } from "@/components/PointAllocator";
 import { fromAllocation, toAllocation } from "@/components/create/AdvancementChoices";
+import { FeatSpellChoices, featHasSpells, featSpellsComplete } from "@/components/create/FeatSpellChoices";
 import { HpTracker } from "@/components/sheet/HpTracker";
 import { Abilities } from "@/components/sheet/Abilities";
 import { Skills } from "@/components/sheet/Skills";
@@ -22,7 +23,7 @@ import { Notes } from "@/components/sheet/Notes";
 import { Backstory } from "@/components/sheet/Backstory";
 import { Reminders } from "@/components/sheet/Reminders";
 import { OptionalFeatures } from "@/components/sheet/OptionalFeatures";
-import { TablePanel } from "@/components/sheet/TablePanel";
+import { ActionsPanel, TablePanel } from "@/components/sheet/TablePanel";
 import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
 import { ProficienciesAndLanguages, Inventory, Personality } from "@/components/sheet/Misc";
 import { PinLock } from "@/components/sheet/PinLock";
@@ -88,6 +89,9 @@ export default function CharacterPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [clearScope, setClearScope] = useState<"mesa" | null>(null);
+  // As escolhas de nível ficam aqui em cima porque "Concluir edição" aplica todas
+  // de uma vez: ninguém precisa lembrar de clicar num botão dentro do card.
+  const [asiChoices, setAsiChoices] = useState<Record<string, PendingChoice>>({});
 
   const onDelete = async () => {
     const name = character?.characterName || "A ficha";
@@ -170,10 +174,23 @@ export default function CharacterPage() {
     void setClasses(next, i);
   };
 
-  const saveAdvancement = async (decision: AsiDecision) => {
-    const next = applyAsiDecision(character, decision);
+  /** Aplica as escolhas de nível que já estão completas e fecha a edição. */
+  const finishEditing = async () => {
+    const pending = pendingAsis(classes, character.sheet.advancement);
+    let next = character;
+    const applied: string[] = [];
+    for (const slot of pending) {
+      const choice = asiChoices[`${slot.className}:${slot.level}`];
+      if (!choice || !isChoiceComplete(choice)) continue;
+      next = applyAsiDecision(next, toDecision(slot, choice));
+      applied.push(choice.kind === "feat" ? (choice.feat ?? "talento") : `+2 de atributo (${slot.className} ${slot.level})`);
+    }
+    setEditMode(false);
+    if (applied.length === 0) return;
     const ok = await patchCharacter(id, { sheet: next.sheet });
-    if (ok) pushToast({ title: decision.kind === "feat" ? `Talento ${decision.feat} adicionado` : "Atributos aumentados", tone: "success" });
+    if (!ok) return;
+    setAsiChoices({});
+    pushToast({ title: `Progressão aplicada: ${applied.join(", ")}.`, tone: "success" });
   };
 
   return (
@@ -191,7 +208,11 @@ export default function CharacterPage() {
               <Trash2 className="h-3 w-3" /> Deletar ficha
             </Button>
           )}
-          <Button variant={editMode ? "success" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
+          <Button
+            variant={editMode ? "success" : "outline"}
+            size="sm"
+            onClick={() => (editMode ? void finishEditing() : setEditMode(true))}
+          >
             {editMode ? (
               <>
                 <Check className="h-3 w-3" /> Concluir edição
@@ -372,7 +393,7 @@ export default function CharacterPage() {
             </div>
             )}
             {pendingAsis(classes, character.sheet.advancement).length > 0 && (
-              <PendingAdvancement characterId={id} onSave={saveAdvancement} />
+              <PendingAdvancement characterId={id} choices={asiChoices} setChoices={setAsiChoices} />
             )}
           </div>
         ) : (
@@ -423,7 +444,10 @@ export default function CharacterPage() {
             </CardBody>
           </Card>
 
-          <TablePanel id={id} onClear={() => setClearScope("mesa")} />
+          {/* Ações primeiro: é o que se consulta no meio do turno. */}
+          <ActionsPanel id={id} />
+
+          <TablePanel onClear={() => setClearScope("mesa")} />
 
           <ChangeLog id={id} />
         </aside>
@@ -455,18 +479,45 @@ type PendingChoice = {
   /** Incrementos já no formato da ficha (+1 por ponto; talento: +amount). */
   abilities: Partial<Record<AbilityKey, number>>;
   feat?: string;
+  /** Magias escolhidas nas opções que o talento abre. */
+  spells?: string[];
 };
 
+/** A escolha está pronta para virar decisão de progressão? */
+function isChoiceComplete(choice: PendingChoice): boolean {
+  if (choice.kind === "asi") return allocatedPoints(choice.abilities) === 2;
+  if (!choice.feat) return false;
+  const feat = findFeat(choice.feat);
+  if (feat?.abilityIncrease && allocatedPoints(choice.abilities) !== feat.abilityIncrease.amount) return false;
+  return featSpellsComplete(feat, choice.spells);
+}
+
+function toDecision(slot: { className: string; level: number }, choice: PendingChoice): AsiDecision {
+  return {
+    className: slot.className,
+    level: slot.level,
+    kind: choice.kind,
+    ...(choice.kind === "feat" ? { feat: choice.feat } : {}),
+    ...(choice.kind === "feat" && choice.spells?.length ? { spells: choice.spells } : {}),
+    ...(Object.keys(choice.abilities).length ? { abilities: choice.abilities } : {}),
+  };
+}
+
+/**
+ * Níveis em que o Mestre abriu "atributo ou talento" e o jogador ainda não decidiu.
+ * O que for escolhido aqui entra na ficha ao clicar em "Concluir edição".
+ */
 function PendingAdvancement({
   characterId,
-  onSave,
+  choices,
+  setChoices,
 }: {
   characterId: string;
-  onSave: (decision: AsiDecision) => Promise<void>;
+  choices: Record<string, PendingChoice>;
+  setChoices: (update: (state: Record<string, PendingChoice>) => Record<string, PendingChoice>) => void;
 }) {
   const character = useStore((state) => state.characters[characterId]);
   useStore((state) => state.homebrew); // talentos homebrew novos aparecem sem recarregar
-  const [choices, setChoices] = useState<Record<string, PendingChoice>>({});
   if (!character) return null;
   const pending = pendingAsis(character.sheet.classes, character.sheet.advancement);
   const raceName = character.sheet.raceInfo?.race ?? character.sheet.species;
@@ -474,6 +525,9 @@ function PendingAdvancement({
   return (
     <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
       <div className="text-sm font-medium">Progressão pendente</div>
+      <p className="text-xs text-zinc-600 dark:text-zinc-300">
+        Escolha e clique em <strong>Concluir edição</strong>: a escolha entra na ficha sozinha e este aviso some.
+      </p>
       {pending.map((slot) => {
         const key = `${slot.className}:${slot.level}`;
         const choice = choices[key] ?? { kind: "asi", abilities: {} };
@@ -481,10 +535,7 @@ function PendingAdvancement({
         const setChoice = (patch: Partial<PendingChoice>) =>
           setChoices((state) => ({ ...state, [key]: { ...choice, ...patch } }));
         const preview = applyAbilityIncrease(character.sheet.abilityScores, choice.abilities);
-        const valid =
-          choice.kind === "asi"
-            ? allocatedPoints(choice.abilities) === 2
-            : !!choice.feat && (!feat?.abilityIncrease || allocatedPoints(choice.abilities) === feat.abilityIncrease.amount);
+        const ready = isChoiceComplete(choice);
         return (
           <div key={key} className="space-y-2 rounded border border-amber-200 bg-white p-2 dark:border-amber-900 dark:bg-zinc-900">
             <div className="text-xs font-medium">
@@ -494,14 +545,14 @@ function PendingAdvancement({
               <Button
                 size="sm"
                 variant={choice.kind === "asi" ? "success" : "outline"}
-                onClick={() => choice.kind !== "asi" && setChoice({ kind: "asi", abilities: {}, feat: undefined })}
+                onClick={() => choice.kind !== "asi" && setChoice({ kind: "asi", abilities: {}, feat: undefined, spells: undefined })}
               >
                 Pontos de atributo
               </Button>
               <Button
                 size="sm"
                 variant={choice.kind === "feat" ? "success" : "outline"}
-                onClick={() => choice.kind !== "feat" && setChoice({ kind: "feat", abilities: {}, feat: undefined })}
+                onClick={() => choice.kind !== "feat" && setChoice({ kind: "feat", abilities: {}, feat: undefined, spells: undefined })}
               >
                 Talento
               </Button>
@@ -519,7 +570,7 @@ function PendingAdvancement({
                 <select
                   className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
                   value={choice.feat ?? ""}
-                  onChange={(event) => setChoice({ feat: event.target.value || undefined, abilities: {} })}
+                  onChange={(event) => setChoice({ feat: event.target.value || undefined, abilities: {}, spells: undefined })}
                 >
                   <option value="">— talento —</option>
                   {feats.map((entry) => (
@@ -541,23 +592,14 @@ function PendingAdvancement({
                   />
                 )}
                 {feat && <p className="whitespace-pre-line text-xs text-zinc-600 dark:text-zinc-300">{feat.description}</p>}
+                {feat && featHasSpells(feat) && (
+                  <FeatSpellChoices feat={feat} chosen={choice.spells ?? []} onChange={(spells) => setChoice({ spells })} />
+                )}
               </div>
             )}
-            <Button
-              size="sm"
-              disabled={!valid}
-              onClick={() =>
-                void onSave({
-                  className: slot.className,
-                  level: slot.level,
-                  kind: choice.kind,
-                  ...(choice.kind === "feat" ? { feat: choice.feat } : {}),
-                  ...(Object.keys(choice.abilities).length ? { abilities: choice.abilities } : {}),
-                })
-              }
-            >
-              Aplicar escolha
-            </Button>
+            <p className={`text-xs ${ready ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
+              {ready ? "Pronto: entra na ficha ao concluir a edição." : "Complete a escolha para ela ser aplicada."}
+            </p>
           </div>
         );
       })}

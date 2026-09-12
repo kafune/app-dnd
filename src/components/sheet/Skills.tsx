@@ -183,7 +183,9 @@ export function ExpertisePicker({ id }: { id: string }) {
   const fixedSet = new Set(budget.fixed);
   // As fixas (ex.: Batedor) não gastam orçamento; as escolhidas, sim.
   const chosen = skills.filter((s) => s.expert && !fixedSet.has(s.name));
-  const left = budget.total - chosen.length;
+  // Ladino: uma vaga pode ir para ferramentas (ferramentas de ladrão) em vez de perícia.
+  const chosenTools = (c.sheet.expertTools ?? []).filter((tool) => budget.tools.includes(tool));
+  const left = budget.total - chosen.length - chosenTools.length;
   const missingFixed = budget.fixed.filter((name) => !skills.some((s) => s.name === name && s.expert));
 
   if (budget.total === 0 && missingFixed.length === 0) return null;
@@ -191,6 +193,12 @@ export function ExpertisePicker({ id }: { id: string }) {
   const setExpert = (name: SkillName, expert: boolean) => {
     const others = skills.filter((s) => s.name !== name);
     void patchSheet(id, { skills: [...others, { name, proficient: true, ...(expert ? { expert: true } : {}) }] });
+  };
+
+  const toggleTool = (tool: string) => {
+    const next = chosenTools.includes(tool) ? chosenTools.filter((t) => t !== tool) : [...chosenTools, tool];
+    if (!chosenTools.includes(tool) && left <= 0) return;
+    void patchSheet(id, { expertTools: next });
   };
 
   const candidates = skills
@@ -203,7 +211,7 @@ export function ExpertisePicker({ id }: { id: string }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <strong className="text-sm">Especialização</strong>
         <span className={left > 0 ? "font-medium text-amber-700 dark:text-amber-300" : "text-zinc-500"}>
-          {left > 0 ? `${left} perícia(s) para escolher` : "tudo escolhido"}
+          {left > 0 ? `${left} proficiência(s) para escolher` : "tudo escolhido"}
         </span>
       </div>
       <p className="text-zinc-600 dark:text-zinc-300">
@@ -224,6 +232,33 @@ export function ExpertisePicker({ id }: { id: string }) {
           >
             aplicar
           </Button>
+        </div>
+      )}
+      {budget.tools.length > 0 && (
+        <div className="space-y-1">
+          <span className="text-zinc-600 dark:text-zinc-300">
+            No lugar de uma perícia, dá para especializar uma destas ferramentas:
+          </span>
+          <div className="flex flex-wrap gap-1">
+            {budget.tools.map((tool) => {
+              const active = chosenTools.includes(tool);
+              return (
+                <button
+                  key={tool}
+                  type="button"
+                  disabled={!active && left <= 0}
+                  onClick={() => toggleTool(tool)}
+                  className={`rounded border px-2 py-0.5 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    active
+                      ? "border-amber-500 bg-amber-500 text-white"
+                      : "border-zinc-300 bg-white hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  {tool}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       {candidates.length === 0 ? (

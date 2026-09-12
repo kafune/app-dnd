@@ -302,6 +302,8 @@ export const MAGO: ClassDef = {
       source: "PHB",
       description:
         "Estuda magias que ofuscam os sentidos, confundem a mente e enganam até os mais sábios. Sua magia é sutil, mas as ilusões fazem o impossível parecer real.",
+      // Ilusão Menor Aprimorada (2º nível) dá o truque de graça.
+      spells: { "2": ["Ilusão Menor"] },
       features: [
         {
           name: "Ilusão Instruída",

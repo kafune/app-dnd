@@ -16,7 +16,9 @@ import {
   type ClassEntry,
   type ExpertiseGrant,
   type Feature,
+  type FeatSpellChoice,
   type FeatureResource,
+  type RaceInfo,
   type RaceTraitDef,
   type Resource,
   type SkillName,
@@ -32,7 +34,7 @@ import {
   findSubclassDef,
   type ClassFeatureWithOrigin,
 } from "@/data/classesCatalog";
-import { findSpell } from "@/data/spellsCatalog";
+import { findSpell, SPELLS_CATALOG } from "@/data/spellsCatalog";
 import { findFeat } from "@/data/featsCatalog";
 import { resolveRace } from "@/data/racesCatalog";
 
@@ -370,6 +372,180 @@ export function toSheetSpell(c: ReturnType<typeof findSpell> & object): Spell {
   };
 }
 
+/** Rótulo de "concedida por" de uma magia vinda de talento. */
+export function featSpellLabel(featName: string): string {
+  return `Talento: ${featName}`;
+}
+
+/** Nome do talento quando o rótulo veio de `featSpellLabel`. */
+function featOfLabel(granted: string | undefined): string | null {
+  const m = /^Talento:\s*(.+)$/.exec(granted ?? "");
+  return m ? m[1] : null;
+}
+
+/** Uma magia do catálogo no formato da ficha, marcada como concedida. */
+function toGrantedSpell(name: string, granted: string, classSource?: string): Spell {
+  const catalog = findSpell(name);
+  const base: Spell = catalog
+    ? toSheetSpell(catalog)
+    : { name, level: 1, school: "", castingTime: "", range: "", components: "", duration: "", description: "" };
+  return { ...base, granted, ...(classSource ? { classSource } : {}) };
+}
+
+/** Magias concedidas pelos traços raciais (Alto Elfo, Tiefling, Draconato das Profundezas…). */
+export function raceGrantedSpells(traits: RaceTraitDef[], raceName: string): Spell[] {
+  const out: Spell[] = [];
+  const seen = new Set<string>();
+  for (const trait of traits) {
+    for (const name of trait.spells ?? []) {
+      const key = norm(name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(toGrantedSpell(name, `${raceName || "Raça"}: ${trait.name}`));
+    }
+  }
+  return out;
+}
+
+/** As magias que um talento concede: as fixas + as que o jogador escolheu. */
+export function featGrantedSpells(featName: string, chosen: string[] = []): Spell[] {
+  const feat = findFeat(featName);
+  const label = featSpellLabel(feat?.name ?? featName);
+  const out: Spell[] = [];
+  const seen = new Set<string>();
+  for (const name of [...(feat?.spells?.fixed ?? []), ...chosen]) {
+    const key = norm(name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(toGrantedSpell(name, label));
+  }
+  return out;
+}
+
+/** Todas as magias concedidas pelos talentos que a ficha tem (fixas + escolhidas nas decisões). */
+export function allFeatGrantedSpells(features: Feature[], advancement: AsiDecision[] = []): Spell[] {
+  const out: Spell[] = [];
+  const seen = new Set<string>();
+  for (const feature of features) {
+    if (feature.origin?.kind !== "feat") continue;
+    const decision = advancement.find(
+      (d) => d.kind === "feat" && d.feat && norm(d.feat) === norm(feature.name),
+    );
+    for (const spell of featGrantedSpells(feature.name, decision?.spells ?? [])) {
+      const key = norm(spell.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(spell);
+    }
+  }
+  return out;
+}
+
+/**
+ * Todas as magias que a ficha ganha de graça: subclasse, raça e talentos. É a lista
+ * que decide quais "concedidas" continuam valendo num recálculo.
+ */
+export function grantedSpellsForSheet(
+  classes: ClassEntry[],
+  raceInfo: RaceInfo | undefined,
+  features: Feature[],
+  advancement: AsiDecision[] = [],
+): Spell[] {
+  const race = raceInfo ? resolveRace(raceInfo.race, raceInfo.subrace) : undefined;
+  return [
+    ...classes.flatMap(grantedSpellsFor),
+    ...(race ? raceGrantedSpells(race.traits, race.race.name) : []),
+    ...allFeatGrantedSpells(features, advancement),
+  ];
+}
+
+/** Magias do catálogo que atendem a uma escolha aberta por um talento. */
+export function featSpellOptions(choice: FeatSpellChoice, list?: string): Spell[] {
+  return SPELLS_CATALOG.filter((spell) => {
+    if (spell.level !== choice.level) return false;
+    if (choice.ritual && !spell.ritual) return false;
+    if (choice.schools && !choice.schools.some((school) => norm(school) === norm(spell.school))) return false;
+    const lists = list ? [list] : choice.lists;
+    if (lists && !lists.some((entry) => spell.classes.some((c) => norm(c) === norm(entry)))) return false;
+    return true;
+  }).map((spell) => toSheetSpell(spell));
+}
+
+/**
+ * Junta as magias escolhidas com as concedidas e separa truques de magias, sem
+ * repetir nomes. As concedidas que não valem mais (subclasse/raça/talento que saiu
+ * da ficha) ficam de fora.
+ */
+export function mergeSpellLists(
+  current: Spell[],
+  granted: Spell[],
+  featNames: string[],
+): { cantrips: Spell[]; known: Spell[] } {
+  const grantedNames = new Set(granted.map((s) => norm(s.name)));
+  const feats = new Set(featNames.map(norm));
+  const kept = current.filter((spell) => {
+    if (!spell.granted) return true;
+    const feat = featOfLabel(spell.granted);
+    if (feat) return feats.has(norm(feat));
+    return grantedNames.has(norm(spell.name));
+  });
+  for (const spell of granted) {
+    if (!kept.some((entry) => norm(entry.name) === norm(spell.name))) kept.push(spell);
+  }
+  return {
+    cantrips: kept.filter((spell) => spell.level === 0),
+    known: kept.filter((spell) => spell.level !== 0),
+  };
+}
+
+/** A qual classe conjuradora da ficha uma magia é contada. */
+function capOwnerOf(spell: Spell, caps: ClassSpellCaps[]): ClassSpellCaps | undefined {
+  if (spell.classSource) {
+    const match = caps.find((cap) => norm(cap.className) === norm(spell.classSource!));
+    if (match) return match;
+  }
+  const catalog = findSpell(spell.name);
+  if (catalog) {
+    const match = caps.find((cap) => catalog.classes.includes(cap.profile.list));
+    if (match) return match;
+  }
+  return caps[0];
+}
+
+/**
+ * Quantos truques e magias ainda cabem nos limites das classes conjuradoras.
+ * É o que sobra quando o Mestre sobe o nível: o jogador preenche as vagas novas
+ * mesmo quando a classe dele não troca magias livremente (Trapaceiro Arcano).
+ */
+export function spellRoom(
+  classes: ClassEntry[],
+  scores: AbilityScores,
+  cantrips: Spell[],
+  known: Spell[],
+): { cantrips: number; spells: number } {
+  const caps = allSpellCaps(classes, scores);
+  if (caps.length === 0) return { cantrips: 0, spells: 0 };
+  const count = (list: Spell[]) => {
+    const used = new Map<string, number>();
+    for (const spell of list) {
+      if (spell.granted) continue; // concedidas não ocupam vaga
+      const cap = capOwnerOf(spell, caps);
+      if (!cap) continue;
+      used.set(cap.className, (used.get(cap.className) ?? 0) + 1);
+    }
+    return used;
+  };
+  const usedCantrips = count(cantrips);
+  const usedKnown = count(known);
+  let roomCantrips = 0;
+  let roomSpells = 0;
+  for (const cap of caps) {
+    roomCantrips += Math.max(0, cap.cantrips - (usedCantrips.get(cap.className) ?? 0));
+    roomSpells += Math.max(0, cap.spells - (usedKnown.get(cap.className) ?? 0));
+  }
+  return { cantrips: roomCantrips, spells: roomSpells };
+}
+
 /**
  * Magias da ficha que estouram a regra: sem classe que as conjure, círculo acima do
  * permitido ou acima da quantidade. Usado para avisar (não remove nada sozinho).
@@ -504,16 +680,25 @@ export function expertiseSources(
 export function expertiseBudget(
   classes: ClassEntry[],
   options: { adopted?: string[]; feats?: string[] } = {},
-): { total: number; fixed: SkillName[]; allowed: SkillName[] | null; sources: ExpertiseSource[] } {
+): {
+  total: number;
+  fixed: SkillName[];
+  allowed: SkillName[] | null;
+  /** Ferramentas que podem ocupar uma das vagas (Ladino: ferramentas de ladrão). */
+  tools: string[];
+  sources: ExpertiseSource[];
+} {
   const sources = expertiseSources(classes, options);
   const fixed = new Set<SkillName>();
   const allowed = new Set<SkillName>();
+  const tools = new Set<string>();
   let restricted = false;
   let total = 0;
   for (const { grant } of sources) {
     total += grant.count;
     for (const skill of grant.fixed ?? []) fixed.add(skill);
     if (grant.count > 0) {
+      for (const tool of grant.tools ?? []) tools.add(tool);
       if (grant.from) {
         restricted = true;
         for (const skill of grant.from) allowed.add(skill);
@@ -527,6 +712,7 @@ export function expertiseBudget(
     total,
     fixed: [...fixed],
     allowed: restricted && allowed.size > 0 ? [...allowed] : null,
+    tools: [...tools],
     sources,
   };
 }
@@ -846,10 +1032,13 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
   const hpMax = Math.max(1, character.hpMax + hpDelta);
   const hpCurrent = Math.max(0, Math.min(hpMax, character.hpCurrent + Math.max(0, hpDelta)));
 
-  // --- magias concedidas por subclasse
-  const grantedNext = nextClasses.flatMap(grantedSpellsFor);
-  const known = sheet.spells.known.filter((s) => !s.granted || grantedNext.some((g) => norm(g.name) === norm(s.name)));
-  for (const g of grantedNext) if (!known.some((s) => norm(s.name) === norm(g.name))) known.push(g);
+  // --- magias concedidas de graça: subclasse, raça e talentos (não contam no limite)
+  const grantedNext = grantedSpellsForSheet(nextClasses, sheet.raceInfo, features, advancement);
+  const { cantrips, known } = mergeSpellLists(
+    [...sheet.spells.cantrips, ...sheet.spells.known],
+    grantedNext,
+    featNamesOf(features),
+  );
 
   // --- espaços (preserva usados)
   const fresh = spellSlotsFor(nextClasses);
@@ -894,6 +1083,7 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
   const castAbility = caps[0]?.profile.ability ?? sheet.spells.castingAbility;
   const spellsBlock = {
     ...sheet.spells,
+    cantrips,
     known,
     castingAbility: castAbility,
     saveDC: 8 + profBonus + abilityMod(scores[castAbility]),
@@ -965,6 +1155,14 @@ export function applyAsiDecision(character: Character, decision: AsiDecision): C
     features = [...features.filter((f) => !(f.origin?.kind === "feat" && norm(f.name) === norm(feat.name) && f.origin.level === decision.level)), feat];
   }
   advancement.push(decision);
+  // O talento pode conceder magias (Tocado pelas Sombras, Iniciado em Magia…): elas
+  // entram de graça na ficha, marcadas com a origem, sem contar no limite da classe.
+  const granted = grantedSpellsForSheet(sheet.classes, sheet.raceInfo, features, advancement);
+  const { cantrips, known } = mergeSpellLists(
+    [...sheet.spells.cantrips, ...sheet.spells.known],
+    granted,
+    featNamesOf(features),
+  );
   const prof = proficiencyBonusForLevel(totalLevelOf(sheet.classes));
   const cast = sheet.spells.castingAbility;
   return {
@@ -974,7 +1172,13 @@ export function applyAsiDecision(character: Character, decision: AsiDecision): C
       abilityScores: scores,
       features,
       advancement,
-      spells: { ...sheet.spells, saveDC: 8 + prof + abilityMod(scores[cast]), attackMod: prof + abilityMod(scores[cast]) },
+      spells: {
+        ...sheet.spells,
+        cantrips,
+        known,
+        saveDC: 8 + prof + abilityMod(scores[cast]),
+        attackMod: prof + abilityMod(scores[cast]),
+      },
       initiativeBonus: abilityMod(scores.dex),
     },
   };

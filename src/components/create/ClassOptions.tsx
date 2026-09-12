@@ -44,17 +44,18 @@ export function OptionalFeaturesPicker({ draft, upd }: Props) {
       </CardHeader>
       <CardBody className="space-y-2">
         <p className="text-xs text-zinc-500">
-          Regras opcionais do Caldeirão de Tasha para a sua classe. Combine com o Mestre: marque só as que a mesa usa.
+          Regras opcionais do Caldeirão de Tasha para a sua classe. O contorno amarelo marca o que é opcional: combine com
+          o Mestre e marque só o que a mesa usa. O que você deixar em branco não volta a pedir nada na ficha.
         </p>
         {available.map((feature) => {
           const on = adopted.includes(feature.name);
           return (
             <label
               key={feature.name}
-              className={`flex cursor-pointer gap-2 rounded-md border p-2 text-xs transition ${
+              className={`flex cursor-pointer gap-2 rounded-md border-2 p-2 text-xs transition ${
                 on
                   ? "border-emerald-400 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/20"
-                  : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40"
+                  : "border-amber-400 hover:bg-amber-50 dark:border-amber-600 dark:hover:bg-amber-950/20"
               }`}
             >
               <input type="checkbox" className="mt-0.5" checked={on} onChange={() => toggle(feature.name)} />
@@ -92,11 +93,18 @@ export function ExpertisePicker({ draft, upd }: Props) {
     .filter((skill) => !budget.allowed || budget.allowed.includes(skill))
     .sort((a, b) => a.localeCompare(b, "pt-BR"));
   const chosen = (draft.expertise ?? []).filter((skill) => options.includes(skill));
-  const left = budget.total - chosen.length;
+  // Ladino: uma das vagas pode ir para as ferramentas de ladrão em vez de uma perícia.
+  const chosenTools = (draft.expertiseTools ?? []).filter((tool) => budget.tools.includes(tool));
+  const left = budget.total - chosen.length - chosenTools.length;
 
   const toggle = (skill: SkillName) => {
     if (chosen.includes(skill)) upd({ expertise: chosen.filter((s) => s !== skill) });
     else if (left > 0) upd({ expertise: [...chosen, skill] });
+  };
+
+  const toggleTool = (tool: string) => {
+    if (chosenTools.includes(tool)) upd({ expertiseTools: chosenTools.filter((t) => t !== tool) });
+    else if (left > 0) upd({ expertiseTools: [...chosenTools, tool] });
   };
 
   return (
@@ -105,7 +113,7 @@ export function ExpertisePicker({ draft, upd }: Props) {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <CardTitle>Especialização</CardTitle>
           <span className={left === 0 ? "text-xs text-emerald-600" : "text-xs text-zinc-500"}>
-            {chosen.length}/{budget.total} escolhidas
+            {chosen.length + chosenTools.length}/{budget.total} escolhidas
           </span>
         </div>
       </CardHeader>
@@ -145,6 +153,33 @@ export function ExpertisePicker({ draft, upd }: Props) {
               })}
             </div>
           ))}
+        {budget.total > 0 && budget.tools.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-zinc-500">
+              Você pode trocar uma das perícias por uma destas proficiências de ferramenta:
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {budget.tools.map((tool) => {
+                const on = chosenTools.includes(tool);
+                return (
+                  <button
+                    key={tool}
+                    type="button"
+                    disabled={!on && left <= 0}
+                    onClick={() => toggleTool(tool)}
+                    className={`rounded border px-2 py-1 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                      on
+                        ? "border-amber-500 bg-amber-500 text-white"
+                        : "border-zinc-300 bg-white hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    {tool}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </CardBody>
     </Card>
   );

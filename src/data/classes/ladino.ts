@@ -19,7 +19,7 @@ export const LADINO: ClassDef = {
     {
       name: "Especialização",
       level: 1,
-      expertise: { count: 2 },
+      expertise: { count: 2, tools: ["Ferramentas de ladrão"] },
       description:
         "No 1º nível, você escolhe duas de suas perícias em que seja proficiente, ou uma perícia em que seja proficiente e ferramentas de ladrão. Seu bônus de proficiência é dobrado em qualquer teste de habilidade que fizer com elas.\nNo 6º nível, você pode escolher outras duas de suas proficiências (em perícias ou ferramentas de ladrão) para ganhar esse benefício.",
     },
@@ -64,7 +64,7 @@ export const LADINO: ClassDef = {
     {
       name: "Especialização (melhoria)",
       level: 6,
-      expertise: { count: 2 },
+      expertise: { count: 2, tools: ["Ferramentas de ladrão"] },
       description:
         "No 6º nível, você pode escolher outras duas de suas proficiências (em perícias ou ferramentas de ladrão) para dobrar o bônus de proficiência nos testes de habilidade feitos com elas, totalizando quatro proficiências com Especialização.",
     },
@@ -224,6 +224,8 @@ export const LADINO: ClassDef = {
       source: "PHB",
       description:
         "Alguns ladinos aprimoram suas finas perícias de furtividade e agilidade com magia, aprendendo truques de encantamento e ilusão. Incluem batedores de carteira e assaltantes, mas também trapaceiros, enganadores e muitos aventureiros.",
+      // Mãos mágicas é de graça no 3º nível: não conta nos truques conhecidos.
+      spells: { "3": ["Mãos Mágicas"] },
       features: [
         {
           name: "Conjuração",

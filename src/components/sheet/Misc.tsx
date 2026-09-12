@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Shield, ShieldOff, Trash2 } from "lucide-react";
+import { Minus, Plus, Shield, ShieldOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useIsMaster, useStore } from "@/lib/store";
@@ -15,6 +15,8 @@ import {
   INVENTORY_CATEGORY_ORDER,
   inventoryCategory,
 } from "@/lib/inventory";
+
+const norm = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
 const splitLines = (v: string) =>
   v
@@ -74,9 +76,17 @@ export function ProficienciesAndLanguages({ id }: { id: string }) {
   }
 
   const saves = ABILITY_ORDER.filter((key) => c.sheet.saves.includes(key)).map((key) => ABILITY_LABELS[key]);
+  const expertTools = c.sheet.expertTools ?? [];
+  // Ferramenta com Especialização aparece marcada aqui (o bônus de proficiência dobra nela).
+  const markExpert = (entry: string) =>
+    expertTools.some((tool) => norm(tool) === norm(entry)) ? `${entry} — especialização (bônus dobrado)` : entry;
   const topics = [
     ...(saves.length ? [{ key: "saves", label: "Testes de resistência", items: saves }] : []),
-    ...groupProficiencies(c.sheet.proficiencies).map((group) => ({ key: group.topic, label: group.label, items: group.items })),
+    ...groupProficiencies(c.sheet.proficiencies).map((group) => ({
+      key: group.topic,
+      label: group.label,
+      items: group.items.map(markExpert),
+    })),
     ...(c.sheet.languages.length ? [{ key: "idiomas", label: "Idiomas", items: c.sheet.languages }] : []),
   ];
 
@@ -122,6 +132,9 @@ export function Inventory({ id }: { id: string }) {
 
   const isEquipped = (name: string) => name === c.sheet.equippedArmor || name === c.sheet.equippedShield;
   const toggleEquip = (name: string) => void patchSheet(id, equipPatch(c, name, !isEquipped(name)));
+  // Quantidade é do jogador: ele vende, perde e acha coisas entre uma sessão e outra.
+  const setQuantity = (index: number, quantity: number) =>
+    setInv({ items: inv.items.map((item, i) => (i === index ? { ...item, quantity: Math.max(0, quantity) } : item)) });
 
   return (
     <Card>
@@ -199,6 +212,7 @@ export function Inventory({ id }: { id: string }) {
                     item={item}
                     equipped={isEquipped(item.name)}
                     onToggleEquip={toggleEquip}
+                    onQuantity={(quantity) => setQuantity(index, quantity)}
                   />
                 ),
               )}
@@ -237,10 +251,12 @@ function InventoryRow({
   item,
   equipped,
   onToggleEquip,
+  onQuantity,
 }: {
   item: Item;
   equipped: boolean;
   onToggleEquip: (name: string) => void;
+  onQuantity: (quantity: number) => void;
 }) {
   const catalog = findItem(item.name);
   const shield = isShieldItem(item.name);
@@ -250,8 +266,10 @@ function InventoryRow({
     catalog?.strengthRequirement ? `exige Força ${catalog.strengthRequirement}` : "",
   ].filter(Boolean);
 
+  const quantity = item.quantity ?? 1;
+
   return (
-    <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+    <li className={`flex flex-wrap items-baseline gap-x-2 gap-y-1 ${quantity === 0 ? "opacity-50" : ""}`}>
       <span className="min-w-0 flex-1">
         <strong className="text-zinc-900 dark:text-zinc-100">{itemDisplayName(item.name)}</strong>
         {equipped && (
@@ -265,7 +283,27 @@ function InventoryRow({
           <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">⚠ {penalty.join(" · ")}</span>
         )}
       </span>
-      {(item.quantity ?? 1) > 1 && <span className="shrink-0 font-mono text-xs text-zinc-500">×{item.quantity}</span>}
+      {/* Contador: o jogador ajusta sozinho quando vende, perde ou acha mais um. */}
+      <span className="flex shrink-0 items-center gap-0.5 self-center rounded border border-zinc-200 dark:border-zinc-800">
+        <button
+          type="button"
+          className="px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
+          aria-label={`Remover um ${item.name}`}
+          disabled={quantity <= 0}
+          onClick={() => onQuantity(quantity - 1)}
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <span className="min-w-[1.5rem] text-center font-mono text-xs">{quantity}</span>
+        <button
+          type="button"
+          className="px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          aria-label={`Adicionar um ${item.name}`}
+          onClick={() => onQuantity(quantity + 1)}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </span>
       {wearable && (
         <Button
           size="sm"
@@ -282,10 +320,17 @@ function InventoryRow({
   );
 }
 
+/** Põe na ficha um item que já existe no site — o Mestre não reescreve nada. */
 function InventoryCatalogAdd({ items, onChange }: { items: Item[]; onChange: (items: Item[]) => void }) {
+  const [query, setQuery] = useState("");
   const [name, setName] = useState(ITEMS_CATALOG[0]?.name ?? "");
+  const q = norm(query);
+  const matches = q
+    ? ITEMS_CATALOG.filter((item) => norm(item.name).includes(q) || norm(item.detail).includes(q))
+    : ITEMS_CATALOG;
+  const selected = matches.some((item) => item.name === name) ? name : (matches[0]?.name ?? "");
   const add = () => {
-    const catalog = findItem(name);
+    const catalog = findItem(selected);
     if (!catalog) return;
     const existing = items.find((item) => item.name === catalog.name);
     if (existing) {
@@ -295,21 +340,30 @@ function InventoryCatalogAdd({ items, onChange }: { items: Item[]; onChange: (it
     }
   };
   return (
-    <div className="flex gap-2">
-      <select
-        className="h-8 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-      >
-        {ITEMS_CATALOG.map((item) => (
-          <option key={item.name} value={item.name}>
-            {item.name} — {item.detail}
-          </option>
-        ))}
-      </select>
-      <Button variant="outline" size="sm" onClick={add}>
-        Adicionar
-      </Button>
+    <div className="space-y-1">
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Buscar no catálogo de itens…"
+        className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      <div className="flex gap-2">
+        <select
+          className="h-8 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+          value={selected}
+          onChange={(event) => setName(event.target.value)}
+        >
+          {matches.map((item) => (
+            <option key={item.name} value={item.name}>
+              {item.name} — {item.detail}
+            </option>
+          ))}
+        </select>
+        <Button variant="outline" size="sm" disabled={!selected} onClick={add}>
+          Adicionar
+        </Button>
+      </div>
+      {matches.length === 0 && <p className="text-xs text-zinc-500">Nenhum item do catálogo com esse nome.</p>}
     </div>
   );
 }
@@ -318,7 +372,6 @@ function InventoryCatalogAdd({ items, onChange }: { items: Item[]; onChange: (it
 export function Personality({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const editMode = useStore((s) => s.editMode);
-  const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
   const p = c.sheet.personality;
   // A história ganhou bloco próprio no fim da ficha (ver components/sheet/Backstory.tsx).
@@ -329,27 +382,8 @@ export function Personality({ id }: { id: string }) {
     ["Por que estou aqui", "why"],
   ];
 
-  if (editMode) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Personalidade & História</CardTitle>
-        </CardHeader>
-        <CardBody className="space-y-2 text-sm">
-          {persKeys.map(([label, key]) => (
-            <label key={key} className="block text-xs text-zinc-500">
-              {label}
-              <EditableText
-                value={p[key]}
-                onSave={(v) => void patchSheet(id, { personality: { ...p, [key]: v } })}
-                multiline={key === "why"}
-              />
-            </label>
-          ))}
-        </CardBody>
-      </Card>
-    );
-  }
+  // No modo de edição a ficha mostra só o que muda regra: personalidade fica de fora.
+  if (editMode) return null;
   const blocks = persKeys.filter(([, key]) => p[key] && p[key] !== "—");
   if (blocks.length === 0) return null;
   return (

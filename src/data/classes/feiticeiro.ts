@@ -325,6 +325,8 @@ export const FEITICEIRO: ClassDef = {
       source: "XGtE",
       description:
         "Você é uma criatura de sombra: sua magia inata vem do próprio Pendor das Sombras. A centelha da vida que o sustenta está abafada, lutando contra a energia escura que imbui sua alma.",
+      // Olhos da Escuridão dá escuridão no 3º nível, fora das magias conhecidas.
+      spells: { "3": ["Escuridão"] },
       features: [
         {
           name: "Olhos da Escuridão",

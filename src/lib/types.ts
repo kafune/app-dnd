@@ -284,6 +284,8 @@ export type AsiDecision = {
   abilities?: Partial<Record<AbilityKey, number>>;
   /** kind = "feat": nome do talento escolhido. */
   feat?: string;
+  /** kind = "feat": magias escolhidas nas opções que o talento abre (nomes do catálogo). */
+  spells?: string[];
 };
 
 /** Escolhas feitas na raça (para reconstruir/validar a ficha). */
@@ -330,6 +332,10 @@ export type Sheet = {
   equippedShield?: string | null;
   /** Características opcionais (Tasha) que o jogador escolheu adotar. */
   optionalFeatures?: string[];
+  /** Características opcionais que o jogador recusou (param de ser sugeridas). */
+  declinedFeatures?: string[];
+  /** Ferramentas com especialização (bônus de proficiência dobrado). */
+  expertTools?: string[];
   speed: number; // metros
   initiativeBonus: number;
   proficiencyBonus: number;
@@ -549,6 +555,9 @@ export type ExpertiseGrant = {
   from?: SkillName[];
   /** Já vem decidido (ex.: Batedor: Natureza e Sobrevivência). */
   fixed?: SkillName[];
+  /** Ferramentas que podem ocupar uma das vagas no lugar de uma perícia
+   *  (Ladino: "duas perícias, ou uma perícia e ferramentas de ladrão"). */
+  tools?: string[];
 };
 
 /** Subclasse (caminho, colégio, domínio, círculo, origem, arquétipo, tradição, juramento, patrono). */
@@ -586,6 +595,32 @@ export type ClassDef = {
   multiclass: MulticlassRule;
 };
 
+/** Uma escolha de magia aberta por um talento (ex.: "mais uma magia de 1º círculo de Ilusão ou Necromancia"). */
+export type FeatSpellChoice = {
+  /** Quantas magias escolher. */
+  count: number;
+  /** Círculo das magias (0 = truque). */
+  level: number;
+  /** Restringe às escolas de magia (nomes iguais aos do catálogo). */
+  schools?: string[];
+  /** Restringe às listas de classe. */
+  lists?: SpellClass[];
+  /** Só magias com o descritor ritual. */
+  ritual?: boolean;
+  /** Texto curto explicando a escolha. */
+  label?: string;
+};
+
+/** Magias que um talento concede: fixas e/ou à escolha. */
+export type FeatSpellGrant = {
+  /** Magias que entram na ficha automaticamente (nomes iguais ao catálogo de magias). */
+  fixed?: string[];
+  /** Escolhas que o jogador faz ao pegar o talento. */
+  choices?: FeatSpellChoice[];
+  /** O talento pede que o jogador escolha UMA lista de classe; as escolhas saem dela. */
+  pickList?: SpellClass[];
+};
+
 /** Talento (feat) com descrição completa. */
 export type FeatDef = {
   name: string;
@@ -598,6 +633,8 @@ export type FeatDef = {
   expertise?: ExpertiseGrant;
   /** Proficiências em perícia à escolha concedidas pelo talento. */
   skillChoices?: number;
+  /** Magias concedidas pelo talento (fixas e à escolha). */
+  spells?: FeatSpellGrant;
   /** Talento racial: raças que podem escolhê-lo. */
   races?: string[];
   /** Presente quando o talento é homebrew do Mestre (id no servidor). */
