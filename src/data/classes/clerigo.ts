@@ -160,6 +160,7 @@ export const CLERIGO: ClassDef = {
         {
           name: "Bênçãos do Conhecimento",
           level: 1,
+          expertise: { count: 2, from: ["Arcanismo", "História", "Natureza", "Religião"] },
           description:
             "No 1º nível, você aprende dois idiomas, à sua escolha. Você também se torna proficiente em duas perícias, à sua escolha, dentre as seguintes: Arcanismo, História, Natureza ou Religião.\nSeu bônus de proficiência é dobrado em qualquer teste de habilidade que você fizer usando qualquer dessas duas perícias.",
         },

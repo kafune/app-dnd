@@ -49,6 +49,7 @@ export const BARDO: ClassDef = {
     {
       name: "Aptidão",
       level: 3,
+      expertise: { count: 2 },
       description:
         "No 3° nível, escolha duas das perícias em que você é proficiente. Seu bônus de proficiência é dobrado em qualquer teste de habilidade que você fizer que utilize qualquer das perícias escolhidas.\nNo 10° nível, você escolhe mais duas perícias em que é proficiente para ganhar esse benefício.",
     },
@@ -98,6 +99,7 @@ export const BARDO: ClassDef = {
     {
       name: "Aptidão",
       level: 10,
+      expertise: { count: 2 },
       description:
         "No 10° nível, você escolhe mais duas perícias em que é proficiente para receber o benefício de Aptidão: seu bônus de proficiência é dobrado em qualquer teste de habilidade que utilize essas perícias.",
     },

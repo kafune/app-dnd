@@ -54,4 +54,21 @@ describe("rest rules", () => {
       ],
     });
   });
+
+  test("moedas (Inspiração) não voltam com descanso nenhum", () => {
+    const character: Character = {
+      ...camargo,
+      resources: [
+        { name: "Inspiração", current: 0, max: 0, recharge: "none", kind: "moeda", masterOnly: true },
+        { name: "Fichas de sorte", current: 1, max: 5, recharge: "long", kind: "moeda" },
+        { name: "Fúria", current: 0, max: 3, recharge: "long" },
+      ],
+    };
+
+    expect(applyShortRest(character).resources[0].current).toBe(0);
+    const longRest = applyLongRest(character).resources;
+    expect(longRest[0].current).toBe(0);
+    expect(longRest[1].current).toBe(1); // moeda com recarga longa também fica parada
+    expect(longRest[2].current).toBe(3); // recurso recarregável volta cheio
+  });
 });

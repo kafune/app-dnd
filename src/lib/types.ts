@@ -318,7 +318,18 @@ export type Sheet = {
   skills: Skill[];
   proficiencies: string[];
   languages: string[];
+  /** CA registrada (espelho do valor calculado; mantida em sincronia ao equipar). */
   ac: number;
+  /** CA totalmente manual do Mestre (ignora armadura/atributos quando definida). */
+  acOverride?: number | null;
+  /** Bônus avulso de CA (anel de proteção, magia, homebrew do Mestre). */
+  acBonus?: number;
+  /** Nome do item de armadura equipado (do inventário). */
+  equippedArmor?: string | null;
+  /** Nome do escudo equipado (do inventário). */
+  equippedShield?: string | null;
+  /** Características opcionais (Tasha) que o jogador escolheu adotar. */
+  optionalFeatures?: string[];
   speed: number; // metros
   initiativeBonus: number;
   proficiencyBonus: number;
@@ -341,13 +352,38 @@ export type Sheet = {
 
 export type SpellSlot = { current: number; max: number };
 
+/** Como um recurso se comporta: recarrega com descanso ou é uma "moeda" gasta e recebida. */
+export type ResourceKind = "recarregavel" | "moeda";
+
 export type Resource = {
   name: string;
   current: number;
   max: number;
   recharge: "short" | "long" | "none" | "dawn";
   description?: string;
+  /** "moeda": não recarrega com descanso; `max` 0 = sem teto. Default: "recarregavel". */
+  kind?: ResourceKind;
+  /** Só o Mestre pode aumentar (o jogador só gasta). Usado pela Inspiração. */
+  masterOnly?: boolean;
 };
+
+/** Recurso-moeda que toda ficha tem, sempre no topo da lista. Só o Mestre concede. */
+export const INSPIRATION = "Inspiração";
+
+export function inspirationResource(current = 0): Resource {
+  return {
+    name: INSPIRATION,
+    current,
+    max: 0,
+    recharge: "none",
+    kind: "moeda",
+    masterOnly: true,
+    description: "Concedida pelo Mestre. Gaste para ter vantagem em um teste, ataque ou salvaguarda.",
+  };
+}
+
+export const isInspiration = (r: { name: string }) =>
+  r.name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim() === "inspiracao";
 
 /** Pasta: separa as fichas de cada mesa/campanha. A senha nunca vem do servidor. */
 export type Folder = {
@@ -358,6 +394,19 @@ export type Folder = {
   /** Tem senha? Pasta sem senha abre direto. */
   protected: boolean;
   characterCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+/** Criatura simples do Hub do Mestre: nome, PV e CA para acompanhar os mobs da cena. */
+export type Creature = {
+  id: string;
+  folderId: string;
+  name: string;
+  hpCurrent: number;
+  hpMax: number;
+  ac: number;
+  note?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -487,6 +536,19 @@ export type ClassFeatureDef = {
   asi?: boolean;
   /** Recurso com usos rastreáveis que a característica concede. */
   resource?: FeatureResource;
+  /** Característica opcional (Caldeirão de Tasha): só entra na ficha se o jogador adotar. */
+  optional?: boolean;
+  /** Especialização: quantas perícias o jogador dobra o bônus de proficiência (e dentre quais). */
+  expertise?: ExpertiseGrant;
+};
+
+/** Concessão de especialização (bônus de proficiência dobrado) em perícias à escolha. */
+export type ExpertiseGrant = {
+  count: number;
+  /** Restringe as opções; sem isso, qualquer perícia em que já seja proficiente. */
+  from?: SkillName[];
+  /** Já vem decidido (ex.: Batedor: Natureza e Sobrevivência). */
+  fixed?: SkillName[];
 };
 
 /** Subclasse (caminho, colégio, domínio, círculo, origem, arquétipo, tradição, juramento, patrono). */
@@ -532,6 +594,10 @@ export type FeatDef = {
   description: string;
   /** Aumento de atributo embutido no talento (ex.: +1 em For ou Des). */
   abilityIncrease?: { choose: AbilityKey[]; amount: number };
+  /** Especialização concedida pelo talento (ex.: Especializado em Perícia, Prodígio). */
+  expertise?: ExpertiseGrant;
+  /** Proficiências em perícia à escolha concedidas pelo talento. */
+  skillChoices?: number;
   /** Talento racial: raças que podem escolhê-lo. */
   races?: string[];
   /** Presente quando o talento é homebrew do Mestre (id no servidor). */

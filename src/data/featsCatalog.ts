@@ -289,6 +289,7 @@ const FEATS: FeatDef[] = [
   {
     name: "Perito",
     source: "PHB",
+    skillChoices: 3,
     description:
       "Você ganha proficiência em qualquer combinação de três perícias ou ferramentas, à sua escolha.",
   },
@@ -511,6 +512,8 @@ const FEATS: FeatDef[] = [
   {
     name: "Prodígio",
     source: "XGtE",
+    skillChoices: 1,
+    expertise: { count: 1 },
     prerequisite: "Meio-elfo, Meio-orc ou Humano",
     races: ["Humano", "Meio-elfo", "Meio-orc"],
     description:
@@ -606,6 +609,8 @@ const FEATS: FeatDef[] = [
   {
     name: "Especializado em Perícia",
     source: "TCoE",
+    skillChoices: 1,
+    expertise: { count: 1 },
     abilityIncrease: { choose: ["str", "dex", "con", "int", "wis", "cha"], amount: 1 },
     description:
       "Você aprimorou sua proficiência com uma perícia em particular, garantindo a você os seguintes benefícios:\n" +

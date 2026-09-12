@@ -7,6 +7,7 @@ import {
   type Character,
   type Coins,
   type Feature,
+  inspirationResource,
   type Item,
   type RaceTraitDef,
   type Sheet,
@@ -20,6 +21,7 @@ import {
   classFeaturesFor,
   classResourcesFor,
   classSkillBudget,
+  expertiseBudget,
   featFeature,
   grantedSpellsFor,
   hitDieValue,
@@ -35,6 +37,19 @@ import { findTrait } from "@/data/traitsCatalog";
 import { resolveRace } from "@/data/racesCatalog";
 import { backgroundGrants } from "@/data/backgroundEquipment";
 import { mergeItems } from "./items";
+import { computeAc } from "./armor";
+import { findItem, isArmorItem, isShieldItem } from "@/data/itemsCatalog";
+
+/** Melhor armadura do inventário inicial (maior CA base). `null` se não houver nenhuma. */
+function bestArmor(items: Item[]): string | null {
+  let best: { name: string; base: number } | null = null;
+  for (const item of items) {
+    if (!isArmorItem(item.name)) continue;
+    const base = findItem(item.name)?.acBase ?? 0;
+    if (!best || base > best.base) best = { name: item.name, base };
+  }
+  return best?.name ?? null;
+}
 
 export { proficiencyBonusForLevel, hitDieValue, spellSlotsFor as spellSlotsForClasses };
 
@@ -107,6 +122,12 @@ export type CharacterDraft = {
   backgroundToolPicks?: string[][];
   /** Características homebrew de rascunhos antigos. Na criação normal fica vazio. */
   extraFeatures?: Feature[];
+  /** Características opcionais do Caldeirão de Tasha que o jogador adotou. */
+  optionalFeatures?: string[];
+  /** Perícias escolhidas para Especialização (bônus de proficiência dobrado). */
+  expertise?: SkillName[];
+  /** História do personagem (bloco de texto livre; vai para `personality.backstory`). */
+  backstory?: string;
   // Overrides opcionais de derivados
   acOverride?: number;
   hpOverride?: number;
@@ -313,7 +334,6 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
   const profBonus = proficiencyBonusForLevel(level);
   const dexMod = abilityMod(scores.dex);
   const conMod = abilityMod(scores.con);
-  const ac = draft.acOverride ?? 10 + dexMod;
   let hpMax = draft.hpOverride ?? totalHp(classes, conMod);
   if (draft.hpOverride == null) {
     // Tenacidade Anã / Robusto: +1 (ou +2) por nível
@@ -325,6 +345,11 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
   // Salvaguardas vêm da 1ª classe (regra 5e); proficiências são a união das classes + traços + antecedente.
   const saves = classes[0]?.saves ?? [];
   const background = backgroundGrants(draft.background, draft.backgroundEquipmentChoices, draft.backgroundToolPicks);
+  const items = mergeItems(draft.inventoryItems, background.items);
+  // A ficha já nasce vestindo a armadura e o escudo do equipamento inicial: sem isso
+  // a CA ficava nos 10 secos mesmo com a armadura ali no inventário.
+  const startingArmor = bestArmor(items);
+  const startingShield = items.find((item) => isShieldItem(item.name))?.name ?? null;
   const proficiencies: string[] = [];
   for (const entry of [
     ...classes.flatMap((c) => c.proficiencies),
@@ -358,7 +383,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
   ];
   const features: Feature[] = [
     ...raceFeatures(draft),
-    ...classFeaturesFor(classEntries),
+    ...classFeaturesFor(classEntries, draft.optionalFeatures ?? []),
     ...featFeatures,
     ...(draft.extraFeatures ?? []),
     ...(bg
@@ -367,7 +392,20 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
   ];
 
   const skillNames = [...new Set([...fixedSkills(draft), ...draft.skills])];
-  const skills: Skill[] = skillNames.map((name) => ({ name, proficient: true }));
+  // Especialização escolhida na criação + as automáticas (ex.: Batedor: Natureza e Sobrevivência).
+  const expertBudget = expertiseBudget(classEntries, {
+    adopted: draft.optionalFeatures,
+    feats: [...(draft.raceFeat ? [draft.raceFeat] : []), ...draft.advancement.filter((d) => d.feat).map((d) => d.feat!)],
+  });
+  const expert = new Set<SkillName>([
+    ...expertBudget.fixed,
+    ...(draft.expertise ?? []).slice(0, expertBudget.total),
+  ]);
+  const skills: Skill[] = skillNames.map((name) => ({
+    name,
+    proficient: true,
+    ...(expert.has(name) ? { expert: true } : {}),
+  }));
 
   const raceNote = draft.raceNote?.trim() ?? "";
   const speciesDetails = [draft.subraceName, shortNote(raceNote)].filter(Boolean);
@@ -389,7 +427,11 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     skills,
     proficiencies,
     languages: [...new Set([...draft.languages, ...draft.extraLanguages])],
-    ac,
+    ac: 0, // preenchido logo abaixo, com a armadura equipada já na conta
+    ...(draft.acOverride != null ? { acOverride: draft.acOverride } : {}),
+    ...(draft.optionalFeatures?.length ? { optionalFeatures: draft.optionalFeatures } : {}),
+    equippedArmor: startingArmor,
+    equippedShield: startingShield,
     speed: draft.speed,
     initiativeBonus: dexMod,
     proficiencyBonus: profBonus,
@@ -399,11 +441,13 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     // Equipamento e ouro do antecedente entram sozinhos (antes ficavam só no texto do catálogo).
     inventory: {
       coins: { ...draft.coins, gp: draft.coins.gp + background.gold },
-      items: mergeItems(draft.inventoryItems, background.items),
+      items,
     },
     appearance: { size: draft.size, height: "" },
-    personality: { trait: "", ideal: "", flaw: "", why: "", backstory: "" },
+    personality: { trait: "", ideal: "", flaw: "", why: "", backstory: draft.backstory?.trim() ?? "" },
   };
+
+  sheet.ac = computeAc(sheet).total;
 
   // PIN com espaço sobrando travava o dono fora da própria ficha (o servidor compara aparado).
   const pin = draft.pin.trim();
@@ -419,6 +463,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     hpTemp: 0,
     spellSlots: spellSlotsFor(classEntries),
     resources: [
+      inspirationResource(0),
       ...classResourcesFor(classEntries, scores),
       ...raceResourcesFor(resolvedRaceTraits(draft.raceTraits), level, scores, draft.raceName),
     ],

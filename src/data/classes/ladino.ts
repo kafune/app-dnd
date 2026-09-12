@@ -19,6 +19,7 @@ export const LADINO: ClassDef = {
     {
       name: "Especialização",
       level: 1,
+      expertise: { count: 2 },
       description:
         "No 1º nível, você escolhe duas de suas perícias em que seja proficiente, ou uma perícia em que seja proficiente e ferramentas de ladrão. Seu bônus de proficiência é dobrado em qualquer teste de habilidade que fizer com elas.\nNo 6º nível, você pode escolher outras duas de suas proficiências (em perícias ou ferramentas de ladrão) para ganhar esse benefício.",
     },
@@ -43,6 +44,7 @@ export const LADINO: ClassDef = {
     {
       name: "Mira Firme (opcional, Tasha)",
       level: 3,
+      optional: true,
       description:
         "Característica opcional de classe do Caldeirão de Tasha (3º nível), adotada com a aprovação do Mestre.\nComo uma ação bônus, você pode se conceder vantagem em sua próxima jogada de ataque no turno atual. Você pode utilizar essa ação bônus apenas se não tiver se movido durante esse turno e, após usá-la, seu deslocamento é 0 até o fim do turno atual.",
     },
@@ -62,6 +64,7 @@ export const LADINO: ClassDef = {
     {
       name: "Especialização (melhoria)",
       level: 6,
+      expertise: { count: 2 },
       description:
         "No 6º nível, você pode escolher outras duas de suas proficiências (em perícias ou ferramentas de ladrão) para dobrar o bônus de proficiência nos testes de habilidade feitos com elas, totalizando quatro proficiências com Especialização.",
     },
@@ -354,6 +357,7 @@ export const LADINO: ClassDef = {
         {
           name: "Sobrevivente",
           level: 3,
+          expertise: { count: 0, fixed: ["Natureza", "Sobrevivência"] },
           description:
             "Quando você escolhe este arquétipo no 3º nível, ganha proficiência nas perícias Natureza e Sobrevivência, caso ainda não as possua. Seu bônus de proficiência é dobrado em qualquer teste de habilidade que fizer usando qualquer uma dessas proficiências.",
         },

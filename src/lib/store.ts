@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Character, DiceRoll, Folder, HomebrewItem, HomebrewKind, Sheet } from "./types";
+import type { Character, Creature, DiceRoll, Folder, HomebrewItem, HomebrewKind, Sheet } from "./types";
 import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
 import { setHomebrewItems } from "@/data/homebrewRegistry";
 import { api, ApiError, errorMessage, type AccessRole } from "./api";
@@ -16,6 +16,14 @@ export type HomebrewSaveResult = { ok: true; item: HomebrewItem } | { ok: false;
 export type FolderSaveResult = { ok: true; folder: Folder } | { ok: false; error: string };
 /** Resultado de tentar abrir uma pasta. */
 export type FolderEntry = "ok" | "bad_pin" | "not_found" | "error";
+
+/** Painel do Mestre de uma pasta: fichas completas + criaturas da cena. */
+export type HubState = {
+  folderId: string;
+  characters: Character[];
+  creatures: Creature[];
+  loadedAt: number;
+};
 
 type Store = {
   /** Fichas conhecidas neste aparelho: resumos das pastas abertas + fichas destravadas. */
@@ -44,6 +52,8 @@ type Store = {
   realtimeReady: boolean;
   patchError: string | null;
   editMode: boolean;
+  /** Hub do Mestre aberto (uma pasta por vez). */
+  hub: HubState | null;
 
   setEditMode: (v: boolean) => void;
   setLocalCharacter: (c: Character) => void;
@@ -77,6 +87,15 @@ type Store = {
   addRoll: (r: DiceRoll) => Promise<void>;
   /** `actorId`: de quem é o PIN usado para autorizar (default: `characterId`). Sem `characterId`, limpa a mesa da pasta. */
   clearRolls: (characterId?: string, actorId?: string) => Promise<void>;
+  /** Abre (ou recarrega) o Hub do Mestre de uma pasta com a chave mestra. */
+  loadHub: (folderId: string) => Promise<FolderEntry>;
+  /** Fecha o hub (para de acompanhar a pasta). */
+  closeHub: () => void;
+  /** PATCH numa ficha usando a chave mestra (o Mestre não tem o PIN de cada ficha). */
+  masterPatch: (id: string, patch: Partial<Character>) => Promise<boolean>;
+  addCreature: (folderId: string, data: { name: string; hpMax: number; ac: number }) => Promise<boolean>;
+  patchCreature: (folderId: string, creatureId: string, data: Partial<Creature>) => Promise<boolean>;
+  removeCreature: (folderId: string, creatureId: string) => Promise<boolean>;
   pushToast: (toast: Omit<AppToast, "id">) => void;
   dismissToast: (id: string) => void;
   hydrate: () => Promise<void>;
@@ -147,6 +166,41 @@ export const useStore = create<Store>()(
 
       const setFolder = (folder: Folder) => set((s) => ({ folders: { ...s.folders, [folder.id]: folder } }));
 
+      const upsertCreature = (creature: Creature) =>
+        set((s) =>
+          s.hub && s.hub.folderId === creature.folderId
+            ? {
+                hub: {
+                  ...s.hub,
+                  creatures: s.hub.creatures.some((c) => c.id === creature.id)
+                    ? s.hub.creatures.map((c) => (c.id === creature.id ? creature : c))
+                    : [...s.hub.creatures, creature],
+                },
+              }
+            : {},
+        );
+
+      const dropCreature = (creatureId: string) =>
+        set((s) =>
+          s.hub ? { hub: { ...s.hub, creatures: s.hub.creatures.filter((c) => c.id !== creatureId) } } : {},
+        );
+
+      /**
+       * O evento SSE de ficha só traz o resumo público (sem PV nem recursos), então
+       * o hub busca a versão completa de novo. Agrupado num timer curto para uma
+       * rajada de PATCHes não virar uma rajada de GETs.
+       */
+      let hubRefresh: ReturnType<typeof setTimeout> | null = null;
+      const scheduleHubRefresh = (folderId: string) => {
+        const hub = get().hub;
+        if (!hub || hub.folderId !== folderId || hubRefresh) return;
+        hubRefresh = setTimeout(() => {
+          hubRefresh = null;
+          const current = get().hub;
+          if (current?.folderId === folderId) void get().loadHub(folderId);
+        }, 250);
+      };
+
       /**
        * Recebe o resumo público de uma ficha (evento SSE ou listagem da pasta). Ficha
        * destravada aqui NÃO é trocada pela versão pública (zeraria PV/slots na tela por
@@ -200,8 +254,16 @@ export const useStore = create<Store>()(
 
       const realtime = createRealtime(
         {
-          character: ({ character }: { character: Character }) => receivePublic(character, true),
-          "character-deleted": ({ id }: { id: string }) => removeCharacter(id),
+          character: ({ character }: { character: Character }) => {
+            receivePublic(character, true);
+            if (character.folderId) scheduleHubRefresh(character.folderId);
+          },
+          "character-deleted": ({ id }: { id: string }) => {
+            removeCharacter(id);
+            set((s) => (s.hub ? { hub: { ...s.hub, characters: s.hub.characters.filter((c) => c.id !== id) } } : {}));
+          },
+          creature: ({ creature }: { creature: Creature }) => upsertCreature(creature),
+          "creature-deleted": ({ id }: { id: string }) => dropCreature(id),
           folder: ({ folder }: { folder: Folder }) => setFolder(folder),
           "folder-deleted": ({ id }: { id: string }) => set((s) => withoutFolder(s, id)),
           homebrew: ({ item }: { item: HomebrewItem }) =>
@@ -255,6 +317,7 @@ export const useStore = create<Store>()(
         realtimeReady: false,
         patchError: null,
         editMode: false,
+        hub: null,
 
         setEditMode: (v) => set({ editMode: v }),
 
@@ -585,6 +648,90 @@ export const useStore = create<Store>()(
               tone: "danger",
             });
           }
+        },
+
+        loadHub: async (folderId) => {
+          const master = get().masterPin;
+          if (!master) return "bad_pin";
+          try {
+            const { folder, characters, creatures } = await api.getFolderHub(folderId, master);
+            setFolder(folder);
+            set({ hub: { folderId, characters, creatures, loadedAt: Date.now() } });
+            // O hub também acompanha a mesa: as rolagens dos jogadores chegam nele.
+            get().watchFolder(folderId, master);
+            return "ok";
+          } catch (e) {
+            if (e instanceof ApiError && e.code === "bad_pin") {
+              set({ masterPin: null, hub: null });
+              return "bad_pin";
+            }
+            if (e instanceof ApiError && e.status === 404) return "not_found";
+            return "error";
+          }
+        },
+
+        closeHub: () => set({ hub: null }),
+
+        masterPatch: async (id, patch) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const { character } = await api.patchCharacter(id, patch, master);
+            set((s) => ({
+              // A ficha destravada localmente (se houver) e a cópia do hub andam juntas.
+              characters: s.characters[id] ? { ...s.characters, [id]: character } : s.characters,
+              hub: s.hub
+                ? { ...s.hub, characters: s.hub.characters.map((c) => (c.id === id ? character : c)) }
+                : s.hub,
+            }));
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não deu para salvar", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
+        addCreature: async (folderId, data) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const { creature } = await api.createCreature(folderId, data, master);
+            upsertCreature(creature);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não deu para criar a criatura", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
+        patchCreature: async (folderId, creatureId, data) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const { creature, removed } = await api.updateCreature(folderId, creatureId, data, master);
+            // Criatura em 0 PV some sozinha do hub — o servidor já a apagou.
+            if (removed || !creature) dropCreature(creatureId);
+            else upsertCreature(creature);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não deu para atualizar a criatura", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
+        removeCreature: async (folderId, creatureId) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            await api.deleteCreature(folderId, creatureId, master);
+          } catch (e) {
+            if (!(e instanceof ApiError && e.status === 404)) {
+              get().pushToast({ title: "Não deu para remover a criatura", description: errorMessage(e), tone: "danger" });
+              return false;
+            }
+          }
+          dropCreature(creatureId);
+          return true;
         },
 
         pushToast: (toast) =>

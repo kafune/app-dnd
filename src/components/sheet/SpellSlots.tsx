@@ -1,7 +1,8 @@
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useStore, useUnlocked } from "@/lib/store";
+import { useIsMaster, useStore, useUnlocked } from "@/lib/store";
+import { sheetPermissions } from "@/lib/permissions";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
 import { spellSlotsForClasses } from "@/lib/createCharacter";
 
@@ -9,11 +10,14 @@ export function SpellSlots({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const patch = useStore((s) => s.patchCharacter);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const unlocked = useUnlocked(id);
 
   if (!c) return null;
+  // Mexer nos máximos é do Mestre: o jogador só marca os espaços que gastou.
+  const canManage = editMode && sheetPermissions(isMaster, c.sheet).spellSlots;
   const levels = Object.keys(c.spellSlots).sort();
-  if (levels.length === 0 && !editMode) return null;
+  if (levels.length === 0 && !canManage) return null;
 
   const setMax = (level: string, max: number) => {
     const slot = c.spellSlots[level];
@@ -90,7 +94,7 @@ export function SpellSlots({ id }: { id: string }) {
                 <span className="ml-2 font-mono text-xs text-zinc-500">
                   {slot.current}/{slot.max}
                 </span>
-                {editMode && (
+                {canManage && (
                   <>
                     <span className="ml-2 text-[10px] text-zinc-500">máx</span>
                     <EditableNumber
@@ -113,7 +117,7 @@ export function SpellSlots({ id }: { id: string }) {
             </div>
           );
         })}
-        {editMode && (
+        {canManage && (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={addLevel}>
               + Nível de espaço

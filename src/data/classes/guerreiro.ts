@@ -52,6 +52,7 @@ export const GUERREIRO: ClassDef = {
     },
     {
       name: "Versatilidade Marcial (opcional, Tasha)",
+      optional: true,
       level: 4,
       description:
         "Regra opcional do Caldeirão de Tasha (decida com o Mestre se ela se aplica). Sempre que você alcança um nível nessa classe que forneça a característica Incremento no Valor de Habilidade, você pode fazer uma das coisas a seguir, conforme você muda o foco do seu treino marcial:\n" +

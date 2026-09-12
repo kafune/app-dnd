@@ -1,5 +1,6 @@
 import { Card, CardBody } from "@/components/ui/Card";
-import { useStore } from "@/lib/store";
+import { useIsMaster, useStore } from "@/lib/store";
+import { sheetPermissions } from "@/lib/permissions";
 import {
   ABILITY_LABELS,
   ABILITY_ORDER,
@@ -14,8 +15,11 @@ export function Abilities({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const addRoll = useStore((s) => s.addRoll);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
+  // Atributos e salvaguardas são do Mestre; o jogador só ganha pontos ao subir de nível.
+  const canEdit = editMode && sheetPermissions(isMaster, c.sheet).abilityScores;
 
   const setScore = (key: AbilityKey, v: number) =>
     void patchSheet(id, { abilityScores: { ...c.sheet.abilityScores, [key]: v } });
@@ -58,7 +62,7 @@ export function Abilities({ id }: { id: string }) {
             const score = c.sheet.abilityScores[key];
             const mod = abilityMod(score);
             const proficient = c.sheet.saves.includes(key);
-            if (editMode) {
+            if (canEdit) {
               return (
                 <div key={key} className="rounded-lg border border-zinc-200 p-2 text-center dark:border-zinc-800">
                   <div className="text-[10px] uppercase tracking-wider text-zinc-500">

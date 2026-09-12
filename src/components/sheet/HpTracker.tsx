@@ -3,13 +3,14 @@ import { Heart, Plus, Minus, Shield } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardBody } from "@/components/ui/Card";
-import { useStore, useUnlocked } from "@/lib/store";
+import { useIsMaster, useStore, useUnlocked } from "@/lib/store";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
 
 export function HpTracker({ id }: { id: string }) {
   const c = useStore((s) => s.characters[id]);
   const patch = useStore((s) => s.patchCharacter);
   const editMode = useStore((s) => s.editMode);
+  const isMaster = useIsMaster(id);
   const unlocked = useUnlocked(id);
   const [delta, setDelta] = useState("");
 
@@ -91,7 +92,7 @@ export function HpTracker({ id }: { id: string }) {
           </div>
         </fieldset>
 
-        {editMode && (
+        {editMode && isMaster && (
           <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-2 text-xs dark:border-zinc-800">
             <span>PV atual</span>
             <EditableNumber

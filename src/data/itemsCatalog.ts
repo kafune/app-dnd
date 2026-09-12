@@ -27,6 +27,8 @@ export type ItemCategory =
 
 export type CatalogItem = {
   name: string;
+  /** Nome completo para exibicao ("Couro" -> "Armadura de Couro"). */
+  fullName?: string;
   category: ItemCategory;
   /** Preço em moedas (texto, ex.: "10 po"). */
   price: string;
@@ -45,6 +47,14 @@ export type CatalogItem = {
   properties?: string[];
   /** Armaduras/escudos: CA (ex. "12 + Des (máx. +2)" ou "+2"). */
   ac?: string;
+  /** Armaduras: CA base numérica (11, 14, 18…). Escudos: bônus (+1, +2, +3). */
+  acBase?: number;
+  /** Armaduras: teto do modificador de Destreza somado (0 = não soma; ausente = sem teto). */
+  maxDex?: number;
+  /** Armaduras/escudos: Força mínima; abaixo dela o deslocamento cai 3 m. */
+  strengthRequirement?: number;
+  /** Armaduras/escudos: impõe desvantagem em testes de Destreza (Furtividade). */
+  stealthDisadvantage?: boolean;
   /** Pacotes: itens contidos, com quantidade. */
   contents?: string[];
   /** Livro de origem; omitido para o Livro do Jogador. */
@@ -92,6 +102,30 @@ type ArmorSpec = [
   description: string,
 ];
 
+/** Nome completo das armaduras: a tabela do livro lista só o qualificador ("Couro"). */
+const ARMOR_FULL_NAMES: Record<string, string> = {
+  "Acolchoada": "Armadura Acolchoada",
+  "Couro": "Armadura de Couro",
+  "Couro Batido": "Armadura de Couro Batido",
+  "Gibão de Peles": "Gibão de Peles",
+  "Camisão de Malha": "Camisão de Malha",
+  "Brunea": "Brunea (armadura de escamas)",
+  "Peitoral": "Armadura Peitoral",
+  "Meia-Armadura": "Meia-Armadura",
+  "Cota de Anéis": "Cota de Anéis",
+  "Cota de Malha": "Cota de Malha",
+  "Cota de Talas": "Cota de Talas",
+  "Placas": "Armadura de Placas",
+};
+
+/** "11 + Des" -> base 11 sem teto; "14 + Des (máx. +2)" -> base 14, teto 2; "16" -> base 16, teto 0. */
+function parseArmorAc(ac: string): { base: number; maxDex?: number } {
+  const base = Number(/^\s*(\d+)/.exec(ac)?.[1] ?? 10);
+  if (!/\+\s*Des/i.test(ac)) return { base, maxDex: 0 };
+  const cap = /m[áa]x\.?\s*\+?(\d+)/i.exec(ac)?.[1];
+  return cap ? { base, maxDex: Number(cap) } : { base };
+}
+
 function armor(
   category: "Armadura leve" | "Armadura média" | "Armadura pesada",
   spec: ArmorSpec,
@@ -100,7 +134,22 @@ function armor(
   const parts = [`CA ${ac}`];
   if (strength) parts.push(strength);
   if (stealth) parts.push("Furtividade em desvantagem");
-  return { name, category, price, weight, ac, detail: parts.join(" · "), description };
+  const { base, maxDex } = parseArmorAc(ac);
+  const item: CatalogItem = {
+    name,
+    fullName: ARMOR_FULL_NAMES[name] ?? `Armadura de ${name}`,
+    category,
+    price,
+    weight,
+    ac,
+    acBase: base,
+    detail: parts.join(" · "),
+    description,
+  };
+  if (maxDex !== undefined) item.maxDex = maxDex;
+  if (strength) item.strengthRequirement = Number(/(\d+)/.exec(strength)?.[1] ?? 0);
+  if (stealth) item.stealthDisadvantage = true;
+  return item;
 }
 
 type GearSpec = [name: string, price: string, weight: string | null, detail: string, description?: string];
@@ -235,6 +284,7 @@ const SHIELDS: CatalogItem[] = [
     price: "10 po",
     weight: "3 kg",
     ac: "+2",
+    acBase: 2,
     detail: "CA +2",
     description:
       "Um escudo é feito de madeira ou metal e é usado com uma mão. Empunhar um escudo aumenta sua Classe de Armadura em 2. Você só pode se beneficiar de um escudo por vez. Vestir ou remover um escudo leva 1 ação.",
@@ -245,6 +295,7 @@ const SHIELDS: CatalogItem[] = [
     price: "5 po",
     weight: "0,9 kg",
     ac: "+1",
+    acBase: 1,
     detail: "CA +1 · Especial: ocupa uma mão; perde o bônus ao conjurar com essa mão",
     description:
       "Pequeno e leve, cobre menos área mas dá mais liberdade à mão. Enquanto equipado, não impede um conjurador de usar componentes somáticos, mas você perde o bônus de CA do broquel até o início do seu próximo turno ao conjurar uma magia com essa mão. Conteúdo homebrew (escudos expandidos), não oficial.",
@@ -256,6 +307,9 @@ const SHIELDS: CatalogItem[] = [
     price: "50 po",
     weight: "6,75 kg",
     ac: "+3",
+    acBase: 3,
+    strengthRequirement: 13,
+    stealthDisadvantage: true,
     detail: "CA +3 · For 13 · Furtividade em desvantagem",
     description:
       "Enorme e pesado, permite ao portador defender melhor quem está atrás dele ao avançar. Depois de mover metade do seu deslocamento, você pode gastar o deslocamento restante para o escudo funcionar como meia-cobertura para você e para qualquer aliado diretamente atrás de você em relação à direção do ataque inimigo, até o início do seu próximo turno. Essa cobertura não permite usar a ação de Esconder-se. Requer Força 13 e impõe desvantagem em Destreza (Furtividade). Conteúdo homebrew (escudos expandidos), não oficial.",
@@ -583,6 +637,30 @@ export function findItem(name: string): CatalogItem | undefined {
   }
   return undefined;
 }
+
+/** Nome de exibição de um item: o nome completo da armadura quando houver. */
+export function itemDisplayName(name: string): string {
+  return findItem(name)?.fullName ?? name;
+}
+
+const ARMOR_CATEGORIES: ItemCategory[] = ["Armadura leve", "Armadura média", "Armadura pesada"];
+
+/** É uma armadura vestível (não escudo)? */
+export function isArmorItem(name: string): boolean {
+  const item = findItem(name);
+  return !!item && ARMOR_CATEGORIES.includes(item.category);
+}
+
+/** É um escudo? */
+export function isShieldItem(name: string): boolean {
+  return findItem(name)?.category === "Escudo";
+}
+
+/** Armaduras vestíveis do catálogo (leve, média e pesada), na ordem do livro. */
+export const ARMOR_ITEMS: CatalogItem[] = ITEMS_CATALOG.filter((i) => ARMOR_CATEGORIES.includes(i.category));
+
+/** Escudos do catálogo (oficial + homebrew dos escudos expandidos). */
+export const SHIELD_ITEMS: CatalogItem[] = ITEMS_CATALOG.filter((i) => i.category === "Escudo");
 
 // ---------------------------------------------------------------------------
 // Listas para escolhas do tipo "qualquer arma simples"

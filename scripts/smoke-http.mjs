@@ -70,6 +70,8 @@ try {
   await assertPinTrim();
   await assertRollsApi();
   await assertEventsApi();
+  await assertMasterHub();
+  await assertPlayerLimits();
   await assertLatency();
   console.log("Smoke HTTP passou: SPA, APIs, persistência SQLite e SSE estão respondendo.");
 } finally {
@@ -96,6 +98,11 @@ async function waitForServer() {
     await sleep(50);
   }
   throw new Error(`Servidor não ficou pronto: ${String(lastError)}\n${serverOutput}`);
+}
+
+/** Headers de um POST/PATCH JSON autenticado (PIN de ficha, senha de pasta ou chave mestra). */
+function json(pin) {
+  return { "Content-Type": "application/json", "x-character-pin": pin };
 }
 
 async function assertSpa() {
@@ -795,7 +802,6 @@ async function assertRollsApi() {
 
 async function assertEventsApi() {
   // Uma pasta com senha e uma ficha nela: eventos de uma pasta não podem vazar para outra.
-  const json = (pin) => ({ "Content-Type": "application/json", "x-character-pin": pin });
   const { folder } = await fetch(`${baseUrl}/api/folders`, {
     method: "POST",
     headers: json(MASTER_PIN),
@@ -879,6 +885,118 @@ async function assertEventsApi() {
 
   assert.equal((await fetch(`${baseUrl}/api/characters/${alheia.id}`, { method: "DELETE", headers: json("3434") })).status, 200);
   assert.equal((await fetch(`${baseUrl}/api/folders/${folder.id}`, { method: "DELETE", headers: json(MASTER_PIN) })).status, 200);
+}
+
+/** Hub do Mestre: fichas completas da pasta e as criaturas da cena. */
+async function assertMasterHub() {
+  const hub = (pin) =>
+    fetch(`${baseUrl}/api/folders/${LEGACY}/hub`, { headers: pin ? { "x-character-pin": pin } : {} });
+  assert.equal((await hub()).status, 403, "hub sem chave mestra deve dar 403");
+  assert.equal((await hub(JOAO_PIN)).status, 403, "PIN de ficha não abre o hub");
+
+  const response = await hub(MASTER_PIN);
+  assert.equal(response.status, 200, "hub com a chave mestra deve responder 200");
+  const body = await response.json();
+  assert.ok(body.characters.length >= 4, "hub lista as fichas da pasta");
+  const joao = body.characters.find((c) => c.id === "joao-lindao");
+  assert.ok(joao, "hub traz a ficha do seed");
+  assert.equal(joao.pin, undefined, "hub não expõe o PIN das fichas");
+  assert.ok(joao.hpMax > 0, "hub traz o PV real (não o resumo público)");
+  assert.ok(Array.isArray(body.creatures), "hub traz a lista de criaturas");
+
+  // Criatura: nasce com PV cheio e some sozinha ao chegar a 0.
+  const creatures = (pin) =>
+    fetch(`${baseUrl}/api/folders/${LEGACY}/creatures`, { headers: pin ? { "x-character-pin": pin } : {} });
+  assert.equal((await creatures(JOAO_PIN)).status, 403, "criaturas são só do Mestre");
+
+  const created = await fetch(`${baseUrl}/api/folders/${LEGACY}/creatures`, {
+    method: "POST",
+    headers: json(MASTER_PIN),
+    body: JSON.stringify({ name: "Goblin smoke", hpMax: 7, ac: 15 }),
+  });
+  assert.equal(created.status, 201, "POST de criatura deve criar");
+  const { creature } = await created.json();
+  assert.equal(creature.hpCurrent, 7, "criatura nasce com o PV cheio");
+  assert.equal(creature.ac, 15);
+
+  const patchCreature = (data) =>
+    fetch(`${baseUrl}/api/folders/${LEGACY}/creatures/${creature.id}`, {
+      method: "PATCH",
+      headers: json(MASTER_PIN),
+      body: JSON.stringify(data),
+    }).then((r) => r.json());
+
+  assert.equal((await patchCreature({ hpCurrent: 3 })).creature.hpCurrent, 3, "dano parcial fica registrado");
+  assert.equal((await patchCreature({ hpCurrent: 99 })).creature.hpCurrent, 7, "PV não passa do máximo");
+  assert.equal((await patchCreature({ hpCurrent: 0 })).removed, true, "criatura em 0 PV sai do hub");
+  const left = await (await creatures(MASTER_PIN)).json();
+  assert.equal(left.creatures.length, 0, "a criatura morta some da lista");
+}
+
+/** O jogador cuida do estado do personagem; o poder da ficha é do Mestre. */
+async function assertPlayerLimits() {
+  const current = await (await fetch(`${baseUrl}/api/characters/joao-lindao`, {
+    headers: { "x-character-pin": MASTER_PIN },
+  })).json();
+  const character = current.character;
+  const copy = (v) => structuredClone(v);
+
+  const patch = (body, pin) =>
+    fetch(`${baseUrl}/api/characters/joao-lindao`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patch: body, pin }),
+    });
+
+  assert.equal((await patch({ hpCurrent: 7 }, JOAO_PIN)).status, 200, "jogador muda o PV atual");
+  assert.equal((await patch({ hpMax: 999 }, JOAO_PIN)).status, 403, "jogador não infla o PV máximo");
+  assert.equal((await patch({ hpMax: 999 }, MASTER_PIN)).status, 200, "o Mestre muda o PV máximo");
+  await patch({ hpMax: character.hpMax }, MASTER_PIN);
+
+  const slots = copy(character.spellSlots);
+  for (const level of Object.keys(slots)) slots[level].current = 0;
+  assert.equal((await patch({ spellSlots: slots }, JOAO_PIN)).status, 200, "jogador marca os espaços gastos");
+  for (const level of Object.keys(slots)) {
+    slots[level].max = 9;
+    slots[level].current = 9;
+  }
+  assert.equal((await patch({ spellSlots: slots }, JOAO_PIN)).status, 403, "jogador não cria espaços");
+
+  const levelUp = copy(character.sheet);
+  levelUp.classes = [{ name: "Bardo", level: 20 }];
+  assert.equal((await patch({ sheet: levelUp }, JOAO_PIN)).status, 403, "jogador não sobe de nível");
+
+  const buffed = copy(character.sheet);
+  buffed.abilityScores = Object.fromEntries(Object.keys(buffed.abilityScores).map((k) => [k, 20]));
+  assert.equal((await patch({ sheet: buffed }, JOAO_PIN)).status, 403, "jogador não infla atributos");
+
+  const rich = copy(character.sheet);
+  rich.inventory.coins.gp = 99999;
+  assert.equal((await patch({ sheet: rich }, JOAO_PIN)).status, 403, "jogador não se dá ouro");
+
+  const inspiration = [
+    ...copy(character.resources),
+    { name: "Inspiração", current: 9, max: 0, recharge: "none", kind: "moeda", masterOnly: true },
+  ];
+  assert.equal((await patch({ resources: inspiration }, JOAO_PIN)).status, 403, "jogador não se dá Inspiração");
+  assert.equal((await patch({ resources: inspiration }, MASTER_PIN)).status, 200, "o Mestre concede Inspiração");
+
+  const spent = copy((await (await fetch(`${baseUrl}/api/characters/joao-lindao`, {
+    headers: { "x-character-pin": MASTER_PIN },
+  })).json()).character.resources);
+  for (const resource of spent) if (resource.name === "Inspiração") resource.current = 0;
+  assert.equal((await patch({ resources: spent }, JOAO_PIN)).status, 200, "jogador gasta a Inspiração");
+
+  // Equipar armadura é do jogador: muda o slot e desfaz a CA manual.
+  const equipped = copy(character.sheet);
+  equipped.equippedArmor = "Couro";
+  equipped.acOverride = null;
+  equipped.ac = 13;
+  assert.equal((await patch({ sheet: equipped }, JOAO_PIN)).status, 200, "jogador equipa a armadura");
+
+  const faked = copy(character.sheet);
+  faked.acOverride = 30;
+  assert.equal((await patch({ sheet: faked }, JOAO_PIN)).status, 403, "jogador não fixa a CA à mão");
 }
 
 async function assertLatency() {

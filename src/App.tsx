@@ -9,6 +9,7 @@ const Pasta = lazy(() => import("@/pages/Pasta"));
 const CriarFicha = lazy(() => import("@/pages/CriarFicha"));
 const Personagem = lazy(() => import("@/pages/Personagem"));
 const Mestre = lazy(() => import("@/pages/Mestre"));
+const Hub = lazy(() => import("@/pages/Hub"));
 
 function Loading() {
   return (
@@ -32,6 +33,7 @@ export function App() {
           <Route path="/" element={<Home />} />
           <Route path="/pasta/:folderId" element={<Pasta />} />
           <Route path="/pasta/:folderId/criar-ficha" element={<CriarFicha />} />
+          <Route path="/pasta/:folderId/hub" element={<Hub />} />
           {/* Ficha agora nasce dentro de uma pasta: o link antigo leva à escolha da pasta. */}
           <Route path="/criar-ficha" element={<Navigate to="/" replace />} />
           <Route path="/personagem/:id" element={<Personagem />} />

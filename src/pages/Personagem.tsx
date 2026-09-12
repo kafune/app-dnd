@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ALIGNMENTS, CREATURE_SIZES, type AbilityKey, type AsiDecision } from "@/lib/types";
+import { sheetPermissions } from "@/lib/permissions";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -14,17 +15,19 @@ import { Abilities } from "@/components/sheet/Abilities";
 import { Skills } from "@/components/sheet/Skills";
 import { SpellSlots } from "@/components/sheet/SpellSlots";
 import { Resources } from "@/components/sheet/Resources";
-import { RestButtons } from "@/components/sheet/RestButtons";
 import { Combat } from "@/components/sheet/Combat";
 import { Spells } from "@/components/sheet/Spells";
 import { Features } from "@/components/sheet/Features";
 import { Notes } from "@/components/sheet/Notes";
+import { Backstory } from "@/components/sheet/Backstory";
+import { Reminders } from "@/components/sheet/Reminders";
+import { OptionalFeatures } from "@/components/sheet/OptionalFeatures";
+import { TablePanel } from "@/components/sheet/TablePanel";
 import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
 import { ProficienciesAndLanguages, Inventory, Personality } from "@/components/sheet/Misc";
 import { PinLock } from "@/components/sheet/PinLock";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 import { DiceRoller } from "@/components/dice/DiceRoller";
-import { RollHistory } from "@/components/dice/RollHistory";
 import { ChangeLog } from "@/components/sheet/ChangeLog";
 import { useIsMaster, useUnlocked } from "@/lib/store";
 import { CLASSES_CATALOG, findClassDef, subclassNames } from "@/data/classesCatalog";
@@ -84,7 +87,7 @@ export default function CharacterPage() {
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [clearScope, setClearScope] = useState<"player" | "mesa" | null>(null);
+  const [clearScope, setClearScope] = useState<"mesa" | null>(null);
 
   const onDelete = async () => {
     const name = character?.characterName || "A ficha";
@@ -100,8 +103,8 @@ export default function CharacterPage() {
 
   const onClearRolls = () => {
     if (!clearScope) return;
-    // O PIN desta ficha autoriza os dois casos: a própria e a mesa toda.
-    void clearRolls(clearScope === "mesa" ? undefined : id, id);
+    // O PIN desta ficha autoriza limpar a mesa inteira da pasta.
+    void clearRolls(undefined, id);
     setClearScope(null);
   };
 
@@ -124,6 +127,7 @@ export default function CharacterPage() {
     .map((k) => `${k.name}${k.subclass ? ` (${k.subclass})` : ""} ${k.level}`)
     .join(" / ");
   const size = character.sheet.appearance?.size;
+  const can = sheetPermissions(isMaster, character.sheet);
 
   const classes = character.sheet.classes;
   const setClasses = async (raw: typeof classes, changed = Math.max(0, raw.length - 1)) => {
@@ -290,7 +294,14 @@ export default function CharacterPage() {
                 />
               </label>
             </div>
-            {/* Classes */}
+            {/* Classes: subir de nível é decisão do Mestre. */}
+            {!can.classes ? (
+              <div className="rounded-md border border-zinc-200 p-2 text-xs text-zinc-500 dark:border-zinc-800">
+                <div className="mb-0.5">Classes</div>
+                <div className="text-sm text-zinc-800 dark:text-zinc-200">{cls}</div>
+                <div className="mt-1">Quem sobe o seu nível é o Mestre. Quando ele subir, a escolha de atributo ou talento aparece aqui.</div>
+              </div>
+            ) : (
             <div>
               <div className="mb-1 text-xs text-zinc-500">Classes</div>
               <div className="mb-2 text-xs text-zinc-500">
@@ -359,6 +370,7 @@ export default function CharacterPage() {
                 + Classe
               </Button>
             </div>
+            )}
             {pendingAsis(classes, character.sheet.advancement).length > 0 && (
               <PendingAdvancement characterId={id} onSave={saveAdvancement} />
             )}
@@ -379,6 +391,7 @@ export default function CharacterPage() {
 
       {/* grid-cols-1 = minmax(0, 1fr): selects com opções longas (modo edição) não alargam a página no celular */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Ordem da ficha: estado atual → combate → o que sabe fazer → o que carrega → texto livre. */}
         <div className="space-y-4 lg:col-span-2">
           <HpTracker id={id} />
           <Abilities id={id} />
@@ -386,18 +399,21 @@ export default function CharacterPage() {
             <SpellSlots id={id} />
             <Resources id={id} />
           </div>
-          <RestButtons id={id} />
           <Combat id={id} />
+          <ProficienciesAndLanguages id={id} />
           <Skills id={id} />
           <Spells id={id} />
-          <Features id={id} />
-          <Notes id={id} />
-          <ProficienciesAndLanguages id={id} />
           <Inventory id={id} />
+          <OptionalFeatures id={id} />
+          <Features id={id} />
           <Personality id={id} />
+          <Notes id={id} />
+          <Backstory id={id} />
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-4 lg:h-fit">
+          <Reminders id={id} />
+
           <Card>
             <CardHeader>
               <CardTitle>Rolar Dados</CardTitle>
@@ -407,51 +423,7 @@ export default function CharacterPage() {
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Histórico</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500">esta ficha</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setClearScope("player")}
-                    aria-label="Limpar rolagens desta ficha"
-                    title="Limpar rolagens desta ficha"
-                  >
-                    <Trash2 className="h-3 w-3" /> Limpar
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <RollHistory characterId={id} />
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Mesa</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500">todos</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setClearScope("mesa")}
-                    aria-label="Limpar todas as rolagens da mesa"
-                    title="Limpar todas as rolagens da mesa"
-                  >
-                    <Trash2 className="h-3 w-3" /> Limpar
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <RollHistory />
-            </CardBody>
-          </Card>
+          <TablePanel id={id} onClear={() => setClearScope("mesa")} />
 
           <ChangeLog id={id} />
         </aside>
@@ -468,8 +440,8 @@ export default function CharacterPage() {
       />
       <ConfirmDialog
         open={clearScope !== null}
-        title={clearScope === "mesa" ? "Limpar TODAS as rolagens da mesa?" : "Limpar as rolagens desta ficha?"}
-        description={clearScope === "mesa" ? "Isso apaga o histórico de todos os jogadores." : undefined}
+        title="Limpar TODAS as rolagens da mesa?"
+        description="Isso apaga as rolagens de todas as fichas desta pasta, para todo mundo."
         confirmLabel="Limpar"
         onCancel={() => setClearScope(null)}
         onConfirm={onClearRolls}

@@ -23,6 +23,7 @@ export const FEITICEIRO: ClassDef = {
     },
     {
       name: "Magias Adicionais de Feiticeiro (opcional, Tasha)",
+      optional: true,
       level: 1,
       description:
         "Característica opcional do Caldeirão de Tasha, adotada em acordo com o Mestre.\n" +
@@ -76,6 +77,7 @@ export const FEITICEIRO: ClassDef = {
     },
     {
       name: "Versatilidade Feiticeira (opcional, Tasha)",
+      optional: true,
       level: 4,
       description:
         "Característica opcional do Caldeirão de Tasha, adotada em acordo com o Mestre.\n" +
@@ -85,6 +87,7 @@ export const FEITICEIRO: ClassDef = {
     },
     {
       name: "Orientação Mágica (opcional, Tasha)",
+      optional: true,
       level: 5,
       description:
         "Característica opcional do Caldeirão de Tasha, adotada em acordo com o Mestre.\n" +

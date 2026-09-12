@@ -14,6 +14,26 @@ embutido, servindo tudo da memória com Brotli pré-comprimido.
 O frontend (`dist/`) é embutido no binário na compilação: não precisa de Node, `node_modules`
 nem nginx servindo arquivos estáticos em produção.
 
+## Quem manda em quê
+
+A ficha tem dois donos. O **jogador** cuida do estado do personagem: PV, contadores de
+recurso e de espaço de magia, notas da sessão, equipar/desequipar armadura e escudo, a
+história do personagem e as escolhas que a progressão abriu (talento × atributo,
+especialização em perícia, características opcionais do Tasha, magias — se a classe
+trocar magias livremente). O **Mestre** (chave mestra) cuida do que define o poder da
+ficha: níveis, atributos, perícias, itens, armas, máximos de PV/recurso/espaço e a
+Inspiração. O servidor aplica essas regras no `PATCH` (`server/src/main.rs`,
+`player_patch_violation`) — a tela só esconde o que já seria recusado.
+
+### Hub do Mestre
+
+Dentro de cada pasta há o **Hub do Mestre** (`/pasta/:id/hub`), que só abre com a chave
+mestra. Nele o Mestre vê PV, CA, iniciativa, espaços de magia e recursos de todas as
+fichas, dá Inspiração com um clique, aplica descanso curto ou longo em cada personagem
+e acompanha um mural de avisos (“Fulano perdeu 7 PV”, “gastou 1 espaço de 2º”) em tempo
+real. Também dá para anotar criaturas da cena — nome, PV e CA; em 0 PV a criatura some
+sozinha.
+
 ## Rodar localmente (dev)
 
 Requisitos: [Bun](https://bun.sh) (ou Node 20+) e [Rust](https://rustup.rs) estável.

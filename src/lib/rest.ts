@@ -1,9 +1,12 @@
 import type { Character } from "./types";
 
+/** Recursos-moeda (Inspiração e afins) não voltam com descanso: são concedidos. */
+const rechargeable = (resource: Character["resources"][number]) => resource.kind !== "moeda";
+
 export function applyShortRest(character: Character): Pick<Character, "resources"> {
   return {
     resources: character.resources.map((resource) =>
-      resource.recharge === "short"
+      rechargeable(resource) && resource.recharge === "short"
         ? { ...resource, current: resource.max }
         : resource,
     ),
@@ -17,9 +20,10 @@ export function applyLongRest(
     hpCurrent: character.hpMax,
     hpTemp: 0,
     resources: character.resources.map((resource) =>
-      resource.recharge === "long" ||
-      resource.recharge === "short" ||
-      resource.recharge === "dawn"
+      rechargeable(resource) &&
+      (resource.recharge === "long" ||
+        resource.recharge === "short" ||
+        resource.recharge === "dawn")
         ? { ...resource, current: resource.max }
         : resource,
     ),

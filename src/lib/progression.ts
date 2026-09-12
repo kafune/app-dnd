@@ -14,6 +14,7 @@ import {
   type AsiDecision,
   type Character,
   type ClassEntry,
+  type ExpertiseGrant,
   type Feature,
   type FeatureResource,
   type RaceTraitDef,
@@ -434,17 +435,105 @@ export function toFeature(f: ClassFeatureWithOrigin): Feature {
   };
 }
 
-/** Todas as características de classe/subclasse da lista de classes (com origem). */
-export function classFeaturesFor(classes: ClassEntry[]): Feature[] {
+/**
+ * Todas as características de classe/subclasse da lista de classes (com origem).
+ * As opcionais (Caldeirão de Tasha) só entram se estiverem em `adopted`.
+ */
+export function classFeaturesFor(classes: ClassEntry[], adopted: string[] = []): Feature[] {
+  const chosen = new Set(adopted.map(norm));
   const out: Feature[] = [];
   for (const c of classes) {
     if (!c.name.trim()) continue;
     for (const f of classFeaturesUpTo(c.name, c.level, c.subclass)) {
       if (f.asi) continue; // o ASI vira decisão (atributos × talento), não característica
+      if (f.optional && !chosen.has(norm(f.name))) continue;
       out.push(toFeature(f));
     }
   }
   return out;
+}
+
+/** Características opcionais (Tasha) disponíveis para as classes/níveis atuais. */
+export function optionalFeaturesFor(classes: ClassEntry[]): ClassFeatureWithOrigin[] {
+  const out: ClassFeatureWithOrigin[] = [];
+  for (const c of classes) {
+    if (!c.name.trim()) continue;
+    for (const f of classFeaturesUpTo(c.name, c.level, c.subclass)) {
+      if (f.optional) out.push(f);
+    }
+  }
+  return out;
+}
+
+// ============================================================================
+// Especialização (bônus de proficiência dobrado em perícias)
+// ============================================================================
+
+/** Uma concessão de especialização já alcançada, com de onde veio. */
+export type ExpertiseSource = {
+  label: string;
+  grant: ExpertiseGrant;
+};
+
+/**
+ * Especializações que a ficha já conquistou: características de classe/subclasse
+ * alcançadas (respeitando as opcionais adotadas) e talentos escolhidos.
+ */
+export function expertiseSources(
+  classes: ClassEntry[],
+  options: { adopted?: string[]; feats?: string[] } = {},
+): ExpertiseSource[] {
+  const chosen = new Set((options.adopted ?? []).map(norm));
+  const out: ExpertiseSource[] = [];
+  for (const c of classes) {
+    if (!c.name.trim()) continue;
+    for (const f of classFeaturesUpTo(c.name, c.level, c.subclass)) {
+      if (!f.expertise) continue;
+      if (f.optional && !chosen.has(norm(f.name))) continue;
+      out.push({ label: `${f.name} (${f.origin.name} ${f.level})`, grant: f.expertise });
+    }
+  }
+  for (const name of options.feats ?? []) {
+    const feat = findFeat(name);
+    if (feat?.expertise) out.push({ label: `Talento: ${feat.name}`, grant: feat.expertise });
+  }
+  return out;
+}
+
+/** Quantas perícias a ficha pode especializar, quais são automáticas e quais são permitidas. */
+export function expertiseBudget(
+  classes: ClassEntry[],
+  options: { adopted?: string[]; feats?: string[] } = {},
+): { total: number; fixed: SkillName[]; allowed: SkillName[] | null; sources: ExpertiseSource[] } {
+  const sources = expertiseSources(classes, options);
+  const fixed = new Set<SkillName>();
+  const allowed = new Set<SkillName>();
+  let restricted = false;
+  let total = 0;
+  for (const { grant } of sources) {
+    total += grant.count;
+    for (const skill of grant.fixed ?? []) fixed.add(skill);
+    if (grant.count > 0) {
+      if (grant.from) {
+        restricted = true;
+        for (const skill of grant.from) allowed.add(skill);
+      } else {
+        restricted = false;
+        allowed.clear();
+      }
+    }
+  }
+  return {
+    total,
+    fixed: [...fixed],
+    allowed: restricted && allowed.size > 0 ? [...allowed] : null,
+    sources,
+  };
+}
+
+/** Nomes dos talentos escolhidos na ficha (ASIs + talento racial guardado nas características). */
+export function featNamesOf(features: Feature[]): string[] {
+  return features.filter((f) => f.origin?.kind === "feat").map((f) => f.name);
 }
 
 /** Máximo de um recurso no nível/atributos dados. */
@@ -628,7 +717,7 @@ export function featSkillChoices(features: Feature[]): number {
   let n = 0;
   for (const f of features) {
     if (f.origin?.kind !== "feat") continue;
-    n += FEAT_SKILL_CHOICES[norm(f.name)] ?? 0;
+    n += findFeat(f.name)?.skillChoices ?? FEAT_SKILL_CHOICES[norm(f.name)] ?? 0;
   }
   return n;
 }
@@ -690,9 +779,10 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
     else if (d.abilities) scores = applyAbilityIncrease(scores, d.abilities, -1);
   }
 
-  // --- características
-  const prevAuto = classFeaturesFor(prevClasses);
-  const nextAuto = classFeaturesFor(nextClasses);
+  // --- características (as opcionais de Tasha só contam se a ficha adotou)
+  const adopted = sheet.optionalFeatures ?? [];
+  const prevAuto = classFeaturesFor(prevClasses, adopted);
+  const nextAuto = classFeaturesFor(nextClasses, adopted);
   const staleFeatNames = new Set(stale.filter((d) => d.kind === "feat" && d.feat).map((d) => norm(d.feat!)));
   const lost: Feature[] = [];
   let features = sheet.features.filter((f) => {
@@ -772,6 +862,8 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
   // --- recursos automáticos (mantém o "atual" proporcional ao que já foi gasto)
   const autoRes = classResourcesFor(nextClasses, scores);
   const resources = character.resources.filter((r) => {
+    // Moedas (Inspiração e afins) não vêm da classe: nunca somem num recálculo.
+    if (r.kind === "moeda") return true;
     const isAuto = /^[^:]+: /.test(r.description ?? "") && classResourcesFor(prevClasses, sheet.abilityScores).some((p) => norm(p.name) === norm(r.name));
     return !isAuto || autoRes.some((a) => norm(a.name) === norm(r.name));
   });

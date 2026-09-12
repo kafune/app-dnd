@@ -9,6 +9,7 @@ import { AbilityScoresEditor, type AbilityMode } from "@/components/create/Abili
 import { AdvancementChoices, sumIncrease } from "@/components/create/AdvancementChoices";
 import { AvatarPicker } from "@/components/create/AvatarPicker";
 import { ClassProgression } from "@/components/create/ClassProgression";
+import { ExpertisePicker, OptionalFeaturesPicker } from "@/components/create/ClassOptions";
 import { Field, selectCls } from "@/components/create/common";
 import { EquipmentPicker } from "@/components/create/EquipmentPicker";
 import { BackgroundEquipment } from "@/components/create/BackgroundEquipment";
@@ -55,6 +56,7 @@ import {
 import {
   allSpellCaps,
   clampClassLevels,
+  expertiseBudget,
   grantedSpellsFor,
   MAX_LEVEL,
   reachedAsis,
@@ -91,7 +93,8 @@ export default function CriarFicha() {
   const scores = useMemo(() => draftScores(draft), [draft]);
   const spellCaps = allSpellCaps(namedClasses, scores);
   const profBonus = proficiencyBonusForLevel(totalLevel(draft.classes));
-  const previewHp = draft.hpOverride ?? totalHp(draft.classes, abilityMod(scores.con));
+  const averageHpPreview = totalHp(draft.classes, abilityMod(scores.con));
+  const previewHp = draft.hpOverride ?? averageHpPreview;
   const previewAc = draft.acOverride ?? 10 + abilityMod(scores.dex);
 
   // Pontos livres de aumento de atributo (2 por ASI escolhido como "pontos de atributo").
@@ -161,7 +164,17 @@ export default function CriarFicha() {
   }
 
   function setClasses(next: DraftClass[]) {
-    upd({ classes: next, skills: [], cantrips: [], knownSpells: [], advancement: [] });
+    // Trocar de classe invalida tudo que dependia dela: perícias, magias, ASI,
+    // especialização e as opcionais de Tasha.
+    upd({
+      classes: next,
+      skills: [],
+      cantrips: [],
+      knownSpells: [],
+      advancement: [],
+      expertise: [],
+      optionalFeatures: [],
+    });
   }
 
   function updateClass(index: number, patch: Partial<DraftClass>) {
@@ -232,6 +245,15 @@ export default function CriarFicha() {
     if (missingTools) return setError(`Complete a escolha do antecedente: ${missingTools}.`);
     if (draft.skills.length !== budget.total || !skillSelectionFits(draft.skills, budget.parts))
       return setError(`Escolha exatamente ${budget.total} perícia(s) permitida(s) pelas classes e antecedente.`);
+    const expertise = expertiseBudget(
+      namedClasses.map((c) => ({ name: c.name, level: c.level, subclass: c.subclass })),
+      {
+        adopted: draft.optionalFeatures,
+        feats: [...(draft.raceFeat ? [draft.raceFeat] : []), ...draft.advancement.filter((d) => d.feat).map((d) => d.feat!)],
+      },
+    );
+    if (expertise.total > 0 && (draft.expertise ?? []).length !== expertise.total)
+      return setError(`Escolha exatamente ${expertise.total} perícia(s) para a Especialização.`);
     if (reachedAsis(draft.classes).length !== draft.advancement.length)
       return setError("Decida todos os aumentos de atributo ou talentos da progressão.");
     if (!draft.advancement.every((decision) => validAdvancementDecision(decision, scores)))
@@ -462,6 +484,8 @@ export default function CriarFicha() {
           </Card>
         )}
 
+        <OptionalFeaturesPicker draft={draft} upd={upd} />
+
         {reachedAsis(draft.classes).length > 0 && (
           <AdvancementChoices
             classes={draft.classes}
@@ -493,6 +517,8 @@ export default function CriarFicha() {
         </Card>
 
         <SkillsSection draft={draft} upd={upd} />
+
+        <ExpertisePicker draft={draft} upd={upd} />
 
         {/* Magias */}
         {(spellCaps.length > 0 || grantedSpells.length > 0) && (
@@ -550,13 +576,58 @@ export default function CriarFicha() {
         {/* Derivados */}
         <Card>
           <CardHeader>
-            <CardTitle>Combate (auto-calculado)</CardTitle>
+            <CardTitle>Combate</CardTitle>
           </CardHeader>
-          <CardBody className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="PV máximo" value={String(previewHp)} />
-            <Stat label="CA" value={String(previewAc)} />
-            <Stat label="Iniciativa" value={formatMod(abilityMod(scores.dex))} />
-            <Stat label="Bônus de prof." value={formatMod(profBonus)} />
+          <CardBody className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="PV máximo" value={String(previewHp)} />
+              <Stat label="CA" value={String(previewAc)} />
+              <Stat label="Iniciativa" value={formatMod(abilityMod(scores.dex))} />
+              <Stat label="Bônus de prof." value={formatMod(profBonus)} />
+            </div>
+            {/* PV não é fixo: quem rola os dados de vida digita o total aqui. */}
+            <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+              <Field label="PV máximo (deixe vazio para usar a média da classe)">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    className="w-28"
+                    placeholder={String(averageHpPreview)}
+                    value={draft.hpOverride ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value.trim();
+                      upd({ hpOverride: value === "" ? undefined : Math.max(1, Number(value) || 1) });
+                    }}
+                  />
+                  {draft.hpOverride != null && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => upd({ hpOverride: undefined })}>
+                      usar a média ({averageHpPreview})
+                    </Button>
+                  )}
+                </div>
+              </Field>
+              <p className="mt-1 text-xs text-zinc-500">
+                Rolou os dados de vida na mesa? Some o modificador de Constituição de cada nível e digite o total aqui.
+                A média da classe é {averageHpPreview} PV.
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+
+        {/* História: um bloco livre, igual ao da ficha. Opcional na criação. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>História do personagem (opcional)</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <textarea
+              value={draft.backstory ?? ""}
+              onChange={(event) => upd({ backstory: event.target.value })}
+              placeholder="De onde veio, quem deixou para trás, o que procura… Dá para escrever depois, na ficha."
+              className="min-h-40 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm leading-6 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-500/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
           </CardBody>
         </Card>
 

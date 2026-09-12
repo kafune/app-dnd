@@ -9,6 +9,7 @@ const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
 import { allSpellCaps } from "@/lib/progression";
+import { sheetPermissions } from "@/lib/permissions";
 
 const selectCls =
   "h-7 rounded-md border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -19,6 +20,9 @@ export function Spells({ id }: { id: string }) {
   const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
+  // Conjurador de um terço (Trapaceiro Arcano, Cavaleiro Arcano) tem lista fechada:
+  // quem troca as magias dele é o Mestre.
+  const canSwap = sheetPermissions(isMaster, c.sheet).spells;
   const { cantrips, known, saveDC, attackMod, castingAbility } = c.sheet.spells;
   const all = [...cantrips, ...known];
   if (all.length === 0 && !editMode) return null;
@@ -72,7 +76,12 @@ export function Spells({ id }: { id: string }) {
         </div>
       </CardHeader>
       <CardBody className="space-y-3">
-        {editMode && (
+        {editMode && !canSwap && (
+          <p className="rounded-md border border-zinc-200 p-2 text-xs text-zinc-500 dark:border-zinc-800">
+            A sua classe não escolhe magias livremente — quem muda a lista é o Mestre.
+          </p>
+        )}
+        {editMode && canSwap && (
           <Suspense fallback={<p className="text-xs text-zinc-500">Carregando catálogo de magias…</p>}>
             <SpellPicker
               classNames={classNames}
@@ -84,7 +93,7 @@ export function Spells({ id }: { id: string }) {
             />
           </Suspense>
         )}
-        {!editMode &&
+        {(!editMode || !canSwap) &&
           sortedLevels.map((lvl) => (
           <div key={lvl}>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">

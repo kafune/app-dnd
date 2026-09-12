@@ -1,4 +1,4 @@
-import type { Character, CharacterLogEntry, DiceRoll, Folder, HomebrewItem, HomebrewKind } from "./types";
+import type { Character, CharacterLogEntry, Creature, DiceRoll, Folder, HomebrewItem, HomebrewKind } from "./types";
 
 /** Erro de API com o código do servidor (`{"error": "bad_pin"}`) e mensagem em PT-BR. */
 export class ApiError extends Error {
@@ -28,6 +28,10 @@ const FRIENDLY: Record<string, string> = {
   folder_pin_required: "Defina uma senha para a pasta.",
   folder_name_taken: "Já existe uma pasta com esse nome.",
   folder_not_empty: "A pasta ainda tem fichas. Apague as fichas dela antes.",
+  master_only_hp_max: "Só o Mestre muda o PV máximo.",
+  master_only_spell_slots: "Só o Mestre muda os espaços de magia (você só marca os usados).",
+  master_only_resources: "Só o Mestre cria recursos e concede Inspiração.",
+  master_only_sheet: "Essa parte da ficha só o Mestre edita.",
 };
 
 async function send<T>(url: string, init?: RequestInit): Promise<T> {
@@ -182,6 +186,38 @@ export const api = {
       headers: pinHeader(pin),
     });
   },
+
+  /** Hub do Mestre: fichas completas da pasta + criaturas da cena (exige a chave mestra). */
+  getFolderHub: (folderId: string, masterPin: string) =>
+    send<{ folder: Folder; characters: Character[]; creatures: Creature[] }>(`/api/folders/${enc(folderId)}/hub`, {
+      cache: "no-store",
+      headers: pinHeader(masterPin),
+    }),
+
+  createCreature: (folderId: string, data: { name: string; hpMax: number; ac: number }, masterPin: string) =>
+    send<{ creature: Creature }>(`/api/folders/${enc(folderId)}/creatures`, {
+      method: "POST",
+      headers: pinHeader(masterPin),
+      body: JSON.stringify(data),
+    }),
+
+  /** Criatura em 0 PV sai do hub sozinha: a resposta vem com `removed: true`. */
+  updateCreature: (
+    folderId: string,
+    creatureId: string,
+    data: Partial<Pick<Creature, "name" | "hpCurrent" | "hpMax" | "ac" | "note">>,
+    masterPin: string,
+  ) =>
+    send<{ creature: Creature | null; removed: boolean }>(
+      `/api/folders/${enc(folderId)}/creatures/${enc(creatureId)}`,
+      { method: "PATCH", headers: pinHeader(masterPin), body: JSON.stringify(data) },
+    ),
+
+  deleteCreature: (folderId: string, creatureId: string, masterPin: string) =>
+    send<{ ok: true }>(`/api/folders/${enc(folderId)}/creatures/${enc(creatureId)}`, {
+      method: "DELETE",
+      headers: pinHeader(masterPin),
+    }),
 
   /** Confere a chave mestra (200 = é o Mestre). */
   checkMaster: (pin: string) => send<{ ok: true }>("/api/master", { method: "POST", headers: pinHeader(pin) }),

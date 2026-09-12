@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, LockKeyhole, LogOut, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, KeyRound, LockKeyhole, LogOut, Pencil, Plus, Trash2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/lib/store";
 import { matchesSearch } from "@/lib/search";
@@ -238,6 +238,8 @@ function FolderView({ folder, canCreate }: { folder: Folder; canCreate: boolean 
 
       {/* grid-cols-1 = minmax(0, 1fr): nome longo não alarga a coluna no celular */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* O hub mora na pasta como se fosse uma ficha, mas só abre com a chave mestra. */}
+        <MasterHubCard folderId={folder.id} locked={!isMaster} />
         {visible.map((character) => (
           <CharacterCard key={character.id} character={character} />
         ))}
@@ -260,5 +262,37 @@ function FolderView({ folder, canCreate }: { folder: Folder; canCreate: boolean 
         onConfirm={() => void onConfirmDelete()}
       />
     </main>
+  );
+}
+
+/** Atalho para o Hub do Mestre desta pasta. Fica junto das fichas, mas pede a chave mestra. */
+function MasterHubCard({ folderId, locked }: { folderId: string; locked: boolean }) {
+  return (
+    <Link to={`/pasta/${folderId}/hub`} className="block">
+      <Card
+        className="h-full border-dashed transition hover:scale-[1.01] hover:shadow-md"
+        style={{ borderTopColor: "#d97706", borderTopWidth: 4 }}
+      >
+        <CardBody>
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              <KeyRound className="h-6 w-6" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs uppercase tracking-wide text-zinc-500">Mestre</div>
+              <div className="break-words font-mono text-xl font-semibold">Hub do Mestre</div>
+            </div>
+          </div>
+          <div className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+            Vida, CA, iniciativa, espaços de magia e recursos de toda a mesa — e as criaturas da cena.
+          </div>
+          <div className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">
+            <strong className="text-zinc-900 dark:text-zinc-200">
+              {locked ? "Chave mestra necessária" : "Chave mestra liberada neste aparelho"}
+            </strong>
+          </div>
+        </CardBody>
+      </Card>
+    </Link>
   );
 }
