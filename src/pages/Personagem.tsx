@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ALIGNMENTS, CREATURE_SIZES, type AbilityKey, type AsiDecision } from "@/lib/types";
+import { ALIGNMENTS, CREATURE_SIZES, type AbilityKey, type AsiDecision, type SpellClass } from "@/lib/types";
 import { sheetPermissions } from "@/lib/permissions";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -39,7 +39,9 @@ import {
   applyClassChange,
   clampClassLevels,
   MAX_LEVEL,
+  increasedAbilityOf,
   pendingAsis,
+  subclassChoiceFor,
   totalLevelOf,
 } from "@/lib/progression";
 
@@ -169,6 +171,8 @@ export default function CharacterPage() {
       const updated = { ...current, ...patch };
       const definition = findClassDef(updated.name);
       if (!isMaster && definition && updated.level < definition.subclassLevel) updated.subclass = undefined;
+      // Trocar de classe/subclasse derruba a escolha interna dela (o terreno do druida).
+      if (updated.name !== current.name || updated.subclass !== current.subclass) updated.subclassChoice = undefined;
       return updated;
     });
     void setClasses(next, i);
@@ -368,6 +372,22 @@ export default function CharacterPage() {
                         ))}
                       </select>
                     )}
+                    {/* Escolha interna da subclasse (Círculo da Terra → terreno): define as magias de círculo. */}
+                    {subclassChoiceFor(c) && (
+                      <select
+                        className="h-9 w-36 rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                        aria-label={`${subclassChoiceFor(c)!.label} de ${c.subclass}`}
+                        value={c.subclassChoice ?? ""}
+                        onChange={(event) => updateClassEntry(i, { subclassChoice: event.target.value || undefined })}
+                      >
+                        <option value="">— {subclassChoiceFor(c)!.label.toLowerCase()} —</option>
+                        {subclassChoiceFor(c)!.options.map((option) => (
+                          <option key={option.name} value={option.name}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <EditableNumber value={c.level} min={1} max={20} onSave={(v) => updateClassEntry(i, { level: v })} className="w-16" />
                     <Button
                       variant="ghost"
@@ -481,6 +501,8 @@ type PendingChoice = {
   feat?: string;
   /** Magias escolhidas nas opções que o talento abre. */
   spells?: string[];
+  /** Lista de classe escolhida no talento (define o atributo de conjuração das magias dele). */
+  spellList?: SpellClass;
 };
 
 /** A escolha está pronta para virar decisão de progressão? */
@@ -489,7 +511,7 @@ function isChoiceComplete(choice: PendingChoice): boolean {
   if (!choice.feat) return false;
   const feat = findFeat(choice.feat);
   if (feat?.abilityIncrease && allocatedPoints(choice.abilities) !== feat.abilityIncrease.amount) return false;
-  return featSpellsComplete(feat, choice.spells);
+  return featSpellsComplete(feat, choice.spells, choice.spellList);
 }
 
 function toDecision(slot: { className: string; level: number }, choice: PendingChoice): AsiDecision {
@@ -499,6 +521,7 @@ function toDecision(slot: { className: string; level: number }, choice: PendingC
     kind: choice.kind,
     ...(choice.kind === "feat" ? { feat: choice.feat } : {}),
     ...(choice.kind === "feat" && choice.spells?.length ? { spells: choice.spells } : {}),
+    ...(choice.kind === "feat" && choice.spellList ? { spellList: choice.spellList } : {}),
     ...(Object.keys(choice.abilities).length ? { abilities: choice.abilities } : {}),
   };
 }
@@ -593,7 +616,14 @@ function PendingAdvancement({
                 )}
                 {feat && <p className="whitespace-pre-line text-xs text-zinc-600 dark:text-zinc-300">{feat.description}</p>}
                 {feat && featHasSpells(feat) && (
-                  <FeatSpellChoices feat={feat} chosen={choice.spells ?? []} onChange={(spells) => setChoice({ spells })} />
+                  <FeatSpellChoices
+                    feat={feat}
+                    chosen={choice.spells ?? []}
+                    onChange={(spells) => setChoice({ spells })}
+                    list={choice.spellList}
+                    onList={(spellList) => setChoice({ spellList, spells: [] })}
+                    increased={increasedAbilityOf(choice)}
+                  />
                 )}
               </div>
             )}

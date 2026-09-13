@@ -66,8 +66,15 @@ export function groupFeatures(sheet: Pick<Sheet, "features" | "classes" | "raceI
       f.origin?.kind === "background" ||
       (!f.origin && (/^antecedente/i.test(f.source.trim()) || sourceMatches(f.source, sheet.background))),
   );
-  // Sobrou: homebrew do Mestre, classe/subclasse que saiu do catálogo e fichas antigas sem origem.
-  add("outras", "Outras (Mestre e homebrew)", () => true);
+  // O que o Mestre criou à mão fica num grupo só, igual ao slot "Homebrew do Mestre"
+  // do inventário: não se mistura com o que veio de classe, raça ou antecedente.
+  add(
+    "homebrew",
+    "Homebrew do Mestre",
+    (f) => f.origin?.kind === "custom" || (!f.origin && /^mestre\b/i.test(f.source.trim())),
+  );
+  // Sobrou: classe/subclasse que saiu do catálogo e fichas antigas sem origem.
+  add("outras", "Outras", () => true);
 
   return groups;
 }

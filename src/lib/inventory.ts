@@ -16,6 +16,7 @@ export const INVENTORY_CATEGORY_LABELS: Record<InventoryCategory, string> = {
   consumiveis: "Consumíveis",
   materiais: "Materiais e equipamento",
   tesouro: "Tesouros e valores",
+  homebrew: "Homebrew do Mestre",
   outros: "Outros",
 };
 
@@ -28,6 +29,7 @@ export const INVENTORY_CATEGORY_ORDER: InventoryCategory[] = [
   "consumiveis",
   "materiais",
   "tesouro",
+  "homebrew",
   "outros",
 ];
 

@@ -16,7 +16,7 @@ import {
   type CatalogItem,
 } from "@/data/itemsCatalog";
 import { STARTING_EQUIPMENT } from "@/data/startingEquipment";
-import { itemFromName, mergeItems as addItems } from "@/lib/items";
+import { homebrewItem, itemFromName, mergeItems as addItems } from "@/lib/items";
 
 const selectCls =
   "h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
@@ -31,7 +31,9 @@ type Props = {
   allowCustom?: boolean;
 };
 
-const ANY_OPTIONS: Record<Extract<EquipmentRef, { any: string }>["any"], string[]> = {
+type AnyRef = Extract<EquipmentRef, { any: string }>;
+
+const ANY_OPTIONS: Record<AnyRef["any"], string[]> = {
   "arma simples": SIMPLE_WEAPONS,
   "arma marcial": MARTIAL_WEAPONS,
   "arma simples corpo-a-corpo": SIMPLE_MELEE_WEAPONS,
@@ -42,12 +44,17 @@ const ANY_OPTIONS: Record<Extract<EquipmentRef, { any: string }>["any"], string[
 };
 
 function norm(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
+/** Quantos itens um coringa concede — cada um é escolhido separadamente. */
+const refCount = (ref: EquipmentRef) => Math.max(1, ref.qty ?? 1);
 
 function refLabel(ref: EquipmentRef): string {
-  if ("any" in ref) return `Escolher ${ref.any}${(ref.qty ?? 1) > 1 ? ` ×${ref.qty}` : ""}`;
+  if ("any" in ref) {
+    const count = refCount(ref);
+    return count > 1 ? `Escolher ${count} × ${ref.any}` : `Escolher ${ref.any}`;
+  }
   const item = findItem(ref.item);
   return `${item?.name ?? ref.item}${(ref.qty ?? 1) > 1 ? ` ×${ref.qty}` : ""}${item?.detail ? ` — ${item.detail}` : ""}`;
 }
@@ -78,10 +85,14 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
   }, [definitions.length, equipment]);
   const allDefinitions = legacy ? [["Classe", legacy] as const] : definitions;
 
-  const resolveRef = (ref: EquipmentRef, key: string): Item => {
-    if ("item" in ref) return itemFromName(ref.item, ref.qty ?? 1);
-    const name = anyPick[key] || ANY_OPTIONS[ref.any][0] || ref.any;
-    return itemFromName(name, ref.qty ?? 1);
+  /** Arma escolhida para a `slot`-ésima vaga de um coringa (padrão: a primeira da lista). */
+  const pickedAny = (ref: AnyRef, key: string, slot: number) =>
+    anyPick[`${key}#${slot}`] || ANY_OPTIONS[ref.any][0] || ref.any;
+
+  /** Um ref vira 1+ itens: "duas armas marciais" são duas escolhas independentes. */
+  const resolveRef = (ref: EquipmentRef, key: string): Item[] => {
+    if ("item" in ref) return [itemFromName(ref.item, ref.qty ?? 1)];
+    return Array.from({ length: refCount(ref) }, (_, slot) => itemFromName(pickedAny(ref, key, slot), 1));
   };
 
   const addStarting = (className: string, definition: StartingEquipmentDef) => {
@@ -96,7 +107,38 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
         key: `${className}:${groupIndex}:${refIndex}`,
       }));
     });
-    onChange(addItems(items, refs.map(({ ref, key }) => resolveRef(ref, key))));
+    onChange(addItems(items, refs.flatMap(({ ref, key }) => resolveRef(ref, key))));
+  };
+
+  /** Os selects de um coringa: um por vaga, para o jogador escolher cada arma. */
+  const anyPickers = (ref: EquipmentRef, key: string) => {
+    if (!("any" in ref)) return null;
+    const count = refCount(ref);
+    return Array.from({ length: count }, (_, slot) => (
+      <label key={`${key}#${slot}`} className="block">
+        {count > 1 && (
+          <span className="text-[11px] text-zinc-500">
+            {ref.any} {slot + 1} de {count}
+          </span>
+        )}
+        <select
+          className={selectCls}
+          aria-label={count > 1 ? `Escolher ${ref.any} ${slot + 1}` : `Escolher ${ref.any}`}
+          value={pickedAny(ref, key, slot)}
+          onChange={(event) => setAnyPick((state) => ({ ...state, [`${key}#${slot}`]: event.target.value }))}
+        >
+          {ANY_OPTIONS[ref.any].map((name) => {
+            const item = findItem(name);
+            return (
+              <option key={name} value={name}>
+                {name}
+                {item?.detail ? ` — ${item.detail}` : ""}
+              </option>
+            );
+          })}
+        </select>
+      </label>
+    ));
   };
 
   const presetMatches = useMemo(() => {
@@ -111,10 +153,11 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
   }, [presetQuery]);
 
   const addPreset = (item: CatalogItem) => onChange(addItems(items, [itemFromName(item.name)]));
+  // Item inventado na hora: entra no grupo "Homebrew do Mestre" do inventário.
   const addFree = () => {
     const name = free.trim();
     if (!name) return;
-    onChange(addItems(items, [{ name, quantity: 1 }]));
+    onChange(addItems(items, [homebrewItem(name)]));
     setFree("");
   };
 
@@ -143,43 +186,14 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
                     <option key={index} value={index}>{optionLabel(entry.items)}</option>
                   ))}
                 </select>
-                {option?.items.map((ref, refIndex) => {
-                  if (!("any" in ref)) return null;
-                  const key = `${className}:${groupIndex}:${refIndex}`;
-                  return (
-                    <select
-                      key={key}
-                      className={selectCls}
-                      value={anyPick[key] ?? ANY_OPTIONS[ref.any][0] ?? ""}
-                      onChange={(event) => setAnyPick((state) => ({ ...state, [key]: event.target.value }))}
-                    >
-                      {ANY_OPTIONS[ref.any].map((name) => {
-                        const item = findItem(name);
-                        return <option key={name} value={name}>{name}{item?.detail ? ` — ${item.detail}` : ""}</option>;
-                      })}
-                    </select>
-                  );
-                })}
+                {option?.items.map((ref, refIndex) => anyPickers(ref, `${className}:${groupIndex}:${refIndex}`))}
               </div>
             );
           })}
           {definition.fixed.length > 0 && (
             <div className="space-y-1 text-xs text-zinc-500">
               <div>Inclui: {definition.fixed.filter((ref) => "item" in ref).map(refLabel).join("; ")}</div>
-              {definition.fixed.map((ref, index) => {
-                if (!("any" in ref)) return null;
-                const key = `${className}:fixed:${index}`;
-                return (
-                  <select
-                    key={key}
-                    className={selectCls}
-                    value={anyPick[key] ?? ANY_OPTIONS[ref.any][0] ?? ""}
-                    onChange={(event) => setAnyPick((state) => ({ ...state, [key]: event.target.value }))}
-                  >
-                    {ANY_OPTIONS[ref.any].map((name) => <option key={name} value={name}>{refLabel({ item: name })}</option>)}
-                  </select>
-                );
-              })}
+              {definition.fixed.map((ref, index) => anyPickers(ref, `${className}:fixed:${index}`))}
             </div>
           )}
           <Button type="button" size="sm" variant="outline" onClick={() => addStarting(className, definition)}>

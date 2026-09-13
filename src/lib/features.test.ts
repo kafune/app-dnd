@@ -37,7 +37,7 @@ describe("características por origem", () => {
       "Classe 2: Guerreiro 2",
       "Talentos",
       "Antecedente: Soldado",
-      "Outras (Mestre e homebrew)",
+      "Homebrew do Mestre",
     ]);
     expect(groups[1].features.map((f) => f.name)).toEqual(["Ataque Furtivo", "Emboscada Mágica"]);
     expect(groups[2].features.map((f) => f.name)).toEqual(["Retomar o Fôlego"]);
@@ -72,7 +72,7 @@ describe("fichas antigas (sem origem estruturada)", () => {
       ["Raça: Kenku", ["Mimicry"]],
       ["Classe 1: Bardo 3 · Colégio da Eloquência", ["Canção do Descanso", "Língua Prateada"]],
       ["Antecedente: Pirata", ["Reputação Ruim"]],
-      ["Outras (Mestre e homebrew)", ["Bênção estranha"]],
+      ["Homebrew do Mestre", ["Bênção estranha"]],
     ]);
   });
 });

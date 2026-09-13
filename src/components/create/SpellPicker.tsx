@@ -5,7 +5,12 @@ import type { ClassSpellCaps } from "@/lib/progression";
 import { Input } from "@/components/ui/Input";
 
 /** Magia concedida automaticamente (subclasse, raça), com a origem para exibir. */
-export type GrantedSpell = { name: string; origin: string };
+export type GrantedSpell = {
+  name: string;
+  origin: string;
+  /** Regras próprias da magia concedida (atributo, CD e uso sem espaço de magia). */
+  notes?: string[];
+};
 
 type Props = {
   classNames: string[];
@@ -216,6 +221,13 @@ export function SpellPicker({
           {granted.map((spell) => (
             <li key={`${spell.name}:${spell.origin}`}>
               <strong>{spell.name}</strong> — {spell.origin}
+              {spell.notes?.length ? (
+                <ul className="ml-3 text-violet-900 dark:text-violet-200">
+                  {spell.notes.map((note) => (
+                    <li key={note}>• {note}</li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>

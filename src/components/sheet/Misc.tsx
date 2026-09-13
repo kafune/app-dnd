@@ -7,6 +7,7 @@ import { EditableText, EditableNumber } from "@/components/sheet/edit/EditContro
 import { ABILITY_LABELS, ABILITY_ORDER, type InventoryCategory, type Item } from "@/lib/types";
 import { ITEMS_CATALOG, findItem, isArmorItem, isShieldItem, itemDisplayName } from "@/data/itemsCatalog";
 import { equipPatch } from "@/lib/armor";
+import { homebrewItem } from "@/lib/items";
 import { sheetPermissions } from "@/lib/permissions";
 import { groupProficiencies, splitProficiencies } from "@/lib/proficiencies";
 import {
@@ -224,7 +225,7 @@ export function Inventory({ id }: { id: string }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setInv({ items: [...inv.items, { name: "Item homebrew", quantity: 1 }] })}
+              onClick={() => setInv({ items: [...inv.items, homebrewItem("Item homebrew")] })}
             >
               + Item custom/homebrew
             </Button>

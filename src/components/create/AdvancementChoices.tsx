@@ -1,7 +1,7 @@
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { PointAllocator } from "@/components/PointAllocator";
 import { allFeats, findFeat } from "@/data/featsCatalog";
-import { reachedAsis } from "@/lib/progression";
+import { increasedAbilityOf, reachedAsis } from "@/lib/progression";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/cn";
 import { ABILITY_ORDER, type AbilityKey, type AbilityScores, type AsiDecision, type ClassEntry } from "@/lib/types";
@@ -108,7 +108,13 @@ export function AdvancementChoices({ classes, advancement, raceName, scores, onC
                     className={selectCls}
                     value={decision.feat ?? ""}
                     onChange={(event) =>
-                      replace(slot, { ...decision, feat: event.target.value || undefined, abilities: undefined, spells: undefined })
+                      replace(slot, {
+                        ...decision,
+                        feat: event.target.value || undefined,
+                        abilities: undefined,
+                        spells: undefined,
+                        spellList: undefined,
+                      })
                     }
                   >
                     <option value="">— talento —</option>
@@ -144,6 +150,9 @@ export function AdvancementChoices({ classes, advancement, raceName, scores, onC
                       feat={feat}
                       chosen={decision.spells ?? []}
                       onChange={(spells) => replace(slot, { ...decision, spells })}
+                      list={decision.spellList}
+                      onList={(spellList) => replace(slot, { ...decision, spellList, spells: [] })}
+                      increased={increasedAbilityOf(decision)}
                     />
                   )}
                 </div>

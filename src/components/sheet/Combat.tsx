@@ -2,8 +2,9 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useIsMaster, useStore } from "@/lib/store";
 import { roll } from "@/lib/dice";
-import { abilityMod, formatMod, type Weapon } from "@/lib/types";
+import { ABILITY_LABELS, abilityMod, formatMod, type Weapon } from "@/lib/types";
 import { acWarnings, computeAc } from "@/lib/armor";
+import { grantedSpellNumbers, hitDiceLabel, hitDiceOf, spellCastingOf, spellcastingStats } from "@/lib/progression";
 import { sheetPermissions } from "@/lib/permissions";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
@@ -24,6 +25,15 @@ export function Combat({ id }: { id: string }) {
   const setWeapons = (w: Weapon[]) => void patchSheet(id, { weapons: w });
   const updateWeapon = (i: number, patch: Partial<Weapon>) =>
     setWeapons(weapons.map((w, idx) => (idx === i ? { ...w, ...patch } : w)));
+  // Dado de vida e números de conjuração saem do catálogo da classe: cada classe
+  // tem o seu dado e o seu atributo de conjuração (a CD e o ataque mudam junto).
+  const hitDice = hitDiceOf(c.sheet.classes);
+  const casting = spellcastingStats(c.sheet);
+  // Magias de talento/traço conjuram com o atributo do próprio talento e muitas
+  // saem sem gastar espaço: os números delas não são os da classe.
+  const grantedCasts = [...c.sheet.spells.cantrips, ...c.sheet.spells.known]
+    .map((spell) => ({ spell, casting: spellCastingOf(c.sheet, spell), numbers: grantedSpellNumbers(c.sheet, spell) }))
+    .filter((entry) => entry.casting?.ability || entry.casting?.free);
 
   const rollInit = () =>
     void addRoll(
@@ -69,10 +79,27 @@ export function Combat({ id }: { id: string }) {
             </EditStat>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
             <Stat label="CA" value={ac.total} />
             <Stat label="Iniciativa" value={formatMod(initBonus)} onClick={rollInit} />
             <Stat label="Deslocamento" value={`${c.sheet.speed}m`} />
+            {hitDice.length > 0 && <Stat label="Dado de vida" value={hitDiceLabel(hitDice)} compact />}
+          </div>
+        )}
+
+        {/* Dado de vida por classe: o que se gasta no descanso curto. */}
+        {hitDice.length > 0 && (
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300">
+            Dado de vida:{" "}
+            {hitDice.map((entry, i) => (
+              <span key={`${entry.className}:${i}`}>
+                {i > 0 && <span className="mx-1 text-zinc-400">+</span>}
+                {entry.className} <strong className="font-mono">{entry.count}{entry.hitDie}</strong>
+              </span>
+            ))}
+            <span className="ml-1 text-zinc-400">
+              — no descanso curto, gaste um e some {formatMod(abilityMod(c.sheet.abilityScores.con))} de Constituição.
+            </span>
           </div>
         )}
 
@@ -112,6 +139,82 @@ export function Combat({ id }: { id: string }) {
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Conjuração: CD, ataque mágico e atributo — por classe, que é como o 5e calcula. */}
+        {casting.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs uppercase tracking-wide text-zinc-500">Conjuração</div>
+            {casting.map((stat, i) => (
+              <div
+                key={`${stat.className}:${i}`}
+                className="space-y-1.5 rounded border border-zinc-200 p-2 dark:border-zinc-800"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-1 text-sm">
+                  <span className="font-medium">{stat.className}</span>
+                  {stat.subclass && <span className="text-xs text-zinc-500">{stat.subclass}</span>}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <MiniStat
+                    label="Habilidade"
+                    value={`${ABILITY_LABELS[stat.ability]} ${formatMod(stat.abilityMod)}`}
+                  />
+                  <MiniStat label="CD das magias" value={stat.saveDC} />
+                  <MiniStat
+                    label="Ataque mágico"
+                    value={formatMod(stat.attackMod)}
+                    onClick={() =>
+                      void addRoll(
+                        roll(`1d20${formatMod(stat.attackMod)}`, {
+                          characterId: c.id,
+                          characterName: c.characterName,
+                          label: `Ataque mágico (${stat.className})`,
+                        }),
+                      )
+                    }
+                  />
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  CD = 8 + bônus de proficiência ({formatMod(c.sheet.proficiencyBonus)}) +{" "}
+                  {ABILITY_LABELS[stat.ability]} ({formatMod(stat.abilityMod)}). O ataque mágico usa a mesma conta, sem o
+                  8.
+                </p>
+              </div>
+            ))}
+            {casting.length > 1 && (
+              <p className="text-[11px] text-zinc-500">
+                Cada classe conjura com o próprio atributo: use a CD e o ataque da classe de onde a magia veio.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Magias que vieram de talento ou traço: atributo próprio e uso sem espaço. */}
+        {grantedCasts.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="text-xs uppercase tracking-wide text-zinc-500">Magias de talento e traço</div>
+            <ul className="space-y-1">
+              {grantedCasts.map(({ spell, casting, numbers }) => (
+                <li
+                  key={spell.name}
+                  className="rounded border border-violet-300 bg-violet-50 px-2 py-1 text-xs text-violet-900 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-100"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <strong>{spell.name}</strong>
+                    <span className="opacity-70">{spell.granted}</span>
+                    {numbers && (
+                      <span className="rounded bg-amber-200 px-1 font-mono text-[10px] font-semibold text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
+                        CD {numbers.saveDC} · atq {formatMod(numbers.attackMod)} ·{" "}
+                        {ABILITY_LABELS[numbers.ability].slice(0, 3)}
+                      </span>
+                    )}
+                  </div>
+                  {casting?.free && <div className="opacity-80">Sem gastar espaço de magia: {casting.free}.</div>}
+                  {casting?.slots && <div className="opacity-80">Também pode ser conjurada gastando um espaço.</div>}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {editMode && can.combat ? (
@@ -254,10 +357,13 @@ function Stat({
   label,
   value,
   onClick,
+  compact,
 }: {
   label: string;
   value: string | number;
   onClick?: () => void;
+  /** Valores longos (dados de vida da multiclasse) em corpo menor. */
+  compact?: boolean;
 }) {
   const Comp = onClick ? "button" : "div";
   return (
@@ -268,7 +374,31 @@ function Stat({
       }`}
     >
       <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
-      <div className="font-mono text-xl font-bold">{value}</div>
+      <div className={`font-mono font-bold ${compact ? "text-base" : "text-xl"}`}>{value}</div>
+    </Comp>
+  );
+}
+
+/** Quadradinho de número dentro do bloco de conjuração. */
+function MiniStat({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string | number;
+  onClick?: () => void;
+}) {
+  const Comp = onClick ? "button" : "div";
+  return (
+    <Comp
+      onClick={onClick}
+      className={`rounded border border-zinc-200 px-1 py-1 dark:border-zinc-800 ${
+        onClick ? "hover:bg-zinc-100 dark:hover:bg-zinc-800" : ""
+      }`}
+    >
+      <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
+      <div className="font-mono text-sm font-bold">{value}</div>
     </Comp>
   );
 }

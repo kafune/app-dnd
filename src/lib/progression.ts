@@ -8,6 +8,7 @@
  */
 import {
   abilityMod,
+  ABILITY_LABELS,
   ABILITY_ORDER,
   type AbilityKey,
   type AbilityScores,
@@ -22,9 +23,14 @@ import {
   type RaceTraitDef,
   type Resource,
   type SkillName,
+  type GrantedCasting,
+  type Sheet,
   type Spell,
+  type SpellCasting,
   type SpellClass,
   type SpellSlot,
+  type SubclassChoiceDef,
+  type SubclassChoiceOption,
 } from "./types";
 import {
   asiLevels,
@@ -321,36 +327,69 @@ export function allSpellCaps(
   return classes.map((c) => classSpellCaps(c, scores)).filter((c): c is ClassSpellCaps => !!c);
 }
 
+/** Uma classe da ficha como as funções de subclasse a enxergam. */
+type ClassRef = { name: string; level: number; subclass?: string; subclassChoice?: string };
+
+/**
+ * A escolha que a subclasse pede ao jogador (Círculo da Terra: o terreno), quando
+ * o nível de classe já a alcançou. `null` quando não há escolha ou ainda é cedo.
+ */
+export function subclassChoiceFor(cls: ClassRef): SubclassChoiceDef | null {
+  const choice = findSubclassDef(cls.name, cls.subclass)?.choice;
+  if (!choice || cls.level < choice.level) return null;
+  return choice;
+}
+
+/** A opção escolhida dentro da subclasse (o terreno do Círculo da Terra). */
+export function subclassChoiceOption(cls: ClassRef): SubclassChoiceOption | null {
+  const choice = subclassChoiceFor(cls);
+  if (!choice) return null;
+  return choice.options.find((option) => norm(option.name) === norm(cls.subclassChoice ?? "")) ?? null;
+}
+
+/** A subclasse pede uma escolha que ainda não foi feita? */
+export function pendingSubclassChoice(cls: ClassRef): boolean {
+  return !!subclassChoiceFor(cls) && !subclassChoiceOption(cls);
+}
+
 /** Magias concedidas por subclasse (domínio/juramento/círculo/patrono) até o nível — sempre preparadas. */
-export function grantedSpellsFor(cls: { name: string; level: number; subclass?: string }): Spell[] {
+export function grantedSpellsFor(cls: ClassRef): Spell[] {
   const sub = findSubclassDef(cls.name, cls.subclass);
   const def = findClassDef(cls.name);
-  if (!sub?.spells || !def || cls.level < def.subclassLevel) return [];
+  if (!sub || !def || cls.level < def.subclassLevel) return [];
+  // A lista fixa da subclasse + a da opção escolhida (ex.: o terreno do Círculo da Terra).
+  const option = subclassChoiceOption(cls);
+  const tables: { label: string; spells: Record<string, string[]> }[] = [
+    ...(sub.spells ? [{ label: sub.name, spells: sub.spells }] : []),
+    ...(option?.spells ? [{ label: `${sub.name}: ${option.name}`, spells: option.spells }] : []),
+  ];
   const out: Spell[] = [];
   const seen = new Set<string>();
-  for (const [lvl, names] of Object.entries(sub.spells)) {
-    if (Number(lvl) > cls.level) continue;
-    for (const name of names) {
-      const s = findSpell(name);
-      const key = norm(name);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(
-        s
-          ? { ...toSheetSpell(s), classSource: cls.name, granted: sub.name }
-          : {
-              name,
-              level: 1,
-              school: "",
-              castingTime: "",
-              range: "",
-              components: "",
-              duration: "",
-              description: "",
-              classSource: cls.name,
-              granted: sub.name,
-            },
-      );
+  for (const table of tables) {
+    for (const [lvl, names] of Object.entries(table.spells)) {
+      if (Number(lvl) > cls.level) continue;
+      for (const name of names) {
+        const s = findSpell(name);
+        const key = norm(name);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(
+          s
+            ? { ...toSheetSpell(s), classSource: cls.name, granted: table.label }
+            : {
+                name,
+                level: 1,
+                school: "",
+                castingTime: "",
+                range: "",
+                components: "",
+                duration: "",
+                description: "",
+                classSource: cls.name,
+                granted: table.label,
+              },
+        );
+      }
     }
   }
   return out;
@@ -383,13 +422,86 @@ function featOfLabel(granted: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
+/** Atributo de conjuração de cada lista de classe (PHB: Iniciado em Magia e afins). */
+const LIST_ABILITY: Record<string, AbilityKey> = {
+  artifice: "int",
+  bardo: "cha",
+  bruxo: "cha",
+  clerigo: "wis",
+  druida: "wis",
+  feiticeiro: "cha",
+  mago: "int",
+  paladino: "cha",
+  patrulheiro: "wis",
+};
+
+/** Opções que o talento precisa para resolver a conjuração das magias dele. */
+export type GrantOptions = {
+  /** Atributo que o talento aumentou (para `ability: "asi"`). */
+  increased?: AbilityKey;
+  /** Lista de classe escolhida no talento (para `ability: "list"`). */
+  list?: string;
+};
+
+/** O atributo de conjuração das magias concedidas, resolvendo "asi" e "list". */
+function grantedAbility(grant: GrantedCasting, options: GrantOptions): AbilityKey | undefined {
+  if (grant.ability === "asi") return options.increased;
+  if (grant.ability === "list") return options.list ? LIST_ABILITY[norm(options.list)] : undefined;
+  return grant.ability;
+}
+
+/** As regras de conjuração de um talento/traço em frases curtas, para a tela. */
+export function grantedCastingLabel(grant: GrantedCasting, options: GrantOptions = {}): string[] {
+  const lines: string[] = [];
+  const ability = grantedAbility(grant, options);
+  if (ability) lines.push(`Atributo de conjuração destas magias: ${ABILITY_LABELS[ability]}`);
+  else if (grant.ability === "asi") lines.push("Atributo de conjuração destas magias: o que este talento aumentar");
+  else lines.push("Atributo de conjuração destas magias: o da lista de classe escolhida");
+  if (grant.free) lines.push(`Sem gastar espaço de magia: ${grant.free}`);
+  for (const [name, text] of Object.entries(grant.freeBySpell ?? {})) lines.push(`${name}: ${text}`);
+  if (grant.slots) lines.push("Também podem ser conjuradas gastando um espaço de magia");
+  return lines;
+}
+
+/** O atributo que uma decisão de talento aumentou (Tocado pelas Sombras: Int, Sab ou Car). */
+export function increasedAbilityOf(decision: Pick<AsiDecision, "abilities"> | undefined): AbilityKey | undefined {
+  return ABILITY_ORDER.find((key) => (decision?.abilities?.[key] ?? 0) > 0);
+}
+
+/** As regras próprias de uma magia concedida: atributo, uso sem espaço e espaços. */
+function spellCastingFor(
+  grant: GrantedCasting | undefined,
+  spellName: string,
+  level: number,
+  options: GrantOptions,
+): SpellCasting | undefined {
+  if (!grant) return undefined;
+  const override = Object.entries(grant.freeBySpell ?? {}).find(([name]) => norm(name) === norm(spellName))?.[1];
+  // Truque é sempre à vontade: o uso grátis só faz sentido em magia de 1º círculo ou mais.
+  const free = override ?? (level > 0 ? grant.free : undefined);
+  const ability = grantedAbility(grant, options);
+  const casting: SpellCasting = {
+    ...(ability ? { ability } : {}),
+    ...(free ? { free } : {}),
+    ...(grant.slots && level > 0 ? { slots: true } : {}),
+  };
+  return Object.keys(casting).length > 0 ? casting : undefined;
+}
+
 /** Uma magia do catálogo no formato da ficha, marcada como concedida. */
-function toGrantedSpell(name: string, granted: string, classSource?: string): Spell {
+function toGrantedSpell(
+  name: string,
+  granted: string,
+  classSource?: string,
+  grant?: GrantedCasting,
+  options: GrantOptions = {},
+): Spell {
   const catalog = findSpell(name);
   const base: Spell = catalog
     ? toSheetSpell(catalog)
     : { name, level: 1, school: "", castingTime: "", range: "", components: "", duration: "", description: "" };
-  return { ...base, granted, ...(classSource ? { classSource } : {}) };
+  const casting = spellCastingFor(grant, base.name, base.level, options);
+  return { ...base, granted, ...(classSource ? { classSource } : {}), ...(casting ? { casting } : {}) };
 }
 
 /** Magias concedidas pelos traços raciais (Alto Elfo, Tiefling, Draconato das Profundezas…). */
@@ -401,14 +513,14 @@ export function raceGrantedSpells(traits: RaceTraitDef[], raceName: string): Spe
       const key = norm(name);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push(toGrantedSpell(name, `${raceName || "Raça"}: ${trait.name}`));
+      out.push(toGrantedSpell(name, `${raceName || "Raça"}: ${trait.name}`, undefined, trait.casting));
     }
   }
   return out;
 }
 
 /** As magias que um talento concede: as fixas + as que o jogador escolheu. */
-export function featGrantedSpells(featName: string, chosen: string[] = []): Spell[] {
+export function featGrantedSpells(featName: string, chosen: string[] = [], options: GrantOptions = {}): Spell[] {
   const feat = findFeat(featName);
   const label = featSpellLabel(feat?.name ?? featName);
   const out: Spell[] = [];
@@ -417,7 +529,7 @@ export function featGrantedSpells(featName: string, chosen: string[] = []): Spel
     const key = norm(name);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(toGrantedSpell(name, label));
+    out.push(toGrantedSpell(name, label, undefined, feat?.spells?.casting, options));
   }
   return out;
 }
@@ -431,7 +543,10 @@ export function allFeatGrantedSpells(features: Feature[], advancement: AsiDecisi
     const decision = advancement.find(
       (d) => d.kind === "feat" && d.feat && norm(d.feat) === norm(feature.name),
     );
-    for (const spell of featGrantedSpells(feature.name, decision?.spells ?? [])) {
+    // O atributo de conjuração de Tocado pelas Sombras e afins é o que o talento
+    // aumentou; o de Iniciado em Magia vem da lista de classe escolhida.
+    const options: GrantOptions = { increased: increasedAbilityOf(decision), list: decision?.spellList };
+    for (const spell of featGrantedSpells(feature.name, decision?.spells ?? [], options)) {
       const key = norm(spell.name);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -490,7 +605,18 @@ export function mergeSpellLists(
     return grantedNames.has(norm(spell.name));
   });
   for (const spell of granted) {
-    if (!kept.some((entry) => norm(entry.name) === norm(spell.name))) kept.push(spell);
+    const index = kept.findIndex((entry) => norm(entry.name) === norm(spell.name));
+    if (index === -1) {
+      kept.push(spell);
+      continue;
+    }
+    // Ficha antiga (ou talento reescolhido): reatualiza a origem e as regras de
+    // conjuração da magia concedida, sem mexer nas que vieram da classe.
+    if (kept[index].granted) {
+      const { casting, ...rest } = kept[index];
+      void casting;
+      kept[index] = { ...rest, granted: spell.granted, ...(spell.casting ? { casting: spell.casting } : {}) };
+    }
   }
   return {
     cantrips: kept.filter((spell) => spell.level === 0),
@@ -615,6 +741,29 @@ export function toFeature(f: ClassFeatureWithOrigin): Feature {
  * Todas as características de classe/subclasse da lista de classes (com origem).
  * As opcionais (Caldeirão de Tasha) só entram se estiverem em `adopted`.
  */
+/**
+ * Escreve na característica da subclasse a opção que o jogador escolheu:
+ * "Magias de Círculo (Floresta)" + a lista das magias que o terreno já concede.
+ */
+function withSubclassChoice(feature: Feature, cls: ClassEntry): Feature {
+  const choice = subclassChoiceFor(cls);
+  const option = subclassChoiceOption(cls);
+  if (!choice || !option || norm(choice.feature) !== norm(feature.name)) return feature;
+  const spells = Object.entries(option.spells ?? {})
+    .filter(([level]) => Number(level) <= cls.level)
+    .flatMap(([, names]) => names);
+  const lines = [
+    `${choice.label} escolhido: ${option.name}.`,
+    ...(option.note ? [option.note] : []),
+    ...(spells.length ? [`Sempre preparadas neste nível: ${spells.join(", ")}.`] : []),
+  ];
+  return {
+    ...feature,
+    name: `${feature.name} (${option.name})`,
+    description: `${feature.description}\n\n${lines.join(" ")}`,
+  };
+}
+
 export function classFeaturesFor(classes: ClassEntry[], adopted: string[] = []): Feature[] {
   const chosen = new Set(adopted.map(norm));
   const out: Feature[] = [];
@@ -623,7 +772,7 @@ export function classFeaturesFor(classes: ClassEntry[], adopted: string[] = []):
     for (const f of classFeaturesUpTo(c.name, c.level, c.subclass)) {
       if (f.asi) continue; // o ASI vira decisão (atributos × talento), não característica
       if (f.optional && !chosen.has(norm(f.name))) continue;
-      out.push(toFeature(f));
+      out.push(withSubclassChoice(toFeature(f), c));
     }
   }
   return out;
@@ -1188,4 +1337,144 @@ export function applyAsiDecision(character: Character, decision: AsiDecision): C
 export function hitDieValue(hitDie: string): number {
   const m = /d(\d+)/i.exec(hitDie ?? "");
   return m ? Number(m[1]) : 8;
+}
+
+// ============================================================================
+// Conjuração e dados de vida na ficha pronta
+// ============================================================================
+
+/** Números de conjuração de UMA classe: habilidade, CD e bônus de ataque. */
+export type SpellcastingStat = {
+  className: string;
+  subclass?: string;
+  ability: AbilityKey;
+  /** CD dos testes de resistência contra as magias dessa classe. */
+  saveDC: number;
+  /** Bônus das jogadas de ataque mágico dessa classe. */
+  attackMod: number;
+  /** Modificador do atributo de conjuração (entra na CD e no ataque). */
+  abilityMod: number;
+};
+
+/**
+ * CD, ataque mágico e atributo de conjuração de cada classe conjuradora.
+ *
+ * Cada classe usa o seu próprio atributo (Mago = Inteligência, Clérigo =
+ * Sabedoria, Bardo = Carisma…), então na multiclasse os números são diferentes
+ * por classe — o bônus de proficiência é que é comum ao personagem.
+ */
+export function spellcastingStats(
+  sheet: Pick<Sheet, "classes" | "abilityScores" | "proficiencyBonus" | "spells">,
+): SpellcastingStat[] {
+  const prof = sheet.proficiencyBonus || proficiencyBonusForLevel(totalLevelOf(sheet.classes));
+  const out: SpellcastingStat[] = [];
+  for (const entry of sheet.classes) {
+    const profile = casterProfile(entry.name, entry.subclass);
+    if (!profile || entry.level < profile.startLevel) continue;
+    const mod = abilityMod(sheet.abilityScores[profile.ability]);
+    out.push({
+      className: entry.name,
+      ...(entry.subclass ? { subclass: entry.subclass } : {}),
+      ability: profile.ability,
+      saveDC: 8 + prof + mod,
+      attackMod: prof + mod,
+      abilityMod: mod,
+    });
+  }
+  // Ficha sem classe conjuradora no catálogo (homebrew do Mestre) mas com magias
+  // próprias: vale o que está gravado em `sheet.spells`. Magia só de talento ou
+  // traço não conta — ela tem conjuração própria e não faz da classe conjuradora.
+  const ownSpells = [...sheet.spells.cantrips, ...sheet.spells.known].some((spell) => !spell.granted);
+  if (out.length === 0 && ownSpells) {
+    out.push({
+      className: sheet.classes[0]?.name || "Conjuração",
+      ability: sheet.spells.castingAbility,
+      saveDC: sheet.spells.saveDC,
+      attackMod: sheet.spells.attackMod,
+      abilityMod: abilityMod(sheet.abilityScores[sheet.spells.castingAbility]),
+    });
+  }
+  return out;
+}
+
+/** Dados de vida por classe: "Guerreiro 5" -> { className, hitDie: "d10", count: 5 }. */
+export type HitDiceEntry = { className: string; hitDie: string; count: number };
+
+/** Dados de vida de cada classe da ficha (o dado vem do catálogo da classe). */
+export function hitDiceOf(classes: { name: string; level: number }[], fallback = "d8"): HitDiceEntry[] {
+  return classes
+    .filter((entry) => entry.name.trim() && entry.level > 0)
+    .map((entry) => ({
+      className: entry.name,
+      hitDie: findClass(entry.name)?.hitDie ?? fallback,
+      count: entry.level,
+    }));
+}
+
+/** "5d10" / "5d10 + 2d6" — como os dados de vida aparecem na ficha. */
+export function hitDiceLabel(entries: HitDiceEntry[]): string {
+  return entries.map((entry) => `${entry.count}${entry.hitDie}`).join(" + ");
+}
+
+/** CD e ataque próprios de uma magia concedida por talento/traço. */
+export type GrantedSpellNumbers = {
+  ability: AbilityKey;
+  saveDC: number;
+  attackMod: number;
+  /** O atributo é diferente do que a classe usaria para essa magia. */
+  differs: boolean;
+};
+
+/**
+ * Os números de uma magia que veio de talento ou traço.
+ *
+ * Talentos como Tocado pelas Sombras conjuram com o atributo que o próprio
+ * talento aumentou: a CD e o bônus de ataque dela não são os da classe, e é isso
+ * que a ficha precisa mostrar ao lado do nome da magia.
+ */
+/** A ficha como as funções de magia concedida precisam vê-la. */
+type CastingSheet = Pick<Sheet, "classes" | "abilityScores" | "proficiencyBonus" | "spells"> &
+  Partial<Pick<Sheet, "advancement" | "raceInfo">>;
+
+/**
+ * As regras de conjuração de uma magia concedida.
+ *
+ * Fichas criadas antes deste campo existir não têm `casting` gravado: aí o dado é
+ * refeito a partir do talento ou do traço que concedeu a magia, para o jogador não
+ * ter de esperar o Mestre mexer na ficha.
+ */
+export function spellCastingOf(sheet: CastingSheet, spell: Spell): SpellCasting | undefined {
+  if (spell.casting) return spell.casting;
+  if (!spell.granted) return undefined;
+  const sameName = (entry: Spell) => norm(entry.name) === norm(spell.name);
+  const featName = featOfLabel(spell.granted);
+  if (featName) {
+    const decision = (sheet.advancement ?? []).find(
+      (d) => d.kind === "feat" && d.feat && norm(d.feat) === norm(featName),
+    );
+    const options: GrantOptions = { increased: increasedAbilityOf(decision), list: decision?.spellList };
+    return featGrantedSpells(featName, decision?.spells ?? [], options).find(sameName)?.casting;
+  }
+  // Rótulo de traço racial: "Tiefling: Legado Infernal".
+  const traitName = spell.granted.split(":").slice(1).join(":").trim();
+  if (!traitName || !sheet.raceInfo) return undefined;
+  const race = resolveRace(sheet.raceInfo.race, sheet.raceInfo.subrace);
+  const trait = race?.traits.find((entry) => norm(entry.name) === norm(traitName));
+  if (!race || !trait) return undefined;
+  return raceGrantedSpells([trait], race.race.name).find(sameName)?.casting;
+}
+
+export function grantedSpellNumbers(sheet: CastingSheet, spell: Spell): GrantedSpellNumbers | null {
+  const ability = spellCastingOf(sheet, spell)?.ability;
+  if (!ability) return null;
+  const prof = sheet.proficiencyBonus || proficiencyBonusForLevel(totalLevelOf(sheet.classes));
+  const mod = abilityMod(sheet.abilityScores[ability]);
+  const stats = spellcastingStats(sheet);
+  const owner = stats.find((stat) => norm(stat.className) === norm(spell.classSource ?? "")) ?? stats[0];
+  return {
+    ability,
+    saveDC: 8 + prof + mod,
+    attackMod: prof + mod,
+    differs: !owner || owner.ability !== ability,
+  };
 }

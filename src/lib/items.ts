@@ -21,3 +21,8 @@ export function mergeItems(existing: readonly Item[], additions: readonly Item[]
   }
   return next;
 }
+
+/** Item criado à mão pelo Mestre: vai para o grupo "Homebrew do Mestre", não para "Materiais". */
+export function homebrewItem(name: string, quantity = 1): Item {
+  return { name, quantity, category: "homebrew" };
+}

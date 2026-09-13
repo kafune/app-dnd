@@ -262,6 +262,14 @@ const ELFO: RaceDef = {
           description:
             "Você conhece o truque globos de luz. Quando você alcança o 3º nível, você pode conjurar a magia fogo das fadas uma vez. Quando você alcança o 5º nível, você também pode conjurar escuridão uma vez. Você precisa terminar um descanso longo para poder conjurar as magias desse traço novamente. Carisma é sua habilidade de conjuração para essas magias.",
           spells: ["Globos de Luz", "Fogo das Fadas", "Escuridão"],
+          casting: {
+            ability: "cha",
+            free: "1×/descanso longo, sem gastar espaço de magia",
+            freeBySpell: {
+              "Fogo das Fadas": "1×/descanso longo, sem gastar espaço de magia (a partir do 3º nível)",
+              "Escuridão": "1×/descanso longo, sem gastar espaço de magia (a partir do 5º nível)",
+            },
+          },
         },
         {
           name: "Treinamento Drow com Armas",
@@ -463,6 +471,7 @@ const GNOMO: RaceDef = {
           name: "Ilusionista Nato",
           description: "Você conhece o truque ilusão menor. Inteligência é a sua habilidade de conjuração para ele.",
           spells: ["Ilusão Menor"],
+          casting: { ability: "int" },
         },
         {
           name: "Falar com Bestas Pequenas",
@@ -537,6 +546,13 @@ const MARCA_DA_DESCOBERTA: SubraceDef = {
       description:
         "Você pode conjurar a magia marca do caçador com este traço. A partir do 3º nível, você também pode conjurar a magia localizar objeto com ele. Depois de conjurar qualquer uma dessas magias com este traço, você não pode conjurar essa mesma magia com ele de novo até terminar um descanso longo. Sabedoria é sua habilidade de conjuração para essas magias.",
       spells: ["Marca do Caçador", "Localizar Objeto"],
+      casting: {
+        ability: "wis",
+        free: "1×/descanso longo cada, sem gastar espaço de magia",
+        freeBySpell: {
+          "Localizar Objeto": "1×/descanso longo, sem gastar espaço de magia (a partir do 3º nível)",
+        },
+      },
     },
     {
       name: "Magias da Marca",
@@ -599,6 +615,15 @@ const TIEFLING: RaceDef = {
       description:
         "Você conhece o truque taumaturgia. Quando você atingir o 3º nível, você poderá conjurar a magia repreensão infernal como uma magia de 2º nível uma vez. Quando você atingir o 5º nível, você também poderá conjurar a magia escuridão uma vez. Você precisa terminar um descanso longo para poder usar as magias desse traço novamente. Sua habilidade de conjuração para essas magias é Carisma.",
       spells: ["Taumaturgia", "Repreensão Infernal", "Escuridão"],
+      casting: {
+        ability: "cha",
+        free: "1×/descanso longo, sem gastar espaço de magia",
+        freeBySpell: {
+          "Repreensão Infernal":
+            "1×/descanso longo, sem gastar espaço de magia, conjurada como magia de 2º círculo (a partir do 3º nível)",
+          "Escuridão": "1×/descanso longo, sem gastar espaço de magia (a partir do 5º nível)",
+        },
+      },
     },
   ],
   subraces: [],
@@ -659,6 +684,7 @@ const AASIMAR: RaceDef = {
       name: "Portador de Luz",
       description: "Você conhece o truque luz. Carisma é a sua habilidade de conjuração para ele.",
       spells: ["Luz"],
+      casting: { ability: "cha" },
     },
   ],
   subraces: [
@@ -755,6 +781,7 @@ const FIRBOLG: RaceDef = {
       description:
         "Você pode conjurar detectar magia e disfarçar-se com esse traço, usando Sabedoria como sua habilidade de conjuração. Depois de conjurar qualquer uma dessas magias com esse traço, você não pode conjurá-la novamente com ele até terminar um descanso curto ou longo. Quando você usa esta versão de disfarçar-se, pode parecer até 90 centímetros mais baixo do que o normal, o que facilita se misturar a humanos e elfos.",
       spells: ["Detectar Magia", "Disfarçar-se"],
+      casting: { ability: "wis", free: "1×/descanso curto ou longo cada, sem gastar espaço de magia" },
     },
     {
       name: "Passo Oculto",
@@ -800,6 +827,10 @@ const GENASI: RaceDef = {
           description:
             "Você pode conjurar a magia levitação uma vez com esse traço, sem precisar de componentes materiais, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essa magia.",
           spells: ["Levitação"],
+          casting: {
+            ability: "con",
+            free: "1×/descanso longo, sem gastar espaço de magia nem componentes materiais",
+          },
         },
       ],
     },
@@ -820,6 +851,10 @@ const GENASI: RaceDef = {
           description:
             "Você pode conjurar a magia passos sem pegadas uma vez com esse traço, sem precisar de componentes materiais, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essa magia.",
           spells: ["Passos Sem Pegadas"],
+          casting: {
+            ability: "con",
+            free: "1×/descanso longo, sem gastar espaço de magia nem componentes materiais",
+          },
         },
       ],
     },
@@ -844,6 +879,10 @@ const GENASI: RaceDef = {
           description:
             "Você conhece o truque criar chamas. Quando você atinge o 3º nível, você pode conjurar a magia mãos flamejantes uma vez com esse traço como uma magia de 1º nível, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essas magias.",
           spells: ["Criar Chamas", "Mãos Flamejantes"],
+          casting: {
+            ability: "con",
+            free: "1×/descanso longo, sem gastar espaço de magia nem componentes materiais",
+          },
         },
       ],
     },
@@ -871,6 +910,10 @@ const GENASI: RaceDef = {
           description:
             "Você conhece o truque moldar água. Quando você atinge o 3º nível, você pode conjurar a magia criar ou destruir água uma vez com esse traço como uma magia de 2º nível, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essas magias.",
           spells: ["Moldar Água", "Criar ou Destruir Água"],
+          casting: {
+            ability: "con",
+            free: "1×/descanso longo, sem gastar espaço de magia nem componentes materiais",
+          },
         },
       ],
     },

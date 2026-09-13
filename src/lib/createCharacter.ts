@@ -14,6 +14,7 @@ import {
   type Skill,
   type SkillName,
   type Spell,
+  type SpellClass,
 } from "./types";
 import {
   allFeatGrantedSpells,
@@ -61,6 +62,8 @@ export { proficiencyBonusForLevel, hitDieValue, spellSlotsFor as spellSlotsForCl
 export type DraftClass = {
   name: string;
   subclass?: string;
+  /** Opção escolhida dentro da subclasse (ex.: o terreno do Círculo da Terra). */
+  subclassChoice?: string;
   level: number;
   hitDie: string; // ex: "d10"
   saves: AbilityKey[];
@@ -102,6 +105,8 @@ export type CharacterDraft = {
   raceFeat?: string;
   /** Magias escolhidas nas opções que o talento racial abre. */
   raceFeatSpells?: string[];
+  /** Lista de classe escolhida no talento racial (define o atributo de conjuração dele). */
+  raceFeatSpellList?: SpellClass;
   /** Perícias escolhidas por traços raciais (ex.: Versatilidade em Perícia). */
   raceSkillChoices: SkillName[];
   /** Anotação livre pedida pela raça (ex.: Shade: raça de origem cuja aparência assume). */
@@ -337,7 +342,12 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
   const classes = selectedClasses.length ? selectedClasses : [emptyClass()];
   const classEntries = classes
     .filter((c) => c.name.trim())
-    .map((c) => ({ name: c.name, ...(c.subclass ? { subclass: c.subclass } : {}), level: c.level }));
+    .map((c) => ({
+      name: c.name,
+      ...(c.subclass ? { subclass: c.subclass } : {}),
+      ...(c.subclassChoice ? { subclassChoice: c.subclassChoice } : {}),
+      level: c.level,
+    }));
   const level = totalLevel(classes);
   const profBonus = proficiencyBonusForLevel(level);
   const dexMod = abilityMod(scores.dex);
@@ -392,7 +402,18 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     ...raceGrantedSpells(resolvedRaceTraits(draft.raceTraits), draft.raceName),
     ...allFeatGrantedSpells(features, [
       ...draft.advancement,
-      ...(draft.raceFeat ? [{ className: draft.raceName || "Raça", level: 1, kind: "feat" as const, feat: draft.raceFeat, spells: draft.raceFeatSpells ?? [] }] : []),
+      ...(draft.raceFeat
+        ? [
+            {
+              className: draft.raceName || "Raça",
+              level: 1,
+              kind: "feat" as const,
+              feat: draft.raceFeat,
+              spells: draft.raceFeatSpells ?? [],
+              ...(draft.raceFeatSpellList ? { spellList: draft.raceFeatSpellList } : {}),
+            },
+          ]
+        : []),
     ]),
   ];
   const { cantrips, known } = mergeSpellLists(

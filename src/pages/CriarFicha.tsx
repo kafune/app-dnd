@@ -26,7 +26,7 @@ import { SkillsSection } from "@/components/create/SkillsSection";
 const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
-import { ALIGNMENTS } from "@/lib/types";
+import { ABILITY_LABELS, ALIGNMENTS } from "@/lib/types";
 import { resolveRace } from "@/data/racesCatalog";
 import { BACKGROUNDS_CATALOG, findBackground } from "@/data/backgroundsCatalog";
 import { CLASSES_CATALOG, findClass, findClassDef, subclassNames } from "@/data/classesCatalog";
@@ -58,10 +58,17 @@ import {
   allSpellCaps,
   clampClassLevels,
   expertiseBudget,
+  featGrantedSpells,
   grantedSpellsFor,
+  hitDiceLabel,
+  increasedAbilityOf,
+  raceGrantedSpells,
+  hitDiceOf,
   MAX_LEVEL,
+  pendingSubclassChoice,
   reachedAsis,
   spellViolations,
+  subclassChoiceFor,
 } from "@/lib/progression";
 
 const CUSTOM = "__custom__";
@@ -113,20 +120,54 @@ export default function CriarFicha() {
   }
 
   const raceTraitDefs = draft.raceTraits.filter((trait): trait is RaceTraitDef => typeof trait !== "string");
+  // Magia de talento/traço tem conjuração própria (atributo, CD e uso sem espaço de
+  // magia): a nota vai junto do nome para o jogador não descobrir isso só na mesa.
+  const grantedNotes = (spell: { casting?: { ability?: AbilityKey; free?: string; slots?: boolean } }) => {
+    const notes: string[] = [];
+    if (spell.casting?.ability) {
+      const mod = abilityMod(scores[spell.casting.ability]);
+      notes.push(
+        `conjura com ${ABILITY_LABELS[spell.casting.ability]} — CD ${8 + profBonus + mod}, ataque ${formatMod(profBonus + mod)}`,
+      );
+    }
+    if (spell.casting?.free) notes.push(`sem gastar espaço de magia: ${spell.casting.free}`);
+    if (spell.casting?.slots) notes.push("também pode ser conjurada gastando um espaço de magia");
+    return notes;
+  };
   const grantedSpells = [
     ...namedClasses.flatMap((entry) =>
       grantedSpellsFor(entry).map((spell) => ({ name: spell.name, origin: `${spell.granted} (${entry.name} ${entry.level})` })),
     ),
     ...raceTraitDefs.flatMap((trait) =>
-      (trait.spells ?? []).map((name) => ({ name, origin: `${trait.name} (${draft.raceName})` })),
+      raceGrantedSpells([trait], draft.raceName).map((spell) => ({
+        name: spell.name,
+        origin: `${trait.name} (${draft.raceName || "Raça"})`,
+        notes: grantedNotes(spell),
+      })),
     ),
     ...[
-      ...(draft.raceFeat ? [{ feat: draft.raceFeat, spells: draft.raceFeatSpells ?? [] }] : []),
+      ...(draft.raceFeat
+        ? [
+            {
+              feat: draft.raceFeat,
+              spells: draft.raceFeatSpells ?? [],
+              options: { list: draft.raceFeatSpellList },
+            },
+          ]
+        : []),
       ...draft.advancement
         .filter((decision) => decision.kind === "feat" && decision.feat)
-        .map((decision) => ({ feat: decision.feat!, spells: decision.spells ?? [] })),
-    ].flatMap(({ feat, spells }) =>
-      [...(findFeat(feat)?.spells?.fixed ?? []), ...spells].map((name) => ({ name, origin: `Talento: ${feat}` })),
+        .map((decision) => ({
+          feat: decision.feat!,
+          spells: decision.spells ?? [],
+          options: { increased: increasedAbilityOf(decision), list: decision.spellList },
+        })),
+    ].flatMap(({ feat, spells, options }) =>
+      featGrantedSpells(feat, spells, options).map((spell) => ({
+        name: spell.name,
+        origin: `Talento: ${feat}`,
+        notes: grantedNotes(spell),
+      })),
     ),
   ];
 
@@ -193,6 +234,8 @@ export default function CriarFicha() {
       const updated = { ...current, ...patch };
       const definition = findClassDef(updated.name);
       if (definition && updated.level < definition.subclassLevel) updated.subclass = undefined;
+      // Trocar de classe ou de subclasse derruba a escolha interna dela (o terreno do druida).
+      if (updated.name !== current.name || updated.subclass !== current.subclass) updated.subclassChoice = undefined;
       return updated;
     });
     setClasses(clampClassLevels(next, index));
@@ -240,6 +283,11 @@ export default function CriarFicha() {
     if (!namedClasses.length) return setError("Escolha uma classe.");
     if (totalLevel(draft.classes) > MAX_LEVEL) return setError("O nível total máximo é 20.");
     if (resolvedRace.race.subraceRequired && !draft.subraceName) return setError("Escolha a sub-raça ou versão da raça.");
+    const missingChoice = namedClasses.find(pendingSubclassChoice);
+    if (missingChoice)
+      return setError(
+        `Escolha o ${subclassChoiceFor(missingChoice)!.label.toLowerCase()} de ${missingChoice.subclass} (${missingChoice.name}).`,
+      );
     if (resolvedRace.noteField && !draft.raceNote?.trim())
       return setError(`Preencha o campo “${resolvedRace.noteField.label}”.`);
     if (draft.raceChoiceBonuses.length !== abilityChoices)
@@ -247,7 +295,7 @@ export default function CriarFicha() {
     if (raceTraitDefs.some((trait) => trait.choice && !draft.traitChoices[trait.name]))
       return setError("Complete as escolhas dos traços raciais.");
     if (raceTraitDefs.some((trait) => trait.feat) && !draft.raceFeat) return setError("Escolha o talento concedido pela raça.");
-    if (draft.raceFeat && !featSpellsComplete(findFeat(draft.raceFeat), draft.raceFeatSpells))
+    if (draft.raceFeat && !featSpellsComplete(findFeat(draft.raceFeat), draft.raceFeatSpells, draft.raceFeatSpellList))
       return setError(`Escolha as magias do talento ${draft.raceFeat}.`);
     if (draft.extraLanguages.length !== extraLanguageMax)
       return setError(`Escolha exatamente ${extraLanguageMax} idioma(s) adicional(is).`);
@@ -411,8 +459,12 @@ export default function CriarFicha() {
           <CardBody className="space-y-3">
             {draft.classes.map((cl, i) => {
               const detailedClass = findClassDef(cl.name);
+              // Escolha interna da subclasse (Círculo da Terra → terreno): as magias
+              // de círculo só entram na ficha depois que o jogador escolhe.
+              const subChoice = subclassChoiceFor(cl);
               return (
-                <div key={i} className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
+                <div key={i} className="space-y-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
                   <Field label={i === 0 ? "Classe" : `Classe ${i + 1} (multiclasse)`}>
                     <select className={selectCls} value={cl.name} onChange={(e) => onSelectClass(i, e.target.value)}>
                       <option value="">— escolha —</option>
@@ -464,6 +516,39 @@ export default function CriarFicha() {
                   ) : (
                     <span />
                   )}
+                </div>
+                {cl.name.trim() && (
+                  <p className="text-xs text-zinc-500">
+                    Dado de vida: <strong className="font-mono">{cl.level}{cl.hitDie}</strong> ({cl.hitDie} por nível de{" "}
+                    {cl.name}).
+                  </p>
+                )}
+                {subChoice && (
+                  <Field label={`${subChoice.label} — ${cl.subclass}`}>
+                    <select
+                      className={selectCls}
+                      value={cl.subclassChoice ?? ""}
+                      onChange={(e) => updateClass(i, { subclassChoice: e.target.value || undefined })}
+                    >
+                      <option value="">— escolha —</option>
+                      {subChoice.options.map((option) => (
+                        <option key={option.name} value={option.name}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                    {subChoice.help && <p className="mt-1 text-xs text-zinc-500">{subChoice.help}</p>}
+                    {cl.subclassChoice && (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Magias de {cl.subclassChoice}:{" "}
+                        {grantedSpellsFor(cl)
+                          .filter((spell) => spell.granted?.includes(cl.subclassChoice!))
+                          .map((spell) => spell.name)
+                          .join(", ") || "nenhuma ainda neste nível."}
+                      </p>
+                    )}
+                  </Field>
+                )}
                 </div>
               );
             })}
@@ -596,7 +681,33 @@ export default function CriarFicha() {
               <Stat label="CA" value={String(previewAc)} />
               <Stat label="Iniciativa" value={formatMod(abilityMod(scores.dex))} />
               <Stat label="Bônus de prof." value={formatMod(profBonus)} />
+              {/* Dado de vida: sai do catálogo da classe e é o que se gasta no descanso curto. */}
+              {namedClasses.length > 0 && (
+                <Stat label="Dado de vida" value={hitDiceLabel(hitDiceOf(namedClasses))} />
+              )}
+              {spellCaps.length > 0 && (
+                <Stat
+                  label="CD das magias"
+                  value={spellCaps
+                    .map((cap) => `${8 + profBonus + abilityMod(scores[cap.profile.ability])}`)
+                    .join(" / ")}
+                />
+              )}
             </div>
+            {spellCaps.length > 0 && (
+              <p className="text-xs text-zinc-500">
+                Conjuração:{" "}
+                {spellCaps
+                  .map(
+                    (cap) =>
+                      `${cap.className} usa ${ABILITY_LABELS[cap.profile.ability]} — CD ${
+                        8 + profBonus + abilityMod(scores[cap.profile.ability])
+                      }, ataque mágico ${formatMod(profBonus + abilityMod(scores[cap.profile.ability]))}`,
+                  )
+                  .join(" · ")}
+                .
+              </p>
+            )}
             {/* PV não é fixo: quem rola os dados de vida digita o total aqui. */}
             <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
               <Field label="PV máximo (deixe vazio para usar a média da classe)">
@@ -662,7 +773,7 @@ function validAdvancementDecision(decision: AsiDecision, scores: AbilityScores):
   if (decision.kind === "feat") {
     if (!decision.feat) return false;
     const feat = findFeat(decision.feat);
-    if (!featSpellsComplete(feat, decision.spells)) return false;
+    if (!featSpellsComplete(feat, decision.spells, decision.spellList)) return false;
     if (!feat?.abilityIncrease) return true;
     return ABILITY_ORDER.some(
       (key) => (decision.abilities?.[key] ?? 0) === feat.abilityIncrease!.amount && scores[key] <= 20,

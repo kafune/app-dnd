@@ -293,7 +293,13 @@ export function RaceSection({ draft, upd, scores }: Props) {
                     <select
                       className={`${selectCls} mt-2`}
                       value={draft.raceFeat ?? ""}
-                      onChange={(event) => upd({ raceFeat: event.target.value || undefined, raceFeatSpells: [] })}
+                      onChange={(event) =>
+                        upd({
+                          raceFeat: event.target.value || undefined,
+                          raceFeatSpells: [],
+                          raceFeatSpellList: undefined,
+                        })
+                      }
                     >
                       <option value="">— escolha o talento concedido —</option>
                       {feats.map((feat) => (
@@ -309,6 +315,8 @@ export function RaceSection({ draft, upd, scores }: Props) {
                           feat={raceFeatDef}
                           chosen={draft.raceFeatSpells ?? []}
                           onChange={(raceFeatSpells) => upd({ raceFeatSpells })}
+                          list={draft.raceFeatSpellList}
+                          onList={(raceFeatSpellList) => upd({ raceFeatSpellList, raceFeatSpells: [] })}
                         />
                       </div>
                     )}

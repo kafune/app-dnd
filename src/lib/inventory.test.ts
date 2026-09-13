@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { groupInventory, inventoryCategory } from "./inventory";
+import { homebrewItem } from "./items";
 
 describe("inventário por categoria", () => {
   test("usa catálogo, sinais de item mágico e palavras-chave", () => {
@@ -26,5 +27,18 @@ describe("inventário por categoria", () => {
     expect(groups.map((group) => group.category)).toEqual(["armas", "materiais"]);
     expect(groups[0].entries.map((entry) => entry.index)).toEqual([1, 2]);
     expect(groups[1].entries[0].index).toBe(0);
+  });
+});
+
+describe("itens homebrew do Mestre", () => {
+  test("vão para o grupo homebrew, não para materiais", () => {
+    expect(inventoryCategory(homebrewItem("Amuleto do Corvo"))).toBe("homebrew");
+    expect(inventoryCategory({ name: "Amuleto do Corvo" })).toBe("materiais");
+  });
+
+  test("o grupo homebrew aparece depois dos oficiais", () => {
+    const groups = groupInventory([homebrewItem("Pena de Fogo"), { name: "Rapieira" }]);
+    expect(groups.map((group) => group.category)).toEqual(["armas", "homebrew"]);
+    expect(groups[1].label).toBe("Homebrew do Mestre");
   });
 });

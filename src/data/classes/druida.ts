@@ -1,7 +1,87 @@
-import type { ClassDef } from "@/lib/types";
+import type { ClassDef, SubclassChoiceOption } from "@/lib/types";
 
 const ASI_DESC =
   "Você pode aumentar um valor de habilidade, à sua escolha, em 2 ou aumentar dois valores de habilidade, à sua escolha, em 1. Como padrão, você não pode elevar um valor de habilidade acima de 20 com essa característica.";
+
+/**
+ * Magias de Círculo do Círculo da Terra (PHB p. 73–74): o terreno escolhido pelo
+ * jogador define as magias sempre preparadas de 3º, 5º, 7º e 9º níveis. Os nomes
+ * são os mesmos do catálogo de magias.
+ */
+const LAND_TERRAINS: SubclassChoiceOption[] = [
+  {
+    name: "Ártico",
+    spells: {
+      "3": ["Imobilizar Pessoa", "Crescer Espinhos"],
+      "5": ["Nevasca", "Lentidão"],
+      "7": ["Movimentação Livre", "Tempestade de Gelo"],
+      "9": ["Comunhão com a Natureza", "Cone de Frio"],
+    },
+  },
+  {
+    name: "Costa",
+    spells: {
+      "3": ["Passo Nebuloso", "Reflexos"],
+      "5": ["Andar na Água", "Respirar na Água"],
+      "7": ["Movimentação Livre", "Controlar a Água"],
+      "9": ["Vidência", "Conjurar Elemental"],
+    },
+  },
+  {
+    name: "Deserto",
+    spells: {
+      "3": ["Nublar", "Silêncio"],
+      "5": ["Criar Alimentos", "Proteção Contra Energia"],
+      "7": ["Praga", "Terreno Alucinógeno"],
+      "9": ["Muralha de Pedra", "Praga de Insetos"],
+    },
+  },
+  {
+    name: "Floresta",
+    spells: {
+      "3": ["Patas de Aranha", "Pele de Árvore"],
+      "5": ["Convocar Relâmpagos", "Ampliar Plantas"],
+      "7": ["Adivinhação", "Movimentação Livre"],
+      "9": ["Comunhão com a Natureza", "Caminhar em Árvores"],
+    },
+  },
+  {
+    name: "Montanha",
+    spells: {
+      "3": ["Crescer Espinhos", "Patas de Aranha"],
+      "5": ["Mesclar-se Às Rochas", "Relâmpago"],
+      "7": ["Moldar Rochas", "Pele de Pedra"],
+      "9": ["Criar Passagem", "Muralha de Pedra"],
+    },
+  },
+  {
+    name: "Pântano",
+    spells: {
+      "3": ["Escuridão", "Flecha Ácida de Melf"],
+      "5": ["Andar na Água", "Névoa Fétida"],
+      "7": ["Localizar Criatura", "Movimentação Livre"],
+      "9": ["Vidência", "Praga de Insetos"],
+    },
+  },
+  {
+    name: "Planície",
+    spells: {
+      "3": ["Invisibilidade", "Passos Sem Pegadas"],
+      "5": ["Luz do Dia", "Velocidade"],
+      "7": ["Adivinhação", "Movimentação Livre"],
+      "9": ["Praga de Insetos", "Sonho"],
+    },
+  },
+  {
+    name: "Subterrâneo",
+    spells: {
+      "3": ["Patas de Aranha", "Teia"],
+      "5": ["Forma Gasosa", "Névoa Fétida"],
+      "7": ["Invisibilidade Maior", "Moldar Rochas"],
+      "9": ["Praga de Insetos", "Névoa Mortal"],
+    },
+  },
+];
 
 /**
  * Druida — progressão completa (níveis 1–20) e todos os Círculos Druídicos do
@@ -97,9 +177,16 @@ export const DRUIDA: ClassDef = {
       source: "PHB",
       description:
         "O Círculo da Terra é constituído por místicos e sábios que salvaguardam conhecimento e ritos antigos através de uma vasta tradição oral. Como membro desse círculo, sua magia é influenciada pela terra onde você foi iniciado nos ritos misteriosos do círculo.",
-      // As magias dependem do terreno escolhido (ver descrição de "Magias de Círculo");
-      // a lista genérica fica vazia por nível para não impor um terreno.
+      // As magias de círculo dependem do terreno: a lista base fica vazia e quem
+      // concede as magias é a opção escolhida em `choice` (ver "Magias de Círculo").
       spells: { "3": [], "5": [], "7": [], "9": [] },
+      choice: {
+        label: "Terreno",
+        feature: "Magias de Círculo",
+        level: 3,
+        help: "O terreno onde você foi iniciado nos ritos do círculo. Ele define as magias de círculo que você sempre tem preparadas (3º, 5º, 7º e 9º níveis) e não contam no seu limite de magias preparadas.",
+        options: LAND_TERRAINS,
+      },
       features: [
         {
           name: "Truque Adicional",

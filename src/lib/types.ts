@@ -107,6 +107,40 @@ export type Spell = {
   classSource?: string;
   /** Magia sempre preparada concedida por subclasse/raça (não conta no limite). */
   granted?: string;
+  /** Regras próprias da magia concedida por talento/traço (atributo e uso sem espaço). */
+  casting?: SpellCasting;
+};
+
+/**
+ * Conjuração própria de uma magia que veio de talento ou traço racial.
+ *
+ * Talentos como Tocado pelas Sombras mudam duas coisas: a magia usa o atributo
+ * que o talento aumentou (não o da classe, então a CD e o ataque dela são outros)
+ * e pode ser conjurada de graça, sem gastar espaço de magia. A ficha guarda isso
+ * junto da magia para o jogador não ter de lembrar de cabeça.
+ */
+export type SpellCasting = {
+  /** Atributo de conjuração desta magia (pode não ser o da classe). */
+  ability?: AbilityKey;
+  /** Como conjurá-la sem gastar espaço de magia ("1×/descanso longo, sem gastar espaço"). */
+  free?: string;
+  /** Também pode ser conjurada gastando um espaço de magia normalmente. */
+  slots?: boolean;
+};
+
+/**
+ * Como as magias concedidas por um talento ou traço são conjuradas (catálogo).
+ * Vira um `SpellCasting` em cada magia quando a ficha é montada.
+ */
+export type GrantedCasting = {
+  /** Atributo: um fixo, "asi" (o que o próprio talento aumentou) ou "list" (o da lista escolhida). */
+  ability: AbilityKey | "asi" | "list";
+  /** Uso sem espaço de magia das magias de 1º círculo ou superior. */
+  free?: string;
+  /** Texto próprio de magias específicas (nome do catálogo -> texto), vence `free`. */
+  freeBySpell?: Record<string, string>;
+  /** As magias também podem ser conjuradas gastando espaço de magia. */
+  slots?: boolean;
 };
 
 /** Livro de origem de uma magia do catálogo. */
@@ -246,6 +280,7 @@ export type InventoryCategory =
   | "consumiveis"
   | "materiais"
   | "tesouro"
+  | "homebrew"
   | "outros";
 
 export type Coins = {
@@ -272,6 +307,8 @@ export type Appearance = {
 export type ClassEntry = {
   name: string;
   subclass?: string;
+  /** Opção escolhida dentro da subclasse (ex.: Círculo da Terra → terreno). */
+  subclassChoice?: string;
   level: number;
 };
 
@@ -286,6 +323,9 @@ export type AsiDecision = {
   feat?: string;
   /** kind = "feat": magias escolhidas nas opções que o talento abre (nomes do catálogo). */
   spells?: string[];
+  /** kind = "feat": lista de classe escolhida no talento (Iniciado em Magia, Conjurador de Ritual).
+   *  É ela que define o atributo de conjuração dessas magias. */
+  spellList?: SpellClass;
 };
 
 /** Escolhas feitas na raça (para reconstruir/validar a ficha). */
@@ -560,6 +600,27 @@ export type ExpertiseGrant = {
   tools?: string[];
 };
 
+/** Uma opção da escolha embutida numa subclasse (ex.: um terreno do Círculo da Terra). */
+export type SubclassChoiceOption = {
+  name: string;
+  /** Magias sempre preparadas por nível de classe, como em `SubclassDef.spells`. */
+  spells?: Record<string, string[]>;
+  /** Texto extra que entra na característica da ficha (o que a opção dá além das magias). */
+  note?: string;
+};
+
+/** Escolha que a subclasse pede ao jogador (Círculo da Terra: o terreno). */
+export type SubclassChoiceDef = {
+  /** Rótulo da escolha ("Terreno"). */
+  label: string;
+  /** Característica da subclasse que descreve a escolha ("Magias de Círculo"). */
+  feature: string;
+  /** Nível de classe em que a escolha é feita. */
+  level: number;
+  help?: string;
+  options: SubclassChoiceOption[];
+};
+
 /** Subclasse (caminho, colégio, domínio, círculo, origem, arquétipo, tradição, juramento, patrono). */
 export type SubclassDef = {
   name: string;
@@ -569,6 +630,8 @@ export type SubclassDef = {
   features: ClassFeatureDef[];
   /** Magias sempre preparadas/adicionais por nível de classe: { "1": ["Bênção", ...] } (nomes iguais ao catálogo de magias). */
   spells?: Record<string, string[]>;
+  /** Escolha que a subclasse pede ao jogador (ex.: o terreno do Círculo da Terra). */
+  choice?: SubclassChoiceDef;
 };
 
 /** Regras de multiclasse de uma classe (PHB cap. 6). */
@@ -619,6 +682,8 @@ export type FeatSpellGrant = {
   choices?: FeatSpellChoice[];
   /** O talento pede que o jogador escolha UMA lista de classe; as escolhas saem dela. */
   pickList?: SpellClass[];
+  /** Atributo de conjuração e uso sem espaço de magia das magias deste talento. */
+  casting?: GrantedCasting;
 };
 
 /** Talento (feat) com descrição completa. */
@@ -663,6 +728,8 @@ export type RaceTraitDef = {
   skillChoiceFrom?: SkillName[];
   /** Usos rastreáveis do traço (viram recurso na ficha). "prof"/"level" usam o nível total. */
   resource?: FeatureResource;
+  /** Atributo de conjuração e uso sem espaço de magia das magias deste traço. */
+  casting?: GrantedCasting;
 };
 
 export type CreatureSize = "Pequeno" | "Médio";
