@@ -427,8 +427,9 @@ async fn character_summary(State(st): State<Shared>, Path(id): Path<String>) -> 
 }
 
 /// Campos da ficha que só o Mestre muda, sempre.
-const SHEET_LOCKED: [&str; 10] = [
+const SHEET_LOCKED: [&str; 11] = [
     "classes",
+    "inventory",
     "weapons",
     "proficiencyBonus",
     "initiativeBonus",
@@ -467,36 +468,6 @@ fn skill_names(v: Option<&Value>) -> Option<Vec<String>> {
         .collect();
     names.sort();
     Some(names)
-}
-
-/// O jogador pode aplicar esta mudança no inventário? Ele só ajusta a QUANTIDADE
-/// do que já tem (vendeu, perdeu, achou mais um); a lista de itens, os nomes e as
-/// moedas continuam sendo do Mestre.
-fn inventory_quantity_only(before: Option<&Value>, after: Option<&Value>) -> bool {
-    let (Some(before), Some(after)) = (before, after) else {
-        return before == after;
-    };
-    if before.get("coins") != after.get("coins") {
-        return false;
-    }
-    let (Some(old_items), Some(new_items)) = (
-        before.get("items").and_then(Value::as_array),
-        after.get("items").and_then(Value::as_array),
-    ) else {
-        return before == after;
-    };
-    if old_items.len() != new_items.len() {
-        return false;
-    }
-    let without_quantity = |value: &Value| {
-        let mut map = value.as_object().cloned().unwrap_or_default();
-        map.remove("quantity");
-        map
-    };
-    old_items.iter().zip(new_items).all(|(old, new)| {
-        without_quantity(old) == without_quantity(new)
-            && new.get("quantity").and_then(Value::as_i64).unwrap_or(1) >= 0
-    })
 }
 
 /// Um recurso com os campos que o jogador não pode mexer (só o `current` é dele).
@@ -583,12 +554,6 @@ fn player_patch_violation(current: &CharMap, patch: &CharMap) -> Option<&'static
         if !same(field(next_sheet, key), field(now_sheet, key)) {
             return Some("master_only_sheet");
         }
-    }
-
-    if !same(field(next_sheet, "inventory"), field(now_sheet, "inventory"))
-        && !inventory_quantity_only(field(now_sheet, "inventory"), field(next_sheet, "inventory"))
-    {
-        return Some("master_only_sheet");
     }
 
     // CA manual: o jogador só pode APAGAR (ao equipar uma armadura a CA volta a ser
@@ -1688,7 +1653,7 @@ mod tests {
     }
 
     #[test]
-    fn player_may_only_change_item_quantities() {
+    fn inventory_is_the_masters_even_for_quantities() {
         let mut c = character();
         let sheet = c.get_mut("sheet").unwrap().as_object_mut().unwrap();
         sheet.insert(
@@ -1697,36 +1662,17 @@ mod tests {
         );
         let c = c;
 
-        // Vendeu duas poções: o contador é dele.
-        assert_eq!(
-            player_patch_violation(
-                &c,
-                &sheet_patch(&c, "inventory", json!({ "coins": { "gp": 10, "sp": 0, "cp": 0 }, "items": [{ "name": "Poção de Cura", "quantity": 1 }] }))
-            ),
-            None
-        );
-        // Mas não pode inventar item, renomear o que tem, nem se dar ouro.
-        assert_eq!(
-            player_patch_violation(
-                &c,
-                &sheet_patch(&c, "inventory", json!({ "coins": { "gp": 10, "sp": 0, "cp": 0 }, "items": [{ "name": "Poção de Cura", "quantity": 1 }, { "name": "Espada +3", "quantity": 1 }] }))
-            ),
-            Some("master_only_sheet")
-        );
-        assert_eq!(
-            player_patch_violation(
-                &c,
-                &sheet_patch(&c, "inventory", json!({ "coins": { "gp": 10, "sp": 0, "cp": 0 }, "items": [{ "name": "Espada +3", "quantity": 3 }] }))
-            ),
-            Some("master_only_sheet")
-        );
-        assert_eq!(
-            player_patch_violation(
-                &c,
-                &sheet_patch(&c, "inventory", json!({ "coins": { "gp": 9999, "sp": 0, "cp": 0 }, "items": [{ "name": "Poção de Cura", "quantity": 3 }] }))
-            ),
-            Some("master_only_sheet")
-        );
+        // Nem o contador: quem adiciona e remove item (e quantidade) é o Mestre.
+        for attempt in [
+            json!({ "coins": { "gp": 10, "sp": 0, "cp": 0 }, "items": [{ "name": "Poção de Cura", "quantity": 1 }] }),
+            json!({ "coins": { "gp": 10, "sp": 0, "cp": 0 }, "items": [{ "name": "Poção de Cura", "quantity": 3 }, { "name": "Espada +3", "quantity": 1 }] }),
+            json!({ "coins": { "gp": 9999, "sp": 0, "cp": 0 }, "items": [{ "name": "Poção de Cura", "quantity": 3 }] }),
+        ] {
+            assert_eq!(
+                player_patch_violation(&c, &sheet_patch(&c, "inventory", attempt)),
+                Some("master_only_sheet")
+            );
+        }
     }
 
     #[test]

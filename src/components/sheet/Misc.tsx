@@ -132,7 +132,7 @@ export function Inventory({ id }: { id: string }) {
 
   const isEquipped = (name: string) => name === c.sheet.equippedArmor || name === c.sheet.equippedShield;
   const toggleEquip = (name: string) => void patchSheet(id, equipPatch(c, name, !isEquipped(name)));
-  // Quantidade é do jogador: ele vende, perde e acha coisas entre uma sessão e outra.
+  // Quantidade também é do Mestre: o contador só aparece na edição dele.
   const setQuantity = (index: number, quantity: number) =>
     setInv({ items: inv.items.map((item, i) => (i === index ? { ...item, quantity: Math.max(0, quantity) } : item)) });
 
@@ -191,11 +191,10 @@ export function Inventory({ id }: { id: string }) {
                         </option>
                       ))}
                     </select>
-                    <EditableNumber
-                      value={item.quantity ?? 1}
-                      min={0}
-                      onSave={(v) => updateItem(index, { quantity: v })}
-                      className="h-7 w-14"
+                    <QuantityStepper
+                      name={item.name}
+                      quantity={item.quantity ?? 1}
+                      onChange={(quantity) => setQuantity(index, quantity)}
                     />
                     <Button
                       variant="ghost"
@@ -212,7 +211,6 @@ export function Inventory({ id }: { id: string }) {
                     item={item}
                     equipped={isEquipped(item.name)}
                     onToggleEquip={toggleEquip}
-                    onQuantity={(quantity) => setQuantity(index, quantity)}
                   />
                 ),
               )}
@@ -234,7 +232,8 @@ export function Inventory({ id }: { id: string }) {
         )}
         {editMode && !canManage && (
           <p className="text-xs text-zinc-500">
-            Só o Mestre adiciona ou remove itens. Equipar e desequipar armadura e escudo você faz a qualquer momento.
+            Só o Mestre adiciona, remove e muda a quantidade dos itens. Equipar e desequipar armadura e escudo você faz a
+            qualquer momento.
           </p>
         )}
       </CardBody>
@@ -251,12 +250,10 @@ function InventoryRow({
   item,
   equipped,
   onToggleEquip,
-  onQuantity,
 }: {
   item: Item;
   equipped: boolean;
   onToggleEquip: (name: string) => void;
-  onQuantity: (quantity: number) => void;
 }) {
   const catalog = findItem(item.name);
   const shield = isShieldItem(item.name);
@@ -283,27 +280,7 @@ function InventoryRow({
           <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">⚠ {penalty.join(" · ")}</span>
         )}
       </span>
-      {/* Contador: o jogador ajusta sozinho quando vende, perde ou acha mais um. */}
-      <span className="flex shrink-0 items-center gap-0.5 self-center rounded border border-zinc-200 dark:border-zinc-800">
-        <button
-          type="button"
-          className="px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-          aria-label={`Remover um ${item.name}`}
-          disabled={quantity <= 0}
-          onClick={() => onQuantity(quantity - 1)}
-        >
-          <Minus className="h-3 w-3" />
-        </button>
-        <span className="min-w-[1.5rem] text-center font-mono text-xs">{quantity}</span>
-        <button
-          type="button"
-          className="px-1.5 py-0.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          aria-label={`Adicionar um ${item.name}`}
-          onClick={() => onQuantity(quantity + 1)}
-        >
-          <Plus className="h-3 w-3" />
-        </button>
-      </span>
+      {quantity !== 1 && <span className="shrink-0 self-center font-mono text-xs text-zinc-500">×{quantity}</span>}
       {wearable && (
         <Button
           size="sm"
@@ -317,6 +294,40 @@ function InventoryRow({
         </Button>
       )}
     </li>
+  );
+}
+
+/** Contador de quantidade do item, no modo de edição do Mestre. */
+function QuantityStepper({
+  name,
+  quantity,
+  onChange,
+}: {
+  name: string;
+  quantity: number;
+  onChange: (quantity: number) => void;
+}) {
+  return (
+    <span className="flex shrink-0 items-center rounded border border-zinc-300 dark:border-zinc-700">
+      <button
+        type="button"
+        className="px-1.5 py-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
+        aria-label={`Remover um ${name}`}
+        disabled={quantity <= 0}
+        onClick={() => onChange(quantity - 1)}
+      >
+        <Minus className="h-3 w-3" />
+      </button>
+      <span className="min-w-[1.5rem] text-center font-mono text-xs">{quantity}</span>
+      <button
+        type="button"
+        className="px-1.5 py-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        aria-label={`Adicionar um ${name}`}
+        onClick={() => onChange(quantity + 1)}
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 

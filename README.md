@@ -17,15 +17,15 @@ nem nginx servindo arquivos estáticos em produção.
 ## Quem manda em quê
 
 A ficha tem dois donos. O **jogador** cuida do estado do personagem: PV, contadores de
-recurso e de espaço de magia, a quantidade dos itens que ele já tem (vendeu, perdeu,
-achou mais um), notas da sessão, equipar/desequipar armadura e escudo, a história do
-personagem e as escolhas que a progressão abriu (talento × atributo, especialização em
-perícia ou em ferramenta, características opcionais do Tasha, magias — se a classe
-trocar magias livremente, ou para preencher as vagas que um nível novo abriu). O
-**Mestre** (chave mestra) cuida do que define o poder da ficha: níveis, atributos,
-perícias, quais itens existem no inventário, armas, moedas, máximos de PV/recurso/espaço
-e a Inspiração. O servidor aplica essas regras no `PATCH` (`server/src/main.rs`,
-`player_patch_violation`) — a tela só esconde o que já seria recusado.
+recurso e de espaço de magia, notas da sessão, equipar/desequipar armadura e escudo, a
+história do personagem e as escolhas que a progressão abriu (talento × atributo,
+especialização em perícia ou em ferramenta, características opcionais do Tasha, magias —
+se a classe trocar magias livremente, ou para preencher as vagas que um nível novo
+abriu). O **Mestre** (chave mestra) cuida do que define o poder da ficha: níveis,
+atributos, perícias, o inventário inteiro (quais itens, a quantidade de cada um e as
+moedas), armas, máximos de PV/recurso/espaço e a Inspiração. O servidor aplica essas
+regras no `PATCH` (`server/src/main.rs`, `player_patch_violation`) — a tela só esconde o
+que já seria recusado.
 
 ### Subir de nível
 
