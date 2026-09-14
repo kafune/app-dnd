@@ -23,7 +23,16 @@ import {
   type ReminderRule,
   type ReminderTone,
 } from "@/data/remindersCatalog";
-import { abilityMod, formatMod, isInspiration, SKILL_TO_ABILITY, type Character, type Feature } from "./types";
+import { homebrewItems, homebrewVersion } from "@/data/homebrewRegistry";
+import {
+  abilityMod,
+  formatMod,
+  isInspiration,
+  SKILL_TO_ABILITY,
+  type Character,
+  type Feature,
+  type HomebrewReminder,
+} from "./types";
 
 export type { ReminderTone };
 
@@ -70,6 +79,29 @@ function rulesFor(featureName: string): ReminderRule[] {
   const exact = EXACT_RULES.get(base);
   if (exact) return exact;
   return PREFIX_RULES.filter((rule) => base.startsWith(norm(rule.feature)));
+}
+
+// --- lembretes escritos pelo Mestre no homebrew
+
+let homebrewCache: { version: number; byName: Map<string, HomebrewReminder> } | null = null;
+
+/**
+ * Lembretes marcados pelo Mestre nos talentos e traços homebrew, por nome.
+ *
+ * A busca é por nome (e não por um campo copiado para dentro da ficha) porque é
+ * assim que o resto do homebrew funciona: marcar a caixinha num traço já usado por
+ * várias fichas acende o lembrete em todas elas, sem ninguém reabrir ficha nenhuma.
+ */
+function homebrewRemindersByName(): Map<string, HomebrewReminder> {
+  const version = homebrewVersion();
+  if (homebrewCache?.version === version) return homebrewCache.byName;
+  const byName = new Map<string, HomebrewReminder>();
+  for (const item of homebrewItems()) {
+    if (item.kind !== "feat" && item.kind !== "trait") continue;
+    if (item.data.reminder) byName.set(norm(item.data.name), item.data.reminder);
+  }
+  homebrewCache = { version, byName };
+  return byName;
 }
 
 // --- varredura das descrições (o que não tem texto escrito à mão)
@@ -191,6 +223,17 @@ export function remindersFor(character: Character): Reminder[] {
         tone: "good",
         source: feature.name,
         when: null,
+      });
+      continue;
+    }
+    // O Mestre marcou "mostrar nos Lembretes" neste talento/traço homebrew.
+    const custom = homebrewRemindersByName().get(base);
+    if (custom) {
+      push({
+        text: (custom.text ?? "").trim() || feature.description,
+        tone: custom.tone,
+        source: feature.name,
+        when: custom.when?.trim() ? custom.when.trim() : null,
       });
       continue;
     }

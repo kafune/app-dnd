@@ -63,3 +63,64 @@ body {
 .slot-pip:hover {
   transform: scale(1.1);
 }
+
+/* ---------------------------------------------------------------------------
+   Barra e gaveta do painel de consulta da ficha no celular (ver SidePanels.tsx).
+   Em pé a gaveta sobe de baixo; deitado ela entra pela direita, porque 85% de uma
+   tela deitada não dá altura para ler nada.
+   --------------------------------------------------------------------------- */
+:root {
+  --dock-bar-h: 3.25rem;
+  --dock-h: calc(var(--dock-bar-h) + env(safe-area-inset-bottom, 0px));
+}
+
+.dock-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  height: var(--dock-h);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.dock-drawer {
+  position: fixed;
+  inset-inline: 0;
+  bottom: var(--dock-h);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(85dvh - var(--dock-h));
+  border-start-start-radius: 1rem;
+  border-start-end-radius: 1rem;
+  animation: dock-up 0.18s ease-out;
+}
+
+@media (orientation: landscape) {
+  .dock-drawer {
+    inset-inline: auto 0;
+    top: 0;
+    max-height: none;
+    width: min(26rem, 80vw);
+    border-radius: 0;
+    animation: dock-in 0.18s ease-out;
+  }
+}
+
+@keyframes dock-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes dock-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-drawer {
+    animation: none;
+  }
+}

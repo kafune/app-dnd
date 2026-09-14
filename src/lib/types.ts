@@ -702,8 +702,26 @@ export type FeatDef = {
   spells?: FeatSpellGrant;
   /** Talento racial: raças que podem escolhê-lo. */
   races?: string[];
+  /** Lembrete que o Mestre pendurou no talento (aparece na caixa de Lembretes da ficha). */
+  reminder?: HomebrewReminder;
   /** Presente quando o talento é homebrew do Mestre (id no servidor). */
   homebrewId?: string;
+};
+
+/** Tom de um lembrete na ficha: verde (bom), vermelho (ruim) ou neutro. */
+export type ReminderTone = "good" | "bad" | "info";
+
+/**
+ * Lembrete que o Mestre pendura num talento/traço homebrew para ele aparecer na
+ * caixa de Lembretes. `when` existe porque a caixa separa o que vale o tempo todo
+ * do que só liga em certas situações — ver `src/lib/reminders.ts`.
+ */
+export type HomebrewReminder = {
+  /** Texto mostrado; vazio = a descrição da característica. */
+  text?: string;
+  /** Condição que liga o efeito. Ausente/vazio = vale o tempo todo. */
+  when?: string;
+  tone: ReminderTone;
 };
 
 /** Traço racial com descrição e efeitos mecânicos automáticos. */
@@ -730,6 +748,8 @@ export type RaceTraitDef = {
   resource?: FeatureResource;
   /** Atributo de conjuração e uso sem espaço de magia das magias deste traço. */
   casting?: GrantedCasting;
+  /** Lembrete que o Mestre pendurou no traço (aparece na caixa de Lembretes da ficha). */
+  reminder?: HomebrewReminder;
 };
 
 export type CreatureSize = "Pequeno" | "Médio";

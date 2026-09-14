@@ -14,7 +14,9 @@
  * passou a marcar a condição quando a característica precisa ser ligada.
  */
 
-export type ReminderTone = "good" | "bad" | "info";
+import type { ReminderTone } from "@/lib/types";
+
+export type { ReminderTone };
 
 export type ReminderRule = {
   /** Nome da característica/traço/talento como aparece na ficha. */

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Trash2, Pencil, Check } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Check, BellRing, Dices, Swords, Users, History } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ALIGNMENTS, CREATURE_SIZES, type AbilityKey, type AsiDecision, type SpellClass } from "@/lib/types";
 import { sheetPermissions } from "@/lib/permissions";
@@ -24,6 +24,7 @@ import { Backstory } from "@/components/sheet/Backstory";
 import { Reminders } from "@/components/sheet/Reminders";
 import { OptionalFeatures } from "@/components/sheet/OptionalFeatures";
 import { ActionsPanel, TablePanel } from "@/components/sheet/TablePanel";
+import { SidePanels, type SidePanel } from "@/components/sheet/SidePanels";
 import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
 import { ProficienciesAndLanguages, Inventory, Personality } from "@/components/sheet/Misc";
 import { PinLock } from "@/components/sheet/PinLock";
@@ -197,8 +198,32 @@ export default function CharacterPage() {
     pushToast({ title: `Progressão aplicada: ${applied.join(", ")}.`, tone: "success" });
   };
 
+  // Coluna de consulta: coluna da direita no computador, gaveta na barra de baixo
+  // no celular. Ordem = o que se olha no meio do turno primeiro.
+  const panels: SidePanel[] = [
+    { key: "lembretes", label: "Lembretes", icon: BellRing, content: <Reminders id={id} /> },
+    {
+      key: "dados",
+      label: "Dados",
+      icon: Dices,
+      content: (
+        <Card>
+          <CardHeader>
+            <CardTitle>Rolar Dados</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <DiceRoller characterId={id} characterName={character.characterName} />
+          </CardBody>
+        </Card>
+      ),
+    },
+    { key: "acoes", label: "Ações", icon: Swords, content: <ActionsPanel id={id} /> },
+    { key: "mesa", label: "Mesa", icon: Users, content: <TablePanel onClear={() => setClearScope("mesa")} /> },
+    { key: "log", label: "Log", icon: History, content: <ChangeLog id={id} /> },
+  ];
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-[calc(var(--dock-h)+1rem)] pt-6 lg:pb-6">
       <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
         <Link to={folderHref}>
           <Button variant="ghost" size="sm">
@@ -452,25 +477,7 @@ export default function CharacterPage() {
           <Backstory id={id} />
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-4 lg:h-fit">
-          <Reminders id={id} />
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Rolar Dados</CardTitle>
-            </CardHeader>
-            <CardBody>
-              <DiceRoller characterId={id} characterName={character.characterName} />
-            </CardBody>
-          </Card>
-
-          {/* Ações primeiro: é o que se consulta no meio do turno. */}
-          <ActionsPanel id={id} />
-
-          <TablePanel onClear={() => setClearScope("mesa")} />
-
-          <ChangeLog id={id} />
-        </aside>
+        <SidePanels panels={panels} />
       </div>
 
       <ConfirmDialog

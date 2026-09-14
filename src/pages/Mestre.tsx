@@ -22,8 +22,10 @@ import {
   type HomebrewFeatData,
   type HomebrewItem,
   type HomebrewRaceData,
+  type HomebrewReminder,
   type HomebrewSubraceData,
   type HomebrewTraitData,
+  type ReminderTone,
   type SkillName,
 } from "@/lib/types";
 
@@ -44,6 +46,13 @@ const splitLines = (value: string) =>
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+
+/** Tira os campos vazios do lembrete: `text` vazio vira a descrição e `when` vazio vira "sempre ativo". */
+const cleanReminder = (reminder: HomebrewReminder): HomebrewReminder => ({
+  tone: reminder.tone,
+  ...(reminder.text?.trim() ? { text: reminder.text.trim() } : {}),
+  ...(reminder.when?.trim() ? { when: reminder.when.trim() } : {}),
+});
 
 const splitCommas = (value: string) =>
   value
@@ -244,6 +253,7 @@ function itemSummary(item: HomebrewItem, racesUsingTrait: (name: string) => stri
   if (item.kind === "feat") {
     const data = item.data;
     return [
+      data.reminder ? "nos Lembretes" : "",
       data.prerequisite ? `pré-requisito: ${data.prerequisite}` : "",
       data.abilityIncrease
         ? `+${data.abilityIncrease.amount} em ${data.abilityIncrease.choose.map((key) => ABILITY_LABELS[key].slice(0, 3)).join("/")}`
@@ -255,9 +265,12 @@ function itemSummary(item: HomebrewItem, racesUsingTrait: (name: string) => stri
   }
   const used = racesUsingTrait(item.data.name);
   return [
+    item.data.reminder ? "nos Lembretes" : "",
     item.data.description.slice(0, 140) + (item.data.description.length > 140 ? "…" : ""),
     used.length ? `usado em: ${used.join(", ")}` : "não usado por nenhuma raça",
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +312,71 @@ function FormActions({ busy, error, onCancel, onSave, label = "Salvar" }: { busy
 
 type UsesMode = "none" | "fixed" | "prof" | "level";
 
+/**
+ * "Mostrar na caixa de Lembretes": o Mestre marca e a característica passa a
+ * aparecer nos Lembretes de toda ficha que a tiver.
+ *
+ * A condição vem junto de propósito. A caixa de Lembretes separa o que vale o
+ * tempo todo do que só liga em certas situações, e um lembrete sem condição entra
+ * como permanente — foi exatamente esse tipo de confusão (bônus de transformação
+ * anunciado como se estivesse sempre de pé) que a caixa foi arrumada para não fazer.
+ */
+function ReminderFields({
+  value,
+  onChange,
+}: {
+  value: HomebrewReminder | null;
+  onChange: (next: HomebrewReminder | null) => void;
+}) {
+  const set = (patch: Partial<HomebrewReminder>) => onChange({ tone: "info", ...value, ...patch });
+  return (
+    <div className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={value !== null}
+          onChange={(event) => onChange(event.target.checked ? { tone: "info" } : null)}
+        />
+        <span className="font-medium">Mostrar na caixa de Lembretes da ficha</span>
+      </label>
+      {value !== null && (
+        <div className="mt-3 space-y-3">
+          <Field
+            label="Texto do lembrete"
+            hint="Vazio = usa a descrição inteira. Uma frase curta funciona melhor no meio do combate."
+          >
+            <Input
+              value={value.text ?? ""}
+              onChange={(event) => set({ text: event.target.value })}
+              placeholder="Ex.: Resistência a dano necrótico."
+            />
+          </Field>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Quando vale" hint="Vazio = vale o tempo todo (entra em “Sempre ativo”).">
+              <Input
+                value={value.when ?? ""}
+                onChange={(event) => set({ when: event.target.value })}
+                placeholder="Ex.: só com a Forma Sombria ligada"
+              />
+            </Field>
+            <Field label="Cor">
+              <select
+                className={selectCls}
+                value={value.tone}
+                onChange={(event) => set({ tone: event.target.value as ReminderTone })}
+              >
+                <option value="good">verde — é vantagem sua</option>
+                <option value="bad">vermelho — é risco seu</option>
+                <option value="info">neutro — só informação</option>
+              </select>
+            </Field>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TraitForm({
   initial,
   onDone,
@@ -323,6 +401,7 @@ function TraitForm({
   );
   const [usesMax, setUsesMax] = useState(typeof start?.resource?.max === "number" ? start.resource.max : 1);
   const [recharge, setRecharge] = useState<FeatureResource["recharge"]>(start?.resource?.recharge ?? "long");
+  const [reminder, setReminder] = useState<HomebrewReminder | null>(start?.reminder ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -342,6 +421,7 @@ function TraitForm({
       ...(usesMode !== "none"
         ? { resource: { max: usesMode === "fixed" ? Math.max(1, usesMax) : usesMode, recharge } }
         : {}),
+      ...(reminder ? { reminder: cleanReminder(reminder) } : {}),
     };
     setBusy(true);
     const result = await saveHomebrew("trait", data, initial?.id);
@@ -387,6 +467,7 @@ function TraitForm({
       <Field label="O que o traço faz">
         <textarea className={textareaCls} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} />
       </Field>
+      <ReminderFields value={reminder} onChange={setReminder} />
       <details className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
         <summary className="cursor-pointer text-xs font-medium text-zinc-600 dark:text-zinc-300">
           Efeitos automáticos na ficha (opcional)
@@ -452,6 +533,7 @@ function FeatForm({ initial, onDone }: { initial?: { id: string; data: HomebrewF
   const [abilities, setAbilities] = useState<AbilityKey[]>(start?.abilityIncrease?.choose ?? []);
   const [amount, setAmount] = useState(start?.abilityIncrease?.amount ?? 1);
   const [races, setRaces] = useState((start?.races ?? []).join(", "));
+  const [reminder, setReminder] = useState<HomebrewReminder | null>(start?.reminder ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -468,6 +550,7 @@ function FeatForm({ initial, onDone }: { initial?: { id: string; data: HomebrewF
       ...(prerequisite.trim() ? { prerequisite: prerequisite.trim() } : {}),
       ...(abilities.length ? { abilityIncrease: { choose: abilities, amount } } : {}),
       ...(splitCommas(races).length ? { races: splitCommas(races) } : {}),
+      ...(reminder ? { reminder: cleanReminder(reminder) } : {}),
     };
     setBusy(true);
     const result = await saveHomebrew("feat", data, initial?.id);
@@ -520,6 +603,7 @@ function FeatForm({ initial, onDone }: { initial?: { id: string; data: HomebrewF
         <Field label="Só para as raças (opcional, separadas por vírgula)" hint="Deixe vazio para qualquer raça poder escolher.">
           <Input value={races} onChange={(event) => setRaces(event.target.value)} placeholder="Ex.: Shade, Elfo" />
         </Field>
+        <ReminderFields value={reminder} onChange={setReminder} />
         <FormActions busy={busy} error={error} onCancel={onDone} onSave={() => void save()} />
       </CardBody>
     </Card>
