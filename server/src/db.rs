@@ -155,6 +155,17 @@ CREATE TABLE IF NOT EXISTS creatures (
 );
 
 CREATE INDEX IF NOT EXISTS creatures_folder_idx ON creatures (folder_id, created_at);
+
+CREATE TABLE IF NOT EXISTS maps (
+  folder_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  background_mime TEXT,
+  background_data BLOB,
+  background_version TEXT,
+  background_width INTEGER,
+  background_height INTEGER,
+  updated_at TEXT NOT NULL
+);
 "#;
 
 impl Db {
@@ -178,6 +189,7 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
         ensure_folder_column(&conn)?;
+        ensure_creature_columns(&conn)?;
 
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM characters", [], |r| r.get(0))?;
         if n == 0 {
@@ -517,6 +529,7 @@ impl Db {
             return Ok(FolderDelete::NotEmpty);
         }
         self.conn.execute("DELETE FROM creatures WHERE folder_id = ?", [id])?;
+        self.conn.execute("DELETE FROM maps WHERE folder_id = ?", [id])?;
         self.conn.execute("DELETE FROM folders WHERE id = ?", [id])?;
         Ok(FolderDelete::Deleted)
     }
@@ -593,7 +606,7 @@ impl Db {
 
     pub fn list_creatures(&self, folder_id: &str) -> rusqlite::Result<Vec<Value>> {
         let mut st = self.conn.prepare_cached(
-            "SELECT id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at
+            "SELECT id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at, size, avatar_version
              FROM creatures WHERE folder_id = ? ORDER BY created_at",
         )?;
         let rows = st.query_map([folder_id], creature_row)?;
@@ -603,7 +616,7 @@ impl Db {
     pub fn get_creature(&self, folder_id: &str, id: &str) -> rusqlite::Result<Option<Value>> {
         self.conn
             .prepare_cached(
-                "SELECT id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at
+                "SELECT id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at, size, avatar_version
                  FROM creatures WHERE folder_id = ? AND id = ?",
             )?
             .query_row(params![folder_id, id], creature_row)
@@ -617,15 +630,16 @@ impl Db {
         hp: i64,
         ac: i64,
         note: Option<&str>,
+        size: &str,
     ) -> rusqlite::Result<Value> {
         let id = uuid::Uuid::new_v4().simple().to_string();
         let now = now_iso();
         self.conn
             .prepare_cached(
-                "INSERT INTO creatures (id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO creatures (id, folder_id, name, hp_current, hp_max, ac, note, created_at, updated_at, size)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )?
-            .execute(params![id, folder_id, name, hp, hp, ac, note, now, now])?;
+            .execute(params![id, folder_id, name, hp, hp, ac, note, now, now, size])?;
         self.get_creature(folder_id, &id)?
             .ok_or(rusqlite::Error::QueryReturnedNoRows)
     }
@@ -640,6 +654,7 @@ impl Db {
         hp_max: Option<i64>,
         ac: Option<i64>,
         note: Option<&str>,
+        size: Option<&str>,
     ) -> rusqlite::Result<Option<Value>> {
         let Some(current) = self.get_creature(folder_id, id)? else { return Ok(None) };
         let pick = |key: &str| current.get(key).and_then(Value::as_i64).unwrap_or(0);
@@ -652,13 +667,131 @@ impl Db {
         let next_note = note
             .map(str::to_string)
             .or_else(|| current.get("note").and_then(Value::as_str).map(str::to_string));
+        let next_size = size
+            .map(str::to_string)
+            .unwrap_or_else(|| current.get("size").and_then(Value::as_str).unwrap_or(DEFAULT_CREATURE_SIZE).to_string());
         self.conn
             .prepare_cached(
-                "UPDATE creatures SET name = ?, hp_current = ?, hp_max = ?, ac = ?, note = ?, updated_at = ?
+                "UPDATE creatures SET name = ?, hp_current = ?, hp_max = ?, ac = ?, note = ?, size = ?, updated_at = ?
                  WHERE folder_id = ? AND id = ?",
             )?
-            .execute(params![next_name, next_hp, next_max, next_ac, next_note, now_iso(), folder_id, id])?;
+            .execute(params![next_name, next_hp, next_max, next_ac, next_note, next_size, now_iso(), folder_id, id])?;
         self.get_creature(folder_id, id)
+    }
+
+    pub fn get_creature_avatar(&self, folder_id: &str, id: &str) -> rusqlite::Result<Option<Avatar>> {
+        self.conn
+            .prepare_cached(
+                "SELECT avatar_mime, avatar_data, avatar_version FROM creatures
+                 WHERE folder_id = ? AND id = ? AND avatar_data IS NOT NULL",
+            )?
+            .query_row(params![folder_id, id], |r| Ok(Avatar { mime: r.get(0)?, data: r.get(1)?, version: r.get(2)? }))
+            .optional()
+    }
+
+    /// Grava (ou troca) a foto da criatura. Devolve a criatura, ou `None` se não existe.
+    pub fn set_creature_avatar(&self, folder_id: &str, id: &str, mime: &str, data: &[u8]) -> rusqlite::Result<Option<Value>> {
+        let changed = self
+            .conn
+            .prepare_cached(
+                "UPDATE creatures SET avatar_mime = ?, avatar_data = ?, avatar_version = ?, updated_at = ?
+                 WHERE folder_id = ? AND id = ?",
+            )?
+            .execute(params![mime, data, new_version(), now_iso(), folder_id, id])?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        self.get_creature(folder_id, id)
+    }
+
+    /// Remove a foto da criatura (idempotente). Devolve a criatura e se algo mudou.
+    pub fn remove_creature_avatar(&self, folder_id: &str, id: &str) -> rusqlite::Result<Option<(Value, bool)>> {
+        let changed = self
+            .conn
+            .prepare_cached(
+                "UPDATE creatures SET avatar_mime = NULL, avatar_data = NULL, avatar_version = NULL, updated_at = ?
+                 WHERE folder_id = ? AND id = ? AND avatar_data IS NOT NULL",
+            )?
+            .execute(params![now_iso(), folder_id, id])?
+            > 0;
+        Ok(self.get_creature(folder_id, id)?.map(|c| (c, changed)))
+    }
+
+    // === Mapa da mesa ===
+
+    /// Estado do mapa da pasta (grade, tokens, marcações, formas) já com o fundo
+    /// (`background`) e `updatedAt` embutidos. `None` = a pasta ainda não tem mapa.
+    pub fn get_map(&self, folder_id: &str) -> rusqlite::Result<Option<Value>> {
+        self.conn
+            .prepare_cached(
+                "SELECT state, background_version, background_width, background_height, updated_at
+                 FROM maps WHERE folder_id = ?",
+            )?
+            .query_row([folder_id], map_row)
+            .optional()
+    }
+
+    /// Guarda o estado (sem `background`/`updatedAt`, que são colunas) e devolve o mapa completo.
+    pub fn save_map(&self, folder_id: &str, state: &Map<String, Value>) -> rusqlite::Result<Option<Value>> {
+        let mut clean = state.clone();
+        clean.remove("background");
+        clean.remove("updatedAt");
+        let now = now_iso();
+        self.conn
+            .prepare_cached(
+                "INSERT INTO maps (folder_id, state, updated_at) VALUES (?, ?, ?)
+                 ON CONFLICT(folder_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at",
+            )?
+            .execute(params![folder_id, serde_json::to_string(&clean).unwrap(), now])?;
+        self.get_map(folder_id)
+    }
+
+    pub fn get_map_background(&self, folder_id: &str) -> rusqlite::Result<Option<Avatar>> {
+        self.conn
+            .prepare_cached(
+                "SELECT background_mime, background_data, background_version FROM maps
+                 WHERE folder_id = ? AND background_data IS NOT NULL",
+            )?
+            .query_row([folder_id], |r| Ok(Avatar { mime: r.get(0)?, data: r.get(1)?, version: r.get(2)? }))
+            .optional()
+    }
+
+    /// Troca a imagem de fundo (cria o mapa se ainda não existe). Devolve o mapa.
+    pub fn set_map_background(
+        &self,
+        folder_id: &str,
+        mime: &str,
+        data: &[u8],
+        width: Option<i64>,
+        height: Option<i64>,
+    ) -> rusqlite::Result<Option<Value>> {
+        let now = now_iso();
+        self.conn
+            .prepare_cached(
+                "INSERT INTO maps (folder_id, state, background_mime, background_data, background_version,
+                   background_width, background_height, updated_at)
+                 VALUES (?, '{}', ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(folder_id) DO UPDATE SET background_mime = excluded.background_mime,
+                   background_data = excluded.background_data, background_version = excluded.background_version,
+                   background_width = excluded.background_width, background_height = excluded.background_height,
+                   updated_at = excluded.updated_at",
+            )?
+            .execute(params![folder_id, mime, data, new_version(), width, height, now])?;
+        self.get_map(folder_id)
+    }
+
+    /// Remove a imagem de fundo (idempotente). Devolve o mapa e se algo mudou.
+    pub fn remove_map_background(&self, folder_id: &str) -> rusqlite::Result<Option<(Value, bool)>> {
+        let changed = self
+            .conn
+            .prepare_cached(
+                "UPDATE maps SET background_mime = NULL, background_data = NULL, background_version = NULL,
+                   background_width = NULL, background_height = NULL, updated_at = ?
+                 WHERE folder_id = ? AND background_data IS NOT NULL",
+            )?
+            .execute(params![now_iso(), folder_id])?
+            > 0;
+        Ok(self.get_map(folder_id)?.map(|m| (m, changed)))
     }
 
     pub fn delete_creature(&self, folder_id: &str, id: &str) -> rusqlite::Result<bool> {
@@ -841,7 +974,48 @@ fn creature_row(r: &rusqlite::Row) -> rusqlite::Result<Value> {
         "note": r.get::<_, Option<String>>(6)?,
         "createdAt": r.get::<_, String>(7)?,
         "updatedAt": r.get::<_, String>(8)?,
+        "size": r.get::<_, Option<String>>(9)?.unwrap_or_else(|| DEFAULT_CREATURE_SIZE.to_string()),
+        "avatarVersion": r.get::<_, Option<String>>(10)?,
     }))
+}
+
+/// Linha da tabela `maps`: o JSON do estado + fundo e data vindos das colunas.
+fn map_row(r: &rusqlite::Row) -> rusqlite::Result<Value> {
+    let state: String = r.get(0)?;
+    let mut map: Map<String, Value> = serde_json::from_str(&state).unwrap_or_default();
+    let version: Option<String> = r.get(1)?;
+    let background = match version {
+        Some(v) => json!({
+            "version": v,
+            "width": r.get::<_, Option<i64>>(2)?,
+            "height": r.get::<_, Option<i64>>(3)?,
+        }),
+        None => Value::Null,
+    };
+    map.insert("background".into(), background);
+    map.insert("updatedAt".into(), Value::String(r.get::<_, String>(4)?));
+    Ok(Value::Object(map))
+}
+
+/// Tamanho de criatura quando o Mestre não diz (ocupa um quadrado do mapa).
+pub const DEFAULT_CREATURE_SIZE: &str = "Médio";
+
+/// Bancos anteriores ao mapa não têm tamanho nem foto nas criaturas.
+fn ensure_creature_columns(conn: &Connection) -> rusqlite::Result<()> {
+    for (column, ddl) in [
+        ("size", "ALTER TABLE creatures ADD COLUMN size TEXT"),
+        ("avatar_mime", "ALTER TABLE creatures ADD COLUMN avatar_mime TEXT"),
+        ("avatar_data", "ALTER TABLE creatures ADD COLUMN avatar_data BLOB"),
+        ("avatar_version", "ALTER TABLE creatures ADD COLUMN avatar_version TEXT"),
+    ] {
+        let has = conn
+            .prepare("SELECT 1 FROM pragma_table_info('creatures') WHERE name = ?")?
+            .exists([column])?;
+        if !has {
+            conn.execute_batch(ddl)?;
+        }
+    }
+    Ok(())
 }
 
 fn folder_row(r: &rusqlite::Row) -> rusqlite::Result<Value> {
@@ -1252,30 +1426,40 @@ mod tests {
         db.insert_folder("Mesa", "1234").unwrap();
         let folder = db.list_folders().unwrap()[0]["id"].as_str().unwrap().to_string();
 
-        let goblin = db.insert_creature(&folder, "Goblin 1", 7, 15, None).unwrap();
+        let goblin = db.insert_creature(&folder, "Goblin 1", 7, 15, None, "Pequeno").unwrap();
         let id = goblin["id"].as_str().unwrap().to_string();
         assert_eq!(goblin["hpCurrent"], 7);
         assert_eq!(goblin["hpMax"], 7);
         assert_eq!(goblin["ac"], 15);
+        assert_eq!(goblin["size"], "Pequeno");
         assert_eq!(db.list_creatures(&folder).unwrap().len(), 1);
 
         let hurt = db
-            .update_creature(&folder, &id, None, Some(3), None, None, None)
+            .update_creature(&folder, &id, None, Some(3), None, None, None, None)
             .unwrap()
             .unwrap();
         assert_eq!(hurt["hpCurrent"], 3);
 
         // O PV nunca passa do máximo nem fica negativo.
         let healed = db
-            .update_creature(&folder, &id, None, Some(99), None, None, None)
+            .update_creature(&folder, &id, None, Some(99), None, None, None, Some("Grande"))
             .unwrap()
             .unwrap();
         assert_eq!(healed["hpCurrent"], 7);
+        assert_eq!(healed["size"], "Grande");
         let dead = db
-            .update_creature(&folder, &id, None, Some(-5), None, None, None)
+            .update_creature(&folder, &id, None, Some(-5), None, None, None, None)
             .unwrap()
             .unwrap();
         assert_eq!(dead["hpCurrent"], 0, "o servidor zera; quem remove é a rota");
+
+        // Foto da criatura: vira token no mapa.
+        let with_photo = db.set_creature_avatar(&folder, &id, "image/png", &png_1x1()).unwrap().unwrap();
+        assert!(with_photo["avatarVersion"].is_string());
+        assert!(db.get_creature_avatar(&folder, &id).unwrap().is_some());
+        let (without, changed) = db.remove_creature_avatar(&folder, &id).unwrap().unwrap();
+        assert!(changed);
+        assert!(without["avatarVersion"].is_null());
 
         assert!(db.delete_creature(&folder, &id).unwrap());
         assert!(!db.delete_creature(&folder, &id).unwrap());
@@ -1283,11 +1467,43 @@ mod tests {
     }
 
     #[test]
+    fn map_state_and_background_live_with_the_folder() {
+        let db = Db::open(":memory:", "[]").unwrap();
+        db.insert_folder("Mesa", "1234").unwrap();
+        let folder = db.list_folders().unwrap()[0]["id"].as_str().unwrap().to_string();
+        assert!(db.get_map(&folder).unwrap().is_none());
+
+        let state = json!({ "grid": { "size": 50 }, "tokens": { "c:a": { "x": 1, "y": 2, "rotation": 0 } } });
+        let saved = db.save_map(&folder, state.as_object().unwrap()).unwrap().unwrap();
+        assert_eq!(saved["grid"]["size"], 50);
+        assert_eq!(saved["tokens"]["c:a"]["x"], 1);
+        assert!(saved["background"].is_null());
+        assert!(saved["updatedAt"].is_string());
+
+        let with_bg = db.set_map_background(&folder, "image/png", &png_1x1(), Some(1), Some(1)).unwrap().unwrap();
+        assert_eq!(with_bg["background"]["width"], 1);
+        assert!(with_bg["background"]["version"].is_string());
+        assert_eq!(with_bg["grid"]["size"], 50, "trocar o fundo não apaga o estado");
+        assert!(db.get_map_background(&folder).unwrap().is_some());
+
+        // Salvar o estado de novo não mexe no fundo (que mora nas colunas).
+        let again = db.save_map(&folder, with_bg.as_object().unwrap()).unwrap().unwrap();
+        assert!(again["background"]["version"].is_string());
+
+        let (cleared, changed) = db.remove_map_background(&folder).unwrap().unwrap();
+        assert!(changed);
+        assert!(cleared["background"].is_null());
+
+        assert_eq!(db.delete_folder(&folder).unwrap(), FolderDelete::Deleted);
+        assert!(db.get_map(&folder).unwrap().is_none());
+    }
+
+    #[test]
     fn folder_removal_takes_its_creatures() {
         let db = Db::open(":memory:", "[]").unwrap();
         db.insert_folder("Mesa", "1234").unwrap();
         let folder = db.list_folders().unwrap()[0]["id"].as_str().unwrap().to_string();
-        db.insert_creature(&folder, "Lobo", 11, 13, None).unwrap();
+        db.insert_creature(&folder, "Lobo", 11, 13, None, "Médio").unwrap();
         assert_eq!(db.delete_folder(&folder).unwrap(), FolderDelete::Deleted);
         assert!(db.list_creatures(&folder).unwrap().is_empty());
     }

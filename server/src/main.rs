@@ -41,7 +41,7 @@ use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 
-use db::{to_authorized, to_public, Avatar, CharMap, Change, Db, DiceRoll, Folder, FolderDelete};
+use db::{to_authorized, to_public, Avatar, CharMap, Change, Db, DiceRoll, Folder, FolderDelete, DEFAULT_CREATURE_SIZE};
 
 const SEED_JSON: &str = include_str!("../seed.json");
 
@@ -54,6 +54,15 @@ const FOLDER_NAME_MAX: usize = 60;
 const FOLDER_PIN_MAX: usize = 64;
 /// Criatura do Hub do Mestre: só nome, PV e CA — é um lembrete de cena, não uma ficha.
 const CREATURE_NAME_MAX: usize = 60;
+/// Tamanhos de criatura do Livro do Jogador (quantos quadrados o token ocupa).
+const CREATURE_SIZES: [&str; 6] = ["Miúdo", "Pequeno", "Médio", "Grande", "Enorme", "Imenso"];
+/// Imagem de fundo do mapa: o navegador reduz para ~2560 px, mas um PNG grande passa disso.
+const MAP_IMAGE_LIMIT: usize = 12 * 1024 * 1024;
+/// Estado do mapa (grade, tokens, marcações, formas) serializado.
+const MAP_STATE_LIMIT: usize = 1024 * 1024;
+const MAP_OP_LIMIT: usize = 512 * 1024;
+const MAP_SHAPES_MAX: usize = 200;
+const MAP_TILES_MAX: usize = 20_000;
 
 /// Evento já serializado, compartilhado entre todos os clientes SSE (serializa 1x).
 /// Com `folder`, só chega a quem está inscrito naquela pasta.
@@ -958,8 +967,18 @@ async fn delete_folder_avatar(State(st): State<Shared>, Path(id): Path<String>, 
 
 // === Hub do Mestre ===
 
-/// Nome e números de uma criatura vindos do corpo do request.
-fn creature_fields(body: &Value) -> (Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<String>) {
+/// Campos de uma criatura vindos do corpo do request.
+struct CreatureFields {
+    name: Option<String>,
+    hp_current: Option<i64>,
+    hp_max: Option<i64>,
+    ac: Option<i64>,
+    note: Option<String>,
+    /// `Err` = tamanho desconhecido (não é um dos do Livro do Jogador).
+    size: Result<Option<String>, ()>,
+}
+
+fn creature_fields(body: &Value) -> CreatureFields {
     let text = |key: &str| {
         body.get(key)
             .and_then(Value::as_str)
@@ -968,7 +987,21 @@ fn creature_fields(body: &Value) -> (Option<String>, Option<i64>, Option<i64>, O
             .map(|s| s.chars().take(CREATURE_NAME_MAX).collect::<String>())
     };
     let number = |key: &str| body.get(key).and_then(Value::as_i64);
-    (text("name"), number("hpCurrent"), number("hpMax"), number("ac"), text("note"))
+    let size = match body.get("size").and_then(Value::as_str).map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(raw) => match CREATURE_SIZES.iter().find(|s| util::normalize_name(s) == util::normalize_name(raw)) {
+            Some(s) => Ok(Some((*s).to_string())),
+            None => Err(()),
+        },
+    };
+    CreatureFields {
+        name: text("name"),
+        hp_current: number("hpCurrent"),
+        hp_max: number("hpMax"),
+        ac: number("ac"),
+        note: text("note"),
+        size,
+    }
 }
 
 /// Fichas completas da pasta + criaturas da cena. Só com a chave mestra: é o
@@ -1019,10 +1052,12 @@ async fn create_creature(
         Ok(Json(b)) => b,
         Err(rej) => return json_body_error(rej),
     };
-    let (name, _, hp_max, ac, note) = creature_fields(&body);
-    let Some(name) = name else { return error(StatusCode::BAD_REQUEST, "bad_request") };
-    let hp = hp_max.unwrap_or(1).clamp(1, 100_000);
-    let ac = ac.unwrap_or(10).clamp(0, 100);
+    let fields = creature_fields(&body);
+    let Some(name) = fields.name else { return error(StatusCode::BAD_REQUEST, "bad_request") };
+    let Ok(size) = fields.size else { return error(StatusCode::BAD_REQUEST, "bad_size") };
+    let hp = fields.hp_max.unwrap_or(1).clamp(1, 100_000);
+    let ac = fields.ac.unwrap_or(10).clamp(0, 100);
+    let size = size.unwrap_or_else(|| DEFAULT_CREATURE_SIZE.to_string());
 
     let creature = {
         let db = st.db();
@@ -1031,7 +1066,7 @@ async fn create_creature(
             Ok(None) => return error(StatusCode::NOT_FOUND, "folder_not_found"),
             Err(e) => return db_error(e),
         }
-        match db.insert_creature(&id, &name, hp, ac, note.as_deref()) {
+        match db.insert_creature(&id, &name, hp, ac, fields.note.as_deref(), &size) {
             Ok(c) => c,
             Err(e) => return db_error(e),
         }
@@ -1054,10 +1089,20 @@ async fn update_creature(
         Ok(Json(b)) => b,
         Err(rej) => return json_body_error(rej),
     };
-    let (name, hp_current, hp_max, ac, note) = creature_fields(&body);
+    let fields = creature_fields(&body);
+    let Ok(size) = fields.size else { return error(StatusCode::BAD_REQUEST, "bad_size") };
     let updated = {
         let db = st.db();
-        match db.update_creature(&id, &creature_id, name.as_deref(), hp_current, hp_max, ac, note.as_deref()) {
+        match db.update_creature(
+            &id,
+            &creature_id,
+            fields.name.as_deref(),
+            fields.hp_current,
+            fields.hp_max,
+            fields.ac,
+            fields.note.as_deref(),
+            size.as_deref(),
+        ) {
             Ok(Some(c)) => c,
             Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
             Err(e) => return db_error(e),
@@ -1089,6 +1134,611 @@ async fn delete_creature(
     }
     st.publish_in(Some(id), "creature-deleted", json!({ "id": creature_id }));
     Json(json!({ "ok": true })).into_response()
+}
+
+
+/// Pública, como a foto das fichas: o token do monstro aparece no mapa dos jogadores
+/// quando o Mestre libera a visão.
+async fn get_creature_avatar(
+    State(st): State<Shared>,
+    Path((id, creature_id)): Path<(String, String)>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    match st.db().get_creature_avatar(&id, &creature_id) {
+        Ok(Some(a)) => image_response(a, &q, &headers),
+        Ok(None) => error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => db_error(e),
+    }
+}
+
+async fn put_creature_avatar(
+    State(st): State<Shared>,
+    Path((id, creature_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let body = match body {
+        Ok(b) => b,
+        Err(rej) => return body_error(rej.status()),
+    };
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let mime = match checked_image(&headers, &body) {
+        Ok(m) => m,
+        Err(res) => return res,
+    };
+    let result = st.db().set_creature_avatar(&id, &creature_id, mime, &body);
+    let creature = match result {
+        Ok(Some(c)) => c,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    st.publish_in(Some(id), "creature", json!({ "creature": creature }));
+    Json(json!({ "creature": creature })).into_response()
+}
+
+async fn delete_creature_avatar(
+    State(st): State<Shared>,
+    Path((id, creature_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let result = st.db().remove_creature_avatar(&id, &creature_id);
+    let (creature, changed) = match result {
+        Ok(Some(r)) => r,
+        Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => return db_error(e),
+    };
+    if changed {
+        st.publish_in(Some(id), "creature", json!({ "creature": creature }));
+    }
+    Json(json!({ "creature": creature })).into_response()
+}
+
+// === Mapa da mesa ===
+//
+// Um mapa por pasta. O estado (grade, tokens, marcações de nível/terreno, formas)
+// é um JSON que o frontend define (`src/lib/map.ts`); o servidor só valida o que
+// precisa para as regras de quem pode mexer em quê:
+//   - o Mestre faz tudo;
+//   - o jogador só move e gira o próprio token (`c:<id da ficha>`), com o PIN dela;
+//   - monstros ainda não "liberados" (`visible != true`) nunca chegam ao jogador.
+
+/// Quem está mexendo no mapa.
+enum MapActor {
+    Master,
+    Player { character_id: String },
+}
+
+/// Tipo de forma geométrica do PHB cap. 10.
+const SHAPE_KINDS: [&str; 6] = ["esfera", "cilindro", "cubo", "quadrado", "cone", "linha"];
+
+fn finite(v: Option<&Value>) -> Option<f64> {
+    v.and_then(Value::as_f64).filter(|n| n.is_finite())
+}
+
+/// Número para o JSON: inteiro quando é inteiro (150, não 150.0).
+fn number(n: f64) -> Value {
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        json!(n as i64)
+    } else {
+        json!(n)
+    }
+}
+
+fn is_elevation(v: &Value) -> bool {
+    matches!(v.as_str(), Some("acima") | Some("abaixo"))
+}
+
+fn is_cell_key(key: &str) -> bool {
+    let Some((a, b)) = key.split_once(',') else { return false };
+    a.parse::<i64>().is_ok() && b.parse::<i64>().is_ok()
+}
+
+/// Garante as coleções do estado (um mapa recém-criado nasce só com o fundo).
+fn ensure_map_shape(state: &mut Map<String, Value>) {
+    if !state.get("grid").map(Value::is_object).unwrap_or(false) {
+        state.insert("grid".into(), json!({}));
+    }
+    for key in ["tokens", "tiles"] {
+        if !state.get(key).map(Value::is_object).unwrap_or(false) {
+            state.insert(key.into(), json!({}));
+        }
+    }
+    if !state.get("shapes").map(Value::is_array).unwrap_or(false) {
+        state.insert("shapes".into(), json!([]));
+    }
+}
+
+/// Um token limpo (só os campos conhecidos, números finitos). `None` = inválido.
+fn clean_token(raw: &Value, allow_master_fields: bool) -> Option<Map<String, Value>> {
+    let obj = raw.as_object()?;
+    let mut out = Map::new();
+    for (key, value) in obj {
+        match key.as_str() {
+            "x" | "y" | "rotation" => {
+                let n = finite(Some(value))?;
+                out.insert(key.clone(), number(n));
+            }
+            "elevation" if allow_master_fields => {
+                if value.is_null() || is_elevation(value) {
+                    out.insert(key.clone(), value.clone());
+                } else {
+                    return None;
+                }
+            }
+            "visible" if allow_master_fields => {
+                out.insert(key.clone(), Value::Bool(value.as_bool()?));
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+/// Aplica uma operação no estado. Devolve o código do erro se o ator não pode
+/// fazê-la ou o corpo é inválido.
+fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) -> Result<(), &'static str> {
+    ensure_map_shape(state);
+    let kind = op.get("op").and_then(Value::as_str).unwrap_or("");
+    let master = matches!(actor, MapActor::Master);
+    match kind {
+        "token" => {
+            let id = op.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("bad_request")?;
+            if let MapActor::Player { character_id } = actor {
+                if id != format!("c:{character_id}") {
+                    return Err("master_only_map");
+                }
+                if op.get("remove").and_then(Value::as_bool).unwrap_or(false) {
+                    return Err("master_only_map");
+                }
+            }
+            let tokens = state.get_mut("tokens").and_then(Value::as_object_mut).ok_or("bad_request")?;
+            if op.get("remove").and_then(Value::as_bool).unwrap_or(false) {
+                tokens.remove(id);
+                return Ok(());
+            }
+            let patch = op.get("token").ok_or("bad_request")?;
+            let clean = clean_token(patch, master).ok_or(if master { "bad_request" } else { "master_only_map" })?;
+            let entry = tokens.entry(id.to_string()).or_insert_with(|| json!({ "x": 0, "y": 0, "rotation": 0 }));
+            let current = entry.as_object_mut().ok_or("bad_request")?;
+            for (key, value) in clean {
+                if value.is_null() {
+                    current.remove(&key);
+                } else {
+                    current.insert(key, value);
+                }
+            }
+            Ok(())
+        }
+        "mark" => {
+            if !master {
+                return Err("master_only_map");
+            }
+            let elevation = match op.get("elevation") {
+                None => None,
+                Some(v) if v.is_null() || is_elevation(v) => Some(v.clone()),
+                Some(_) => return Err("bad_request"),
+            };
+            let difficult = match op.get("difficult") {
+                None => None,
+                Some(v) => Some(v.as_bool().ok_or("bad_request")?),
+            };
+            let token_ids: Vec<String> = op
+                .get("tokens")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default();
+            let tile_keys: Vec<String> = op
+                .get("tiles")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default();
+            if tile_keys.iter().any(|k| !is_cell_key(k)) {
+                return Err("bad_request");
+            }
+            if let Some(elevation) = &elevation {
+                let tokens = state.get_mut("tokens").and_then(Value::as_object_mut).ok_or("bad_request")?;
+                for id in &token_ids {
+                    if let Some(token) = tokens.get_mut(id).and_then(Value::as_object_mut) {
+                        if elevation.is_null() {
+                            token.remove("elevation");
+                        } else {
+                            token.insert("elevation".into(), elevation.clone());
+                        }
+                    }
+                }
+            }
+            let tiles = state.get_mut("tiles").and_then(Value::as_object_mut).ok_or("bad_request")?;
+            for key in &tile_keys {
+                let mut mark = tiles.get(key).and_then(Value::as_object).cloned().unwrap_or_default();
+                if let Some(elevation) = &elevation {
+                    if elevation.is_null() {
+                        mark.remove("elevation");
+                    } else {
+                        mark.insert("elevation".into(), elevation.clone());
+                    }
+                }
+                if let Some(difficult) = difficult {
+                    if difficult {
+                        mark.insert("difficult".into(), Value::Bool(true));
+                    } else {
+                        mark.remove("difficult");
+                    }
+                }
+                if mark.is_empty() {
+                    tiles.remove(key);
+                } else {
+                    tiles.insert(key.clone(), Value::Object(mark));
+                }
+            }
+            if tiles.len() > MAP_TILES_MAX {
+                return Err("too_large");
+            }
+            Ok(())
+        }
+        "grid" => {
+            if !master {
+                return Err("master_only_map");
+            }
+            let patch = op.get("grid").and_then(Value::as_object).ok_or("bad_request")?;
+            let grid = state.get_mut("grid").and_then(Value::as_object_mut).ok_or("bad_request")?;
+            for (key, value) in patch {
+                match key.as_str() {
+                    "enabled" => {
+                        grid.insert(key.clone(), Value::Bool(value.as_bool().ok_or("bad_request")?));
+                    }
+                    "size" => {
+                        let n = finite(Some(value)).ok_or("bad_request")?.clamp(8.0, 4000.0);
+                        grid.insert(key.clone(), number(n));
+                    }
+                    "offsetX" | "offsetY" => {
+                        let n = finite(Some(value)).ok_or("bad_request")?;
+                        grid.insert(key.clone(), number(n));
+                    }
+                    "opacity" => {
+                        let n = finite(Some(value)).ok_or("bad_request")?.clamp(0.0, 1.0);
+                        grid.insert(key.clone(), number(n));
+                    }
+                    "color" => {
+                        let c = value.as_str().filter(|c| c.len() <= 32).ok_or("bad_request")?;
+                        grid.insert(key.clone(), Value::String(c.to_string()));
+                    }
+                    _ => return Err("bad_request"),
+                }
+            }
+            Ok(())
+        }
+        "shapes" => {
+            if !master {
+                return Err("master_only_map");
+            }
+            let shapes = op.get("shapes").and_then(Value::as_array).ok_or("bad_request")?;
+            if shapes.len() > MAP_SHAPES_MAX {
+                return Err("too_large");
+            }
+            let mut clean = Vec::with_capacity(shapes.len());
+            for shape in shapes {
+                let obj = shape.as_object().ok_or("bad_request")?;
+                let id = obj.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("bad_request")?;
+                let kind = obj.get("kind").and_then(Value::as_str).ok_or("bad_request")?;
+                if !SHAPE_KINDS.contains(&kind) {
+                    return Err("bad_request");
+                }
+                let mut out = Map::new();
+                out.insert("id".into(), Value::String(id.chars().take(64).collect()));
+                out.insert("kind".into(), Value::String(kind.into()));
+                for key in ["x", "y", "rotation", "radius", "length", "width", "side"] {
+                    if let Some(v) = obj.get(key) {
+                        let n = finite(Some(v)).ok_or("bad_request")?;
+                        out.insert(key.into(), number(n));
+                    }
+                }
+                if let Some(v) = obj.get("centered") {
+                    out.insert("centered".into(), Value::Bool(v.as_bool().ok_or("bad_request")?));
+                }
+                for key in ["color", "label"] {
+                    if let Some(v) = obj.get(key) {
+                        let text = v.as_str().ok_or("bad_request")?;
+                        out.insert(key.into(), Value::String(text.chars().take(80).collect()));
+                    }
+                }
+                clean.push(Value::Object(out));
+            }
+            state.insert("shapes".into(), Value::Array(clean));
+            Ok(())
+        }
+        "tiles" => {
+            if !master {
+                return Err("master_only_map");
+            }
+            let tiles = op.get("tiles").and_then(Value::as_object).ok_or("bad_request")?;
+            if tiles.len() > MAP_TILES_MAX {
+                return Err("too_large");
+            }
+            let mut clean = Map::new();
+            for (key, mark) in tiles {
+                if !is_cell_key(key) {
+                    return Err("bad_request");
+                }
+                let obj = mark.as_object().ok_or("bad_request")?;
+                let mut out = Map::new();
+                if let Some(e) = obj.get("elevation").filter(|v| !v.is_null()) {
+                    if !is_elevation(e) {
+                        return Err("bad_request");
+                    }
+                    out.insert("elevation".into(), e.clone());
+                }
+                if obj.get("difficult").and_then(Value::as_bool).unwrap_or(false) {
+                    out.insert("difficult".into(), Value::Bool(true));
+                }
+                if !out.is_empty() {
+                    clean.insert(key.clone(), Value::Object(out));
+                }
+            }
+            state.insert("tiles".into(), Value::Object(clean));
+            Ok(())
+        }
+        "reset" => {
+            if !master {
+                return Err("master_only_map");
+            }
+            state.insert("tokens".into(), json!({}));
+            state.insert("tiles".into(), json!({}));
+            state.insert("shapes".into(), json!([]));
+            Ok(())
+        }
+        _ => Err("bad_request"),
+    }
+}
+
+/// O que o jogador recebe: sem os monstros que o Mestre ainda não liberou.
+fn map_for_player(mut map: Map<String, Value>) -> Map<String, Value> {
+    if let Some(tokens) = map.get_mut("tokens").and_then(Value::as_object_mut) {
+        tokens.retain(|id, token| {
+            !id.starts_with("m:") || token.get("visible").and_then(Value::as_bool).unwrap_or(false)
+        });
+    }
+    map
+}
+
+/// Está no mapa dos jogadores? (token de monstro liberado)
+fn creature_visible(map: &Map<String, Value>, creature_id: &str) -> bool {
+    map.get("tokens")
+        .and_then(Value::as_object)
+        .and_then(|t| t.get(&format!("m:{creature_id}")))
+        .and_then(|t| t.get("visible"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Quem tem token: fichas da pasta (todas) e criaturas (todas para o Mestre; só as
+/// liberadas para o jogador). Sem PV, CA ou qualquer outra parte da ficha.
+fn map_figures(db: &Db, folder_id: &str, map: &Map<String, Value>, master: bool) -> rusqlite::Result<Vec<Value>> {
+    let mut out = Vec::new();
+    for c in db.list_folder_characters_full(folder_id)? {
+        let size = c
+            .get("sheet")
+            .and_then(|s| s.get("appearance"))
+            .and_then(|a| a.get("size"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(DEFAULT_CREATURE_SIZE);
+        let id = c.get("id").and_then(Value::as_str).unwrap_or("");
+        out.push(json!({
+            "id": format!("c:{id}"),
+            "kind": "character",
+            "refId": id,
+            "name": c.get("characterName").cloned().unwrap_or(json!("")),
+            "color": c.get("color").cloned().unwrap_or(Value::Null),
+            "avatarVersion": c.get("avatarVersion").cloned().unwrap_or(Value::Null),
+            "size": size,
+        }));
+    }
+    for creature in db.list_creatures(folder_id)? {
+        let id = creature.get("id").and_then(Value::as_str).unwrap_or("");
+        if !master && !creature_visible(map, id) {
+            continue;
+        }
+        out.push(json!({
+            "id": format!("m:{id}"),
+            "kind": "creature",
+            "refId": id,
+            "name": creature.get("name").cloned().unwrap_or(json!("")),
+            "color": Value::Null,
+            "avatarVersion": creature.get("avatarVersion").cloned().unwrap_or(Value::Null),
+            "size": creature.get("size").cloned().unwrap_or(json!(DEFAULT_CREATURE_SIZE)),
+        }));
+    }
+    Ok(out)
+}
+
+fn map_response(db: &Db, folder_id: &str, map: Map<String, Value>, master: bool) -> Result<Value, Response> {
+    let figures = map_figures(db, folder_id, &map, master).map_err(db_error)?;
+    let map = if master { map } else { map_for_player(map) };
+    Ok(json!({ "map": Value::Object(map), "figures": figures }))
+}
+
+fn stored_map(db: &Db, folder_id: &str) -> rusqlite::Result<Map<String, Value>> {
+    let mut map = db
+        .get_map(folder_id)?
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    ensure_map_shape(&mut map);
+    Ok(map)
+}
+
+/// Mapa da pasta: senha da pasta, PIN de uma ficha dela ou chave mestra. O jogador
+/// não recebe os monstros escondidos.
+async fn get_map(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    let pin = header_pin(&headers);
+    let db = st.db();
+    if let Err(res) = require_folder_member(&st, &db, &id, pin.as_deref()) {
+        return res;
+    }
+    let map = match stored_map(&db, &id) {
+        Ok(m) => m,
+        Err(e) => return db_error(e),
+    };
+    match map_response(&db, &id, map, st.pins.is_master(pin.as_deref())) {
+        Ok(body) => Json(body).into_response(),
+        Err(res) => res,
+    }
+}
+
+/// Uma operação no mapa (`{ op: "token" | "mark" | "grid" | "shapes" | "tiles" | "reset", … }`).
+/// Chave mestra faz tudo; o PIN de uma ficha só move o token dela.
+async fn patch_map(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let pin = header_pin(&headers);
+    let saved = {
+        let db = st.db();
+        match db.get_folder(&id) {
+            Ok(Some(_)) => {}
+            Ok(None) => return error(StatusCode::NOT_FOUND, "folder_not_found"),
+            Err(e) => return db_error(e),
+        }
+        let actor = if st.pins.is_master(pin.as_deref()) {
+            MapActor::Master
+        } else {
+            // Jogador: o PIN tem de ser o da ficha dona do token que ele quer mover.
+            let token_id = body.get("id").and_then(Value::as_str).unwrap_or("");
+            let Some(character_id) = token_id.strip_prefix("c:").filter(|c| !c.is_empty()) else {
+                return error(StatusCode::FORBIDDEN, "bad_pin");
+            };
+            let stored = match db.get_stored(character_id) {
+                Ok(Some(c)) => c,
+                Ok(None) => return error(StatusCode::FORBIDDEN, "bad_pin"),
+                Err(e) => return db_error(e),
+            };
+            if folder_of(&stored).as_deref() != Some(id.as_str()) || !st.pins.ok(&stored, pin.as_deref()) {
+                return error(StatusCode::FORBIDDEN, "bad_pin");
+            }
+            MapActor::Player { character_id: character_id.to_string() }
+        };
+        let mut map = match stored_map(&db, &id) {
+            Ok(m) => m,
+            Err(e) => return db_error(e),
+        };
+        if let Err(code) = apply_map_op(&mut map, &body, &actor) {
+            let status = match code {
+                "too_large" => StatusCode::PAYLOAD_TOO_LARGE,
+                "bad_request" => StatusCode::BAD_REQUEST,
+                _ => StatusCode::FORBIDDEN,
+            };
+            return error(status, code);
+        }
+        if serde_json::to_vec(&map).map(|v| v.len()).unwrap_or(usize::MAX) > MAP_STATE_LIMIT {
+            return error(StatusCode::PAYLOAD_TOO_LARGE, "too_large");
+        }
+        let saved = match db.save_map(&id, &map) {
+            Ok(Some(v)) => v.as_object().cloned().unwrap_or_default(),
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        };
+        match map_response(&db, &id, saved, matches!(actor, MapActor::Master)) {
+            Ok(b) => b,
+            Err(res) => return res,
+        }
+    };
+    let updated_at = saved.get("map").and_then(|m| m.get("updatedAt")).cloned().unwrap_or(Value::Null);
+    st.publish_in(Some(id.clone()), "map", json!({ "folderId": id, "updatedAt": updated_at }));
+    Json(saved).into_response()
+}
+
+/// Pública (o `<img>` do jogador não manda header), como as fotos de perfil.
+async fn get_map_background(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    match st.db().get_map_background(&id) {
+        Ok(Some(a)) => image_response(a, &q, &headers),
+        Ok(None) => error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => db_error(e),
+    }
+}
+
+/// Só o Mestre. `?width=&height=` (pixels) evitam decodificar a imagem no servidor.
+async fn put_map_background(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let body = match body {
+        Ok(b) => b,
+        Err(rej) => return body_error(rej.status()),
+    };
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let mime = match checked_image(&headers, &body) {
+        Ok(m) => m,
+        Err(res) => return res,
+    };
+    let dim = |key: &str| q.get(key).and_then(|v| v.parse::<i64>().ok()).filter(|n| *n > 0 && *n <= 20_000);
+    let saved = {
+        let db = st.db();
+        match db.get_folder(&id) {
+            Ok(Some(_)) => {}
+            Ok(None) => return error(StatusCode::NOT_FOUND, "folder_not_found"),
+            Err(e) => return db_error(e),
+        }
+        let map = match db.set_map_background(&id, mime, &body, dim("width"), dim("height")) {
+            Ok(Some(m)) => m.as_object().cloned().unwrap_or_default(),
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        };
+        let mut map = map;
+        ensure_map_shape(&mut map);
+        match map_response(&db, &id, map, true) {
+            Ok(b) => b,
+            Err(res) => return res,
+        }
+    };
+    let updated_at = saved.get("map").and_then(|m| m.get("updatedAt")).cloned().unwrap_or(Value::Null);
+    st.publish_in(Some(id.clone()), "map", json!({ "folderId": id, "updatedAt": updated_at }));
+    Json(saved).into_response()
+}
+
+async fn delete_map_background(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    if !st.pins.is_master(header_pin(&headers).as_deref()) {
+        return error(StatusCode::FORBIDDEN, "bad_pin");
+    }
+    let (saved, changed) = {
+        let db = st.db();
+        let (map, changed) = match db.remove_map_background(&id) {
+            Ok(Some(r)) => r,
+            Ok(None) => return error(StatusCode::NOT_FOUND, "not_found"),
+            Err(e) => return db_error(e),
+        };
+        let mut map = map.as_object().cloned().unwrap_or_default();
+        ensure_map_shape(&mut map);
+        match map_response(&db, &id, map, true) {
+            Ok(b) => (b, changed),
+            Err(res) => return res,
+        }
+    };
+    if changed {
+        let updated_at = saved.get("map").and_then(|m| m.get("updatedAt")).cloned().unwrap_or(Value::Null);
+        st.publish_in(Some(id.clone()), "map", json!({ "folderId": id, "updatedAt": updated_at }));
+    }
+    Json(saved).into_response()
 }
 
 // === Chave mestra e homebrew ===
@@ -1514,6 +2164,24 @@ async fn main() {
             patch(update_creature).delete(delete_creature),
         )
         .route(
+            "/api/folders/{id}/creatures/{creatureId}/avatar",
+            get(get_creature_avatar)
+                .put(put_creature_avatar)
+                .delete(delete_creature_avatar)
+                .layer(DefaultBodyLimit::max(AVATAR_LIMIT)),
+        )
+        .route(
+            "/api/folders/{id}/map",
+            get(get_map).patch(patch_map).layer(DefaultBodyLimit::max(MAP_OP_LIMIT)),
+        )
+        .route(
+            "/api/folders/{id}/map/background",
+            get(get_map_background)
+                .put(put_map_background)
+                .delete(delete_map_background)
+                .layer(DefaultBodyLimit::max(MAP_IMAGE_LIMIT)),
+        )
+        .route(
             "/api/folders/{id}/avatar",
             get(get_folder_avatar)
                 .put(put_folder_avatar)
@@ -1736,6 +2404,146 @@ mod tests {
             player_patch_violation(&c, &sheet_patch(&c, "acOverride", json!(30))),
             Some("master_only_sheet")
         );
+    }
+
+    fn map_state() -> Map<String, Value> {
+        map(json!({
+            "grid": { "enabled": true, "size": 50 },
+            "tokens": {
+                "c:zorrilho": { "x": 100, "y": 100, "rotation": 0 },
+                "m:goblin": { "x": 300, "y": 100, "rotation": 0 },
+                "m:lobo": { "x": 400, "y": 100, "rotation": 0, "visible": true }
+            },
+            "tiles": { "2,2": { "difficult": true } },
+            "shapes": []
+        }))
+    }
+
+    #[test]
+    fn player_moves_and_turns_only_the_own_token() {
+        let me = MapActor::Player { character_id: "zorrilho".into() };
+        let mut state = map_state();
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "c:zorrilho", "token": { "x": 150, "y": 200, "rotation": 45 } }), &me),
+            Ok(())
+        );
+        assert_eq!(state["tokens"]["c:zorrilho"]["x"], 150);
+        assert_eq!(state["tokens"]["c:zorrilho"]["rotation"], 45);
+
+        // Token dos outros, monstros, remover, nível e visibilidade: só o Mestre.
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "c:outro", "token": { "x": 1, "y": 1 } }), &me),
+            Err("master_only_map")
+        );
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "m:goblin", "token": { "x": 1, "y": 1 } }), &me),
+            Err("master_only_map")
+        );
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "c:zorrilho", "remove": true }), &me),
+            Err("master_only_map")
+        );
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "c:zorrilho", "token": { "elevation": "acima" } }), &me),
+            Err("master_only_map")
+        );
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "c:zorrilho", "token": { "visible": true } }), &me),
+            Err("master_only_map")
+        );
+        for op in ["mark", "grid", "shapes", "tiles", "reset"] {
+            assert_eq!(apply_map_op(&mut state, &json!({ "op": op }), &me), Err("master_only_map"), "{op}");
+        }
+    }
+
+    #[test]
+    fn master_reveals_marks_and_draws() {
+        let mut state = map_state();
+        let master = MapActor::Master;
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "m:goblin", "token": { "visible": true, "elevation": "abaixo" } }), &master),
+            Ok(())
+        );
+        assert_eq!(state["tokens"]["m:goblin"]["visible"], true);
+        assert_eq!(state["tokens"]["m:goblin"]["elevation"], "abaixo");
+
+        // Um token novo nasce com a posição enviada.
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "token", "id": "m:orc", "token": { "x": 9, "y": 8 } }), &master),
+            Ok(())
+        );
+        assert_eq!(state["tokens"]["m:orc"]["x"], 9);
+
+        // Marcar acima/abaixo em tokens e quadrados; terreno difícil só em quadrados.
+        assert_eq!(
+            apply_map_op(
+                &mut state,
+                &json!({ "op": "mark", "tokens": ["c:zorrilho"], "tiles": ["1,1", "2,2"], "elevation": "acima", "difficult": true }),
+                &master
+            ),
+            Ok(())
+        );
+        assert_eq!(state["tokens"]["c:zorrilho"]["elevation"], "acima");
+        assert_eq!(state["tiles"]["1,1"], json!({ "elevation": "acima", "difficult": true }));
+
+        // Limpar as marcas apaga o quadrado quando não sobra nada.
+        assert_eq!(
+            apply_map_op(
+                &mut state,
+                &json!({ "op": "mark", "tokens": ["c:zorrilho"], "tiles": ["1,1"], "elevation": null, "difficult": false }),
+                &master
+            ),
+            Ok(())
+        );
+        assert!(state["tokens"]["c:zorrilho"].get("elevation").is_none());
+        assert!(state["tiles"].get("1,1").is_none());
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "mark", "tiles": ["x,y"] }), &master), Err("bad_request"));
+
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "grid", "grid": { "enabled": false, "size": 2, "color": "#fff" } }), &master),
+            Ok(())
+        );
+        assert_eq!(state["grid"]["enabled"], false);
+        assert_eq!(state["grid"]["size"], 8.0, "o lado mínimo é 8 px");
+
+        assert_eq!(
+            apply_map_op(
+                &mut state,
+                &json!({ "op": "shapes", "shapes": [{ "id": "s1", "kind": "cone", "x": 1, "y": 2, "rotation": 90, "length": 4.5, "junk": 1 }] }),
+                &master
+            ),
+            Ok(())
+        );
+        assert_eq!(state["shapes"][0]["length"], 4.5);
+        assert!(state["shapes"][0].get("junk").is_none());
+        assert_eq!(
+            apply_map_op(&mut state, &json!({ "op": "shapes", "shapes": [{ "id": "s1", "kind": "triângulo" }] }), &master),
+            Err("bad_request")
+        );
+
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "reset" }), &master), Ok(()));
+        assert!(state["tokens"].as_object().unwrap().is_empty());
+        assert!(state["shapes"].as_array().unwrap().is_empty());
+        assert_eq!(state["grid"]["enabled"], false, "a grade e o fundo ficam");
+    }
+
+    #[test]
+    fn players_never_see_hidden_monsters() {
+        let public = map_for_player(map_state());
+        let tokens = public["tokens"].as_object().unwrap();
+        assert!(tokens.contains_key("c:zorrilho"));
+        assert!(tokens.contains_key("m:lobo"), "monstro liberado aparece");
+        assert!(!tokens.contains_key("m:goblin"), "monstro escondido não vaza");
+        assert!(creature_visible(&map_state(), "lobo"));
+        assert!(!creature_visible(&map_state(), "goblin"));
+    }
+
+    #[test]
+    fn creature_size_must_be_a_book_size() {
+        assert_eq!(creature_fields(&json!({ "size": "grande" })).size, Ok(Some("Grande".into())));
+        assert_eq!(creature_fields(&json!({ "size": "MÉDIO" })).size, Ok(Some("Médio".into())));
+        assert_eq!(creature_fields(&json!({})).size, Ok(None));
+        assert_eq!(creature_fields(&json!({ "size": "Colossal" })).size, Err(()));
     }
 
     #[test]

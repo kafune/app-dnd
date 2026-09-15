@@ -453,6 +453,10 @@ export type Creature = {
   hpMax: number;
   ac: number;
   note?: string;
+  /** Tamanho (Miúdo … Imenso): quantos quadrados o token ocupa no mapa. */
+  size?: string;
+  /** Versão da foto (a imagem fica em /api/folders/:id/creatures/:cid/avatar). */
+  avatarVersion?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };

@@ -3,7 +3,8 @@ import { persist } from "zustand/middleware";
 import type { Character, Creature, DiceRoll, Folder, HomebrewItem, HomebrewKind, Sheet } from "./types";
 import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
 import { setHomebrewItems } from "@/data/homebrewRegistry";
-import { api, ApiError, errorMessage, type AccessRole } from "./api";
+import { api, ApiError, errorMessage, type AccessRole, type MapOp, type MapPayload } from "./api";
+import { normalizeMapState, type MapFigure, type MapState } from "./map";
 
 export type AppToast = {
   id: string;
@@ -16,6 +17,19 @@ export type HomebrewSaveResult = { ok: true; item: HomebrewItem } | { ok: false;
 export type FolderSaveResult = { ok: true; folder: Folder } | { ok: false; error: string };
 /** Resultado de tentar abrir uma pasta. */
 export type FolderEntry = "ok" | "bad_pin" | "not_found" | "error";
+
+/**
+ * Mapa da pasta que está na tela (hub do Mestre ou aba Mapa da ficha). Guarda a
+ * ficha usada como credencial para recarregar com o mesmo PIN quando chega um
+ * evento em tempo real.
+ */
+export type MapSlice = {
+  folderId: string;
+  state: MapState;
+  figures: MapFigure[];
+  characterId?: string;
+  loadedAt: number;
+};
 
 /** Painel do Mestre de uma pasta: fichas completas + criaturas da cena. */
 export type HubState = {
@@ -54,6 +68,8 @@ type Store = {
   editMode: boolean;
   /** Hub do Mestre aberto (uma pasta por vez). */
   hub: HubState | null;
+  /** Mapa aberto (uma pasta por vez). */
+  map: MapSlice | null;
 
   setEditMode: (v: boolean) => void;
   setLocalCharacter: (c: Character) => void;
@@ -93,9 +109,21 @@ type Store = {
   closeHub: () => void;
   /** PATCH numa ficha usando a chave mestra (o Mestre não tem o PIN de cada ficha). */
   masterPatch: (id: string, patch: Partial<Character>) => Promise<boolean>;
-  addCreature: (folderId: string, data: { name: string; hpMax: number; ac: number }) => Promise<boolean>;
+  addCreature: (folderId: string, data: { name: string; hpMax: number; ac: number; size?: string }) => Promise<boolean>;
   patchCreature: (folderId: string, creatureId: string, data: Partial<Creature>) => Promise<boolean>;
   removeCreature: (folderId: string, creatureId: string) => Promise<boolean>;
+  uploadCreatureAvatar: (folderId: string, creatureId: string, image: Blob) => Promise<boolean>;
+  removeCreatureAvatar: (folderId: string, creatureId: string) => Promise<boolean>;
+  /**
+   * Abre (ou recarrega) o mapa da pasta. Com `characterId`, usa o PIN daquela ficha
+   * (aba Mapa do jogador); sem ele, a chave mestra ou a senha da pasta.
+   */
+  loadMap: (folderId: string, characterId?: string) => Promise<boolean>;
+  /** Uma operação no mapa aberto, com a credencial usada para abri-lo. */
+  patchMap: (op: MapOp) => Promise<boolean>;
+  closeMap: () => void;
+  uploadMapBackground: (folderId: string, image: Blob, size: { width: number; height: number }) => Promise<boolean>;
+  removeMapBackground: (folderId: string) => Promise<boolean>;
   pushToast: (toast: Omit<AppToast, "id">) => void;
   dismissToast: (id: string) => void;
   hydrate: () => Promise<void>;
@@ -201,6 +229,40 @@ export const useStore = create<Store>()(
         }, 250);
       };
 
+      /** Credencial para o mapa: o PIN da ficha (que pode ser a chave mestra), senão a do Mestre/pasta. */
+      const mapCredential = (folderId: string, characterId?: string) =>
+        (characterId ? get().pins[characterId] : undefined) ?? get().masterPin ?? get().folderPins[folderId] ?? undefined;
+
+      const applyMap = (folderId: string, payload: MapPayload, characterId?: string) =>
+        set((s) => {
+          // O mapa foi fechado ou trocado enquanto a resposta viajava: ignora.
+          if (!s.map || s.map.folderId !== folderId) return {};
+          return {
+            map: {
+              folderId,
+              state: normalizeMapState(payload.map),
+              figures: payload.figures,
+              characterId: characterId ?? s.map.characterId,
+              loadedAt: Date.now(),
+            },
+          };
+        });
+
+      /**
+       * O evento SSE do mapa só avisa que mudou (o jogador não pode receber os
+       * monstros escondidos), então cada cliente busca a versão que pode ver.
+       */
+      let mapRefresh: ReturnType<typeof setTimeout> | null = null;
+      const scheduleMapRefresh = (folderId: string) => {
+        const current = get().map;
+        if (!current || current.folderId !== folderId || mapRefresh) return;
+        mapRefresh = setTimeout(() => {
+          mapRefresh = null;
+          const now = get().map;
+          if (now?.folderId === folderId) void get().loadMap(folderId, now.characterId);
+        }, 150);
+      };
+
       /**
        * Recebe o resumo público de uma ficha (evento SSE ou listagem da pasta). Ficha
        * destravada aqui NÃO é trocada pela versão pública (zeraria PV/slots na tela por
@@ -256,14 +318,34 @@ export const useStore = create<Store>()(
         {
           character: ({ character }: { character: Character }) => {
             receivePublic(character, true);
-            if (character.folderId) scheduleHubRefresh(character.folderId);
+            if (character.folderId) {
+              scheduleHubRefresh(character.folderId);
+              // Foto ou nome novos mudam o token no mapa.
+              scheduleMapRefresh(character.folderId);
+            }
           },
           "character-deleted": ({ id }: { id: string }) => {
             removeCharacter(id);
             set((s) => (s.hub ? { hub: { ...s.hub, characters: s.hub.characters.filter((c) => c.id !== id) } } : {}));
+            const folderId = get().map?.folderId;
+            if (folderId) scheduleMapRefresh(folderId);
           },
-          creature: ({ creature }: { creature: Creature }) => upsertCreature(creature),
-          "creature-deleted": ({ id }: { id: string }) => dropCreature(id),
+          creature: ({ creature }: { creature: Creature }) => {
+            upsertCreature(creature);
+            scheduleMapRefresh(creature.folderId);
+          },
+          "creature-deleted": ({ id }: { id: string }) => {
+            dropCreature(id);
+            const folderId = get().map?.folderId;
+            if (folderId) scheduleMapRefresh(folderId);
+          },
+          map: ({ folderId, updatedAt }: { folderId: string; updatedAt?: string | null }) => {
+            const current = get().map;
+            if (!current || current.folderId !== folderId) return;
+            // Eco de uma operação nossa que já veio na resposta: nada a buscar.
+            if (updatedAt && current.state.updatedAt === updatedAt) return;
+            scheduleMapRefresh(folderId);
+          },
           folder: ({ folder }: { folder: Folder }) => setFolder(folder),
           "folder-deleted": ({ id }: { id: string }) => set((s) => withoutFolder(s, id)),
           homebrew: ({ item }: { item: HomebrewItem }) =>
@@ -318,6 +400,7 @@ export const useStore = create<Store>()(
         patchError: null,
         editMode: false,
         hub: null,
+        map: null,
 
         setEditMode: (v) => set({ editMode: v }),
 
@@ -732,6 +815,111 @@ export const useStore = create<Store>()(
           }
           dropCreature(creatureId);
           return true;
+        },
+
+        uploadCreatureAvatar: async (folderId, creatureId, image) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const { creature } = await api.uploadCreatureAvatar(folderId, creatureId, image, master);
+            upsertCreature(creature);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não foi possível salvar a foto", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
+        removeCreatureAvatar: async (folderId, creatureId) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const { creature } = await api.removeCreatureAvatar(folderId, creatureId, master);
+            upsertCreature(creature);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não foi possível remover a foto", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
+        loadMap: async (folderId, characterId) => {
+          const current = get().map;
+          if (!current || current.folderId !== folderId) {
+            // Abre já com um estado vazio para a tela montar enquanto a resposta chega.
+            set({
+              map: {
+                folderId,
+                state: normalizeMapState(null),
+                figures: [],
+                characterId,
+                loadedAt: 0,
+              },
+            });
+          } else if (characterId && current.characterId !== characterId) {
+            set({ map: { ...current, characterId } });
+          }
+          try {
+            const payload = await api.getMap(folderId, mapCredential(folderId, characterId ?? current?.characterId));
+            applyMap(folderId, payload, characterId);
+            return true;
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 404) set({ map: null });
+            return false;
+          }
+        },
+
+        patchMap: async (op) => {
+          const current = get().map;
+          if (!current) return false;
+          const { folderId, characterId } = current;
+          // Mover um token responde na hora; o servidor confirma em seguida.
+          if (op.op === "token" && "token" in op) {
+            const before = current.state.tokens[op.id] ?? { x: 0, y: 0, rotation: 0 };
+            set((s) =>
+              s.map && s.map.folderId === folderId
+                ? { map: { ...s.map, state: { ...s.map.state, tokens: { ...s.map.state.tokens, [op.id]: { ...before, ...op.token } } } } }
+                : {},
+            );
+          }
+          try {
+            const payload = await api.patchMap(folderId, op, mapCredential(folderId, characterId));
+            applyMap(folderId, payload);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "O mapa não foi atualizado", description: errorMessage(e), tone: "danger" });
+            // Volta para o que o servidor tem.
+            void get().loadMap(folderId, characterId);
+            return false;
+          }
+        },
+
+        closeMap: () => set({ map: null }),
+
+        uploadMapBackground: async (folderId, image, size) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const payload = await api.uploadMapBackground(folderId, image, size, master);
+            applyMap(folderId, payload);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não foi possível enviar o mapa", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
+        removeMapBackground: async (folderId) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const payload = await api.removeMapBackground(folderId, master);
+            applyMap(folderId, payload);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não foi possível remover o fundo", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
         },
 
         pushToast: (toast) =>

@@ -1,4 +1,5 @@
 import type { Character, CharacterLogEntry, Creature, DiceRoll, Folder, HomebrewItem, HomebrewKind } from "./types";
+import type { MapFigure, MapGrid, MapShape, MapState, MapToken } from "./map";
 
 /** Erro de API com o código do servidor (`{"error": "bad_pin"}`) e mensagem em PT-BR. */
 export class ApiError extends Error {
@@ -32,6 +33,9 @@ const FRIENDLY: Record<string, string> = {
   master_only_spell_slots: "Só o Mestre muda os espaços de magia (você só marca os usados).",
   master_only_resources: "Só o Mestre cria recursos e concede Inspiração.",
   master_only_sheet: "Essa parte da ficha só o Mestre edita.",
+  master_only_map: "No mapa, você só move e gira o seu próprio personagem.",
+  bad_size: "Tamanho de criatura inválido.",
+  too_large: "Grande demais para o servidor.",
 };
 
 async function send<T>(url: string, init?: RequestInit): Promise<T> {
@@ -61,6 +65,19 @@ async function send<T>(url: string, init?: RequestInit): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+/** Mapa da pasta como o servidor devolve: estado + quem tem token nele. */
+export type MapPayload = { map: MapState; figures: MapFigure[] };
+
+/** Operações do mapa (o servidor valida quem pode cada uma). */
+export type MapOp =
+  | { op: "token"; id: string; token: Partial<MapToken> }
+  | { op: "token"; id: string; remove: true }
+  | { op: "mark"; tokens?: string[]; tiles?: string[]; elevation?: "acima" | "abaixo" | null; difficult?: boolean }
+  | { op: "grid"; grid: Partial<MapGrid> }
+  | { op: "shapes"; shapes: MapShape[] }
+  | { op: "tiles"; tiles: MapState["tiles"] }
+  | { op: "reset" };
 
 /** Papel de quem abriu a ficha, informado pelo servidor conforme o PIN usado. */
 export type AccessRole = "mestre" | "jogador";
@@ -194,7 +211,7 @@ export const api = {
       headers: pinHeader(masterPin),
     }),
 
-  createCreature: (folderId: string, data: { name: string; hpMax: number; ac: number }, masterPin: string) =>
+  createCreature: (folderId: string, data: { name: string; hpMax: number; ac: number; size?: string }, masterPin: string) =>
     send<{ creature: Creature }>(`/api/folders/${enc(folderId)}/creatures`, {
       method: "POST",
       headers: pinHeader(masterPin),
@@ -205,13 +222,48 @@ export const api = {
   updateCreature: (
     folderId: string,
     creatureId: string,
-    data: Partial<Pick<Creature, "name" | "hpCurrent" | "hpMax" | "ac" | "note">>,
+    data: Partial<Pick<Creature, "name" | "hpCurrent" | "hpMax" | "ac" | "note" | "size">>,
     masterPin: string,
   ) =>
     send<{ creature: Creature | null; removed: boolean }>(
       `/api/folders/${enc(folderId)}/creatures/${enc(creatureId)}`,
       { method: "PATCH", headers: pinHeader(masterPin), body: JSON.stringify(data) },
     ),
+
+  uploadCreatureAvatar: (folderId: string, creatureId: string, image: Blob, masterPin: string) =>
+    send<{ creature: Creature }>(`/api/folders/${enc(folderId)}/creatures/${enc(creatureId)}/avatar`, {
+      method: "PUT",
+      headers: { "Content-Type": image.type || "image/jpeg", ...pinHeader(masterPin) },
+      body: image,
+    }),
+
+  removeCreatureAvatar: (folderId: string, creatureId: string, masterPin: string) =>
+    send<{ creature: Creature }>(`/api/folders/${enc(folderId)}/creatures/${enc(creatureId)}/avatar`, {
+      method: "DELETE",
+      headers: pinHeader(masterPin),
+    }),
+
+  /** Mapa da pasta: senha dela, PIN de uma ficha dela ou chave mestra. O jogador não recebe monstros escondidos. */
+  getMap: (folderId: string, pin?: string) =>
+    send<MapPayload>(`/api/folders/${enc(folderId)}/map`, { cache: "no-store", headers: pinHeader(pin) }),
+
+  /** Uma operação no mapa (ver `MapOp`). Chave mestra faz tudo; o PIN da ficha só move o token dela. */
+  patchMap: (folderId: string, op: MapOp, pin?: string) =>
+    send<MapPayload>(`/api/folders/${enc(folderId)}/map`, {
+      method: "PATCH",
+      headers: pinHeader(pin),
+      body: JSON.stringify(op),
+    }),
+
+  uploadMapBackground: (folderId: string, image: Blob, size: { width: number; height: number }, masterPin: string) =>
+    send<MapPayload>(`/api/folders/${enc(folderId)}/map/background?width=${size.width}&height=${size.height}`, {
+      method: "PUT",
+      headers: { "Content-Type": image.type || "image/jpeg", ...pinHeader(masterPin) },
+      body: image,
+    }),
+
+  removeMapBackground: (folderId: string, masterPin: string) =>
+    send<MapPayload>(`/api/folders/${enc(folderId)}/map/background`, { method: "DELETE", headers: pinHeader(masterPin) }),
 
   deleteCreature: (folderId: string, creatureId: string, masterPin: string) =>
     send<{ ok: true }>(`/api/folders/${enc(folderId)}/creatures/${enc(creatureId)}`, {
