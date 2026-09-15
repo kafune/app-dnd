@@ -9,6 +9,7 @@ import {
   cellKey,
   cellRect,
   directionOf,
+  encaixarRotacao,
   figureAvatarUrl,
   isDirectional,
   layerOf,
@@ -376,14 +377,14 @@ export function MapCanvas({
         d.moved = true;
         const base = state.tokens[d.id];
         if (!base) return;
-        setDragging((s) => ({ ...s, tokens: { ...s.tokens, [d.id]: { ...base, rotation: rotationTowards(d.center, point) } } }));
+        setDragging((s) => ({ ...s, tokens: { ...s.tokens, [d.id]: { ...base, rotation: encaixarRotacao(rotationTowards(d.center, point)) } } }));
         return;
       }
       case "rotate-shape": {
         d.moved = true;
         const shape = d.local ? previewOf(d.id)?.shape : state.shapes.find((s) => s.id === d.id);
         if (!shape) return;
-        const turned = { ...shape, rotation: rotationTowards(d.center, point) };
+        const turned = { ...shape, rotation: encaixarRotacao(rotationTowards(d.center, point)) };
         if (d.local) onPreviewChange?.(turned);
         else setDragging((s) => ({ ...s, shapes: { ...s.shapes, [d.id]: turned } }));
         return;

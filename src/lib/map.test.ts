@@ -3,6 +3,7 @@ import {
   DEFAULT_GRID,
   cellAt,
   directionOf,
+  encaixarRotacao,
   metersToPx,
   normalizeMapState,
   rotationTowards,
@@ -51,6 +52,20 @@ describe("grade", () => {
 });
 
 describe("direção", () => {
+  test("encaixa dos dois lados de cada múltiplo de 45°, inclusive na volta de 360°", () => {
+    for (let alvo = 0; alvo <= 360; alvo += 45) {
+      for (const desvio of [-4, -2, 0, 2, 4]) {
+        expect(encaixarRotacao(alvo + desvio)).toBe(alvo % 360);
+      }
+    }
+  });
+
+  test("solta o encaixe fora da margem, preservando ângulos intermediários", () => {
+    for (const rotacao of [5, 22, 40, 50, 85, 95, 175, 185, 310, 320, 355]) {
+      expect(encaixarRotacao(rotacao)).toBe(rotacao);
+    }
+  });
+
   test("0° aponta para cima, 90° para a direita", () => {
     const up = directionOf(0);
     expect(up.dx).toBeCloseTo(0);

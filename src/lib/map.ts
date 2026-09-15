@@ -258,6 +258,13 @@ export function rotationTowards(center: { x: number; y: number }, point: { x: nu
   return ((Math.round(deg) % 360) + 360) % 360;
 }
 
+/** Encaixe leve em múltiplos de 45°: libera a rotação ao sair da margem de 4°. */
+export function encaixarRotacao(rotacao: number): number {
+  const normalizada = ((rotacao % 360) + 360) % 360;
+  const alvo = Math.round(normalizada / 45) * 45;
+  return Math.abs(normalizada - alvo) <= 4 ? alvo % 360 : normalizada;
+}
+
 // === Formas ===
 
 type Pt = { x: number; y: number };
