@@ -59,6 +59,51 @@ export async function compressAvatar(file: Blob, size = AVATAR_SIZE, quality = 0
   }
 }
 
+/** Lado máximo da imagem de fundo do mapa: acima disso reduz (e vira JPEG). */
+export const MAP_BACKGROUND_MAX = 2560;
+/** Até este tamanho a imagem sobe como está (PNG com grade continua nítido). */
+const MAP_BACKGROUND_RAW_LIMIT = 6 * 1024 * 1024;
+
+/**
+ * Imagem de fundo do mapa. Diferente da foto de perfil, aqui a nitidez importa
+ * (a grade da imagem, os detalhes do cenário): um arquivo pequeno sobe intacto;
+ * um grande é reduzido para 2560 px no lado maior.
+ */
+export async function prepareMapBackground(
+  file: Blob,
+): Promise<{ blob: Blob; width: number; height: number }> {
+  if (file.type && !file.type.startsWith("image/")) throw new Error("Escolha um arquivo de imagem.");
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(url);
+    const width = image.naturalWidth;
+    const height = image.naturalHeight;
+    if (!width || !height) throw new Error("Arquivo de imagem inválido.");
+    const longest = Math.max(width, height);
+    const supported = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+    if (longest <= MAP_BACKGROUND_MAX && supported && file.size <= MAP_BACKGROUND_RAW_LIMIT) {
+      return { blob: file, width, height };
+    }
+    const scale = Math.min(1, MAP_BACKGROUND_MAX / longest);
+    const outW = Math.round(width * scale);
+    const outH = Math.round(height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Seu navegador não conseguiu processar a imagem.");
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, outW, outH);
+    ctx.drawImage(image, 0, 0, outW, outH);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+    if (!blob) throw new Error("Não foi possível comprimir a imagem.");
+    return { blob, width: outW, height: outH };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /** Iniciais para o avatar sem foto ("Zorrilho Pabrantes" → "ZP"). */
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);

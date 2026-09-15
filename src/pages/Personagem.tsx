@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Trash2, Pencil, Check, BellRing, Dices, Swords, Users, History } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, Check, BellRing, Dices, Swords, Users, History, Map as MapIcon, ScrollText } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ALIGNMENTS, CREATURE_SIZES, type AbilityKey, type AsiDecision, type SpellClass } from "@/lib/types";
 import { sheetPermissions } from "@/lib/permissions";
@@ -27,6 +27,8 @@ import { ActionsPanel, TablePanel } from "@/components/sheet/TablePanel";
 import { SidePanels, type SidePanel } from "@/components/sheet/SidePanels";
 import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
 import { ProficienciesAndLanguages, Inventory, Personality } from "@/components/sheet/Misc";
+import { PlayerMap } from "@/components/map/PlayerMap";
+import { cn } from "@/lib/cn";
 import { PinLock } from "@/components/sheet/PinLock";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 import { DiceRoller } from "@/components/dice/DiceRoller";
@@ -92,6 +94,8 @@ export default function CharacterPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [clearScope, setClearScope] = useState<"mesa" | null>(null);
+  // Guias no topo, como as de um navegador: a ficha em si e o mapa da mesa.
+  const [tab, setTab] = useState<"ficha" | "mapa">("ficha");
   // As escolhas de nível ficam aqui em cima porque "Concluir edição" aplica todas
   // de uma vez: ninguém precisa lembrar de clicar num botão dentro do card.
   const [asiChoices, setAsiChoices] = useState<Record<string, PendingChoice>>({});
@@ -222,8 +226,46 @@ export default function CharacterPage() {
     { key: "log", label: "Log", icon: History, content: <ChangeLog id={id} /> },
   ];
 
+  const tabs: { key: typeof tab; label: string; icon: typeof MapIcon }[] = [
+    { key: "ficha", label: "Ficha", icon: ScrollText },
+    { key: "mapa", label: "Mapa", icon: MapIcon },
+  ];
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 pb-[calc(var(--dock-h)+1rem)] pt-6 lg:pb-6">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-[calc(var(--dock-h)+1rem)] pt-3 lg:pb-6">
+      <div role="tablist" aria-label="Ficha ou mapa" className="mb-4 flex items-end gap-1 border-b border-zinc-300 dark:border-zinc-700">
+        {tabs.map((entry) => (
+          <button
+            key={entry.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.key}
+            onClick={() => setTab(entry.key)}
+            className={cn(
+              "-mb-px inline-flex items-center gap-1.5 rounded-t-lg border px-4 py-2 text-sm font-medium transition",
+              tab === entry.key
+                ? "border-zinc-300 border-b-white bg-white text-zinc-900 dark:border-zinc-700 dark:border-b-zinc-900 dark:bg-zinc-900 dark:text-zinc-100"
+                : "border-transparent text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+            )}
+          >
+            <entry.icon className="h-3.5 w-3.5" /> {entry.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "mapa" && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
+          <Link to={folderHref}>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-3 w-3" /> <span className="max-w-[10rem] truncate">{folderLabel}</span>
+            </Button>
+          </Link>
+          <span className="font-mono text-sm font-semibold">{character.characterName}</span>
+        </div>
+      )}
+      {tab === "mapa" && <PlayerMap characterId={id} />}
+
+      <div className={tab === "mapa" ? "hidden" : undefined}>
       <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
         <Link to={folderHref}>
           <Button variant="ghost" size="sm">
@@ -478,6 +520,7 @@ export default function CharacterPage() {
         </div>
 
         <SidePanels panels={panels} />
+      </div>
       </div>
 
       <ConfirmDialog

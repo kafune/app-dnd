@@ -8,6 +8,7 @@ import { ALL_SKILL_NAMES } from "@/lib/skillChoice";
 import type { CharacterDraft } from "@/lib/createCharacter";
 import {
   ABILITY_ORDER,
+  CREATURE_SIZES,
   LANGUAGES,
   type AbilityKey,
   type AbilityScores,
@@ -181,15 +182,17 @@ export function RaceSection({ draft, upd, scores }: Props) {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Tamanho">
+            {/* A raça sugere o tamanho, mas o Mestre pode querer outro: é ele que diz
+                quantos quadrados o token ocupa no mapa. */}
             <select
               className={selectCls}
               value={draft.size}
               onChange={(event) => upd({ size: event.target.value })}
-              disabled={!resolved || resolved.sizeOptions.length <= 1}
             >
-              {(resolved?.sizeOptions ?? [draft.size]).map((size) => (
+              {CREATURE_SIZES.map((size) => (
                 <option key={size} value={size}>
                   {size}
+                  {resolved?.sizeOptions.includes(size as CreatureSize) ? " (da raça)" : ""}
                 </option>
               ))}
             </select>

@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { MasterKeyForm } from "@/components/MasterKeyForm";
 import { CharacterAvatar } from "@/components/CharacterAvatar";
+import { CreatureAvatar } from "@/components/map/CreatureAvatar";
+import { MasterMap } from "@/components/map/MasterMap";
 import { RealtimeBadge } from "@/components/RealtimeBadge";
 import { computeAc } from "@/lib/armor";
 import { applyLongRest, applyShortRest } from "@/lib/rest";
 import { orderedResources } from "@/components/sheet/Resources";
 import {
+  CREATURE_SIZES,
   abilityMod,
   formatMod,
   inspirationResource,
@@ -20,6 +23,9 @@ import {
   type Creature,
   type Resource,
 } from "@/lib/types";
+
+const selectCls =
+  "h-8 rounded-md border border-zinc-300 bg-white px-1 text-xs dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
 
 type Status = "loading" | "ready" | "locked" | "missing" | "error";
 
@@ -181,27 +187,34 @@ function HubView({ folderId, folderName }: { folderId: string; folderName: strin
   }, [characters]);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Link to={`/pasta/${folderId}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-3 w-3" /> <span className="max-w-[12rem] truncate">{folderName}</span>
+    <main className="w-full py-6">
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Link to={`/pasta/${folderId}`}>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-3 w-3" /> <span className="max-w-[12rem] truncate">{folderName}</span>
+            </Button>
+          </Link>
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => void loadHub(folderId)}>
+            <RefreshCw className="h-3 w-3" /> Atualizar
           </Button>
-        </Link>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => void loadHub(folderId)}>
-          <RefreshCw className="h-3 w-3" /> Atualizar
-        </Button>
+        </div>
+
+        <header className="mb-6">
+          <h1 className="font-mono text-2xl font-bold tracking-tight sm:text-3xl">Hub do Mestre</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            {folderName} · {characters.length === 1 ? "1 ficha" : `${characters.length} fichas`}
+          </p>
+          <RealtimeBadge className="mt-2" />
+        </header>
       </div>
 
-      <header className="mb-6">
-        <h1 className="font-mono text-2xl font-bold tracking-tight sm:text-3xl">Hub do Mestre</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {folderName} · {characters.length === 1 ? "1 ficha" : `${characters.length} fichas`}
-        </p>
-        <RealtimeBadge className="mt-2" />
-      </header>
+      {/* O mapa vem primeiro e pode ser puxado para ocupar mais da tela que o resto do hub. */}
+      <div className="mb-6">
+        <MasterMap folderId={folderId} />
+      </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           {characters.length === 0 && <p className="text-sm text-zinc-500">Nenhuma ficha nesta pasta ainda.</p>}
           {characters.map((character) => (
@@ -456,6 +469,7 @@ function Creatures({ folderId, creatures }: { folderId: string; creatures: Creat
   const [name, setName] = useState("");
   const [hp, setHp] = useState("");
   const [ac, setAc] = useState("");
+  const [size, setSize] = useState<string>("Médio");
   const [deltas, setDeltas] = useState<Record<string, string>>({});
 
   const add = async () => {
@@ -465,6 +479,7 @@ function Creatures({ folderId, creatures }: { folderId: string; creatures: Creat
       name: trimmed,
       hpMax: Math.max(1, Number(hp) || 1),
       ac: Math.max(0, Number(ac) || 10),
+      size,
     });
     if (ok) {
       setName("");
@@ -496,7 +511,7 @@ function Creatures({ folderId, creatures }: { folderId: string; creatures: Creat
       <CardBody className="space-y-3">
         {creatures.length === 0 && (
           <p className="text-xs text-zinc-500">
-            Nenhuma criatura na mesa. Anote nome, PV e CA para acompanhar a vida dos seus mobs — em 0 PV a criatura some sozinha.
+            Nenhuma criatura na mesa. Anote nome, PV, CA e tamanho para acompanhar a vida dos seus mobs — em 0 PV a criatura some sozinha. A foto vira o token dela no mapa.
           </p>
         )}
 
@@ -505,7 +520,21 @@ function Creatures({ folderId, creatures }: { folderId: string; creatures: Creat
           return (
             <div key={creature.id} className="space-y-1 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
               <div className="flex flex-wrap items-center gap-2">
+                <CreatureAvatar creature={creature} size={36} editable />
                 <strong className="min-w-0 flex-1 break-words text-sm">{creature.name}</strong>
+                <select
+                  className={selectCls}
+                  aria-label={`Tamanho de ${creature.name}`}
+                  title="Tamanho: quantos quadrados o token ocupa no mapa"
+                  value={creature.size ?? "Médio"}
+                  onChange={(event) => void patchCreature(folderId, creature.id, { size: event.target.value })}
+                >
+                  {CREATURE_SIZES.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
                 <span className="font-mono text-xs text-zinc-500">CA {creature.ac}</span>
                 <span className="font-mono text-sm">
                   <strong>{creature.hpCurrent}</strong>
@@ -572,6 +601,13 @@ function Creatures({ folderId, creatures }: { folderId: string; creatures: Creat
             placeholder="CA"
             className="h-8 w-16 text-xs"
           />
+          <select className={selectCls} aria-label="Tamanho da criatura" value={size} onChange={(event) => setSize(event.target.value)}>
+            {CREATURE_SIZES.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
           <Button type="submit" size="sm" disabled={!name.trim()}>
             <Plus className="h-3 w-3" /> Adicionar
           </Button>
