@@ -211,6 +211,31 @@ export function parseCellKey(key: string): { col: number; row: number } | null {
   return { col: Number(m[1]), row: Number(m[2]) };
 }
 
+/** Um indicador por área ligada pelos lados, no quadrado mais à direita da linha superior. */
+export function indicadoresDeAreas(marcacoes: Record<string, TileMark>): Record<Elevation | "dificil", Set<string>> {
+  const indicadores = { acima: new Set<string>(), abaixo: new Set<string>(), dificil: new Set<string>() };
+  for (const tipo of ["acima", "abaixo", "dificil"] as const) {
+    const restantes = new Set(Object.entries(marcacoes)
+      .filter(([chave, marca]) => parseCellKey(chave) && (tipo === "dificil" ? marca.difficult : marca.elevation === tipo))
+      .map(([chave]) => chave));
+    for (const inicio of restantes) {
+      restantes.delete(inicio);
+      const fila = [inicio];
+      let canto = parseCellKey(inicio)!;
+      for (let i = 0; i < fila.length; i++) {
+        const atual = parseCellKey(fila[i])!;
+        if (atual.row < canto.row || (atual.row === canto.row && atual.col > canto.col)) canto = atual;
+        for (const [dc, dl] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const vizinho = cellKey(atual.col + dc, atual.row + dl);
+          if (restantes.delete(vizinho)) fila.push(vizinho);
+        }
+      }
+      indicadores[tipo].add(cellKey(canto.col, canto.row));
+    }
+  }
+  return indicadores;
+}
+
 /** Quadrado da grade que contém o ponto. */
 export function cellAt(x: number, y: number, grid: MapGrid): { col: number; row: number } {
   return {
@@ -419,7 +444,7 @@ export function canvasSize(state: MapState): { width: number; height: number } {
   return { ...EMPTY_CANVAS };
 }
 
-/** Uma camada (nível da arena) que a tela pode mostrar ou esconder. */
+/** Uma camada (nível da arena) que a tela pode destacar ou atenuar. */
 export type Layer = "acima" | "normal" | "abaixo";
 
 export const LAYERS: { key: Layer; label: string }[] = [

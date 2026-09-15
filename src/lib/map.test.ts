@@ -4,6 +4,7 @@ import {
   cellAt,
   directionOf,
   encaixarRotacao,
+  indicadoresDeAreas,
   metersToPx,
   normalizeMapState,
   rotationTowards,
@@ -12,6 +13,7 @@ import {
   snapCenter,
   tokenCells,
   type MapGrid,
+  type TileMark,
 } from "./map";
 
 const grid: MapGrid = { ...DEFAULT_GRID, size: 50, offsetX: 10, offsetY: 20 };
@@ -48,6 +50,40 @@ describe("grade", () => {
 
   test("Miúdo é tratado como um quadrado para encaixar", () => {
     expect(snapCenter(133, 99, 0.5, grid)).toEqual({ x: 135, y: 95 });
+  });
+});
+
+describe("indicadores das áreas demarcadas", () => {
+  test("um indicador no canto superior direito de cada área, independente da ordem de pintura", () => {
+    const marcas: Record<string, TileMark> = {
+      "1,1": { elevation: "abaixo" }, "0,1": { elevation: "abaixo" },
+      "0,0": { elevation: "abaixo" }, "1,0": { elevation: "abaixo" },
+      "4,0": { elevation: "abaixo" },
+    };
+    expect([...indicadoresDeAreas(marcas).abaixo].sort()).toEqual(["1,0", "4,0"]);
+    expect([...indicadoresDeAreas(Object.fromEntries(Object.entries(marcas).reverse())).abaixo].sort()).toEqual(["1,0", "4,0"]);
+  });
+
+  test("áreas irregulares usam um quadrado existente; contato diagonal não une áreas", () => {
+    const resultado = indicadoresDeAreas({
+      "-1,-1": { elevation: "acima" }, "-1,0": { elevation: "acima" },
+      "0,0": { elevation: "acima" }, "1,1": { elevation: "acima" },
+    });
+    expect([...resultado.acima].sort()).toEqual(["-1,-1", "1,1"]);
+  });
+
+  test("terreno difícil e altura são agrupados independentemente nas marcações combinadas", () => {
+    const resultado = indicadoresDeAreas({
+      "0,0": { elevation: "abaixo", difficult: true },
+      "1,0": { elevation: "abaixo", difficult: true },
+      "2,0": { elevation: "acima", difficult: true },
+      "3,0": { elevation: "acima" },
+      invalida: { elevation: "acima", difficult: true },
+    });
+    expect([...resultado.abaixo]).toEqual(["1,0"]);
+    expect([...resultado.acima]).toEqual(["3,0"]);
+    expect([...resultado.dificil]).toEqual(["2,0"]);
+    expect([...indicadoresDeAreas({}).dificil]).toEqual([]);
   });
 });
 

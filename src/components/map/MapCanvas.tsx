@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Crosshair, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { initials } from "@/lib/avatar";
@@ -11,6 +11,7 @@ import {
   directionOf,
   encaixarRotacao,
   figureAvatarUrl,
+  indicadoresDeAreas,
   isDirectional,
   layerOf,
   mapBackgroundUrl,
@@ -122,6 +123,7 @@ export function MapCanvas({
   onShapeChange,
   className,
 }: Props) {
+  const idMapa = useId();
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -446,7 +448,8 @@ export function MapCanvas({
   // === Desenho ===
 
   const ui = 1 / view.scale; // 1 px de tela, em pixels da imagem
-  const visibleLayer = (elevation: MapToken["elevation"]) => layers[layerOf(elevation)];
+  const visibleLayer = (elevation: MapToken["elevation"]) => !gridOn || layers[layerOf(elevation)];
+  const indicadores = useMemo(() => indicadoresDeAreas(state.tiles), [state.tiles]);
 
   const tiles = useMemo(() => {
     if (!gridOn) return [];
@@ -465,7 +468,7 @@ export function MapCanvas({
 
   const renderToken = (figure: MapFigure) => {
     const token = tokenOf(figure.id)!;
-    if (!visibleLayer(token.elevation)) return null;
+    const atenuado = !visibleLayer(token.elevation);
     const diameter = tokenDiameter(figure.size, grid);
     const r = diameter / 2;
     const hidden = figure.kind === "creature" && !token.visible;
@@ -481,7 +484,7 @@ export function MapCanvas({
     const dir = directionOf(token.rotation);
     const handleDistance = r + 16 * ui;
     return (
-      <g key={figure.id} transform={`translate(${token.x},${token.y})`} opacity={hidden ? 0.45 : 1}>
+      <g key={figure.id} transform={`translate(${token.x},${token.y})`} opacity={(hidden ? 0.45 : 1) * (atenuado ? 0.4 : 1)} style={{ filter: atenuado ? "brightness(0.55)" : undefined }}>
         <g
           data-token={figure.id}
           style={{ cursor: mode.kind === "select" ? "pointer" : movable ? "grab" : "default" }}
@@ -660,6 +663,22 @@ export function MapCanvas({
         onPointerCancel={endDrag}
       >
         <defs>
+          {/* A máscara reduz a opacidade de toda a cena nesses quadrados, inclusive imagem e áreas. */}
+          <mask id={`${idMapa}-camadas`} maskUnits="userSpaceOnUse" x={0} y={0} width={canvas.width} height={canvas.height} style={{ maskType: "luminance" }}>
+            <rect width={canvas.width} height={canvas.height} fill={visibleLayer(null) ? "white" : "#666"} />
+            {tiles.map(({ key, mark, cell }) => {
+              const rect = cellRect(cell.col, cell.row, grid);
+              return <rect key={key} x={rect.x} y={rect.y} width={rect.size} height={rect.size} fill={visibleLayer(mark.elevation) ? "white" : "#666"} />;
+            })}
+          </mask>
+          {(["acima", "abaixo"] as const).map((nivel) => (
+            <linearGradient key={nivel} id={`${idMapa}-${nivel}-dificil`} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor={ELEVATION_COLOR[nivel]} />
+              <stop offset="40%" stopColor={ELEVATION_COLOR[nivel]} />
+              <stop offset="60%" stopColor={DIFFICULT_COLOR} />
+              <stop offset="100%" stopColor={DIFFICULT_COLOR} />
+            </linearGradient>
+          ))}
           <pattern
             id="map-grid"
             patternUnits="userSpaceOnUse"
@@ -672,6 +691,9 @@ export function MapCanvas({
           </pattern>
         </defs>
         <g transform={`translate(${view.tx},${view.ty}) scale(${view.scale})`}>
+          {/* O fundo preto escurece as partes cuja opacidade a máscara reduz. */}
+          <rect width={canvas.width} height={canvas.height} fill="#09090b" />
+          <g mask={`url(#${idMapa}-camadas)`}>
           {/* Plano de fundo */}
           {backgroundUrl ? (
             <image href={backgroundUrl} x={0} y={0} width={canvas.width} height={canvas.height} preserveAspectRatio="none" />
@@ -682,15 +704,18 @@ export function MapCanvas({
           {gridOn && <rect x={0} y={0} width={canvas.width} height={canvas.height} fill="url(#map-grid)" style={{ pointerEvents: "none" }} />}
           {/* Marcações dos quadrados: nível e terreno difícil */}
           {tiles.map(({ key, mark, cell }) => {
-            if (!visibleLayer(mark.elevation)) return null;
             const rect = cellRect(cell.col, cell.row, grid);
             const badge = Math.max(6 * ui, rect.size * 0.16);
-            const fill = mark.elevation ? ELEVATION_COLOR[mark.elevation] : DIFFICULT_COLOR;
+            const fill = mark.elevation && mark.difficult
+              ? `url(#${idMapa}-${mark.elevation}-dificil)`
+              : mark.elevation ? ELEVATION_COLOR[mark.elevation] : DIFFICULT_COLOR;
+            const indicadorAltura = mark.elevation && indicadores[mark.elevation].has(key);
+            const indicadorDificil = mark.difficult && indicadores.dificil.has(key);
             return (
               <g key={key} transform={`translate(${rect.x},${rect.y})`} style={{ pointerEvents: "none" }}>
                 <rect width={rect.size} height={rect.size} fill={fill} fillOpacity={mark.elevation ? 0.28 : 0.18} />
-                {mark.difficult && (
-                  <g transform={`translate(${badge * 1.2},${badge * 1.2})`}>
+                {indicadorDificil && (
+                  <g transform={`translate(${rect.size - badge * (indicadorAltura ? 3.5 : 1.2)},${badge * 1.2})`}>
                     <circle r={badge} fill={DIFFICULT_COLOR} stroke="#fff" strokeWidth={ui} />
                     <text
                       textAnchor="middle"
@@ -704,7 +729,7 @@ export function MapCanvas({
                     </text>
                   </g>
                 )}
-                {mark.elevation && (
+                {mark.elevation && indicadorAltura && (
                   <g transform={`translate(${rect.size - badge * 1.2},${badge * 1.2})`}>
                     <circle r={badge} fill={ELEVATION_COLOR[mark.elevation]} stroke="#fff" strokeWidth={ui} />
                     <path
@@ -752,6 +777,7 @@ export function MapCanvas({
           )}
           {/* Prévias locais (magias do jogador / do Mestre) */}
           {previews.map((p) => renderShape(p.shape, { local: true, movable: !!p.movable, rotatable: !!p.rotatable, dashed: p.dashed }))}
+          </g>
           {/* Tokens */}
           {placedFigures.map(renderToken)}
         </g>
@@ -762,7 +788,7 @@ export function MapCanvas({
       <div className="absolute right-2 top-2 flex flex-col gap-1 rounded-md border border-zinc-300 bg-white/90 p-1.5 text-[11px] shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/90">
         <div className="px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Camadas</div>
         {LAYERS.map((layer) => (
-          <label key={layer.key} className="flex cursor-pointer items-center gap-1.5 px-1">
+          <label key={layer.key} title="Desmarque para escurecer e reduzir a opacidade desta camada" className="flex cursor-pointer items-center gap-1.5 px-1">
             <input
               type="checkbox"
               className="h-3 w-3"
