@@ -28,6 +28,8 @@ export type SheetPermissions = {
   spells: boolean;
   /** Características e talentos (fora das decisões de progressão). */
   features: boolean;
+  /** Escolher opções de habilidades já concedidas; o servidor valida limites e pré-requisitos. */
+  escolhasHabilidades: boolean;
   /** PV máximo. */
   hpMax: boolean;
   /** Proficiências e idiomas. */
@@ -45,6 +47,7 @@ const MASTER_ONLY: SheetPermissions = {
   spellSlots: true,
   spells: true,
   features: true,
+  escolhasHabilidades: true,
   hpMax: true,
   proficiencies: true,
 };
@@ -76,6 +79,7 @@ export function sheetPermissions(isMaster: boolean, sheet: Sheet): SheetPermissi
     spellSlots: false,
     spells: canSwapSpells(sheet),
     features: false,
+    escolhasHabilidades: true,
     hpMax: false,
     proficiencies: false,
   };

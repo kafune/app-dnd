@@ -1,3 +1,6 @@
+import { EscolhasHabilidades } from "@/components/create/EscolhasHabilidades";
+import { escolhasHabilidadesPendentes } from "@/lib/progression";
+import { contextoEscolhasDoRascunho } from "@/lib/createCharacter";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { ChevronLeft } from "lucide-react";
@@ -273,6 +276,8 @@ export default function CriarFicha() {
   async function onSubmit() {
     setError(null);
     const budget = skillBudget(draft);
+    const pendentesHabilidades = escolhasHabilidadesPendentes(contextoEscolhasDoRascunho(draft));
+    if (pendentesHabilidades.length) return setError(`Complete as escolhas de ${pendentesHabilidades.map((e) => e.caracteristica).join(", ")}.`);
     const abilityChoices = raceAbilityChoiceCount(draft);
     const extraLanguageMax = extraLanguageCount(draft);
     const raceSkillMax = raceSkillChoiceCount(draft);
@@ -592,6 +597,8 @@ export default function CriarFicha() {
             onChange={(advancement) => upd({ advancement })}
           />
         )}
+
+        <EscolhasHabilidades ficha={contextoEscolhasDoRascunho(draft)} onChange={(escolhasHabilidades) => upd({ escolhasHabilidades })} />
 
         {/* Atributos */}
         <Card>

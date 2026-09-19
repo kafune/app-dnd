@@ -17,6 +17,8 @@ import {
   type SpellClass,
 } from "./types";
 import {
+  magiasComEscolhas,
+  normalizarEscolhasHabilidades,
   allFeatGrantedSpells,
   allSpellCaps,
   applyAbilityIncrease,
@@ -78,6 +80,7 @@ export type DraftClass = {
  * `buildCharacter` a partir dos catálogos.
  */
 export type CharacterDraft = {
+  escolhasHabilidades?: Sheet["escolhasHabilidades"];
   playerName: string;
   characterName: string;
   pin: string;
@@ -458,6 +461,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
       choices: draft.traitChoices,
       ...(raceNote ? { note: raceNote } : {}),
     },
+    escolhasHabilidades: draft.escolhasHabilidades ?? {},
     advancement: draft.advancement,
     ...(draft.multiclassFullSkills && classEntries.length > 1 ? { houseRules: { multiclassSkills: true } } : {}),
     classes: classEntries,
@@ -489,6 +493,8 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
     personality: { trait: "", ideal: "", flaw: "", why: "", backstory: draft.backstory?.trim() ?? "" },
   };
 
+  sheet.escolhasHabilidades = normalizarEscolhasHabilidades(sheet);
+  sheet.spells = magiasComEscolhas(sheet);
   sheet.ac = computeAc(sheet).total;
 
   // PIN com espaço sobrando travava o dono fora da própria ficha (o servidor compara aparado).
@@ -538,5 +544,31 @@ export function spellCapacity(
   return {
     cantrips: caps.reduce((total, cap) => total + cap.cantrips, 0),
     spells: caps.reduce((total, cap) => total + cap.spells, 0),
+  };
+}
+
+/** Contexto das escolhas na criação, incluindo talentos raciais e de progressão. */
+export function contextoEscolhasDoRascunho(draft: CharacterDraft) {
+  const features = [
+    ...classFeaturesFor(draft.classes, draft.optionalFeatures),
+    ...(draft.raceFeat ? [featFeature(draft.raceFeat, draft.raceName || "Raça", 1)] : []),
+    ...draft.advancement.filter((d) => d.kind === "feat" && d.feat).map((d) => featFeature(d.feat!, d.className, d.level)),
+  ];
+  const concedidas = [
+    ...raceGrantedSpells(resolvedRaceTraits(draft.raceTraits), draft.raceName),
+    ...allFeatGrantedSpells(features, [
+      ...draft.advancement,
+      ...(draft.raceFeat ? [{ className: draft.raceName || "Raça", level: 1, kind: "feat" as const, feat: draft.raceFeat, spells: draft.raceFeatSpells, spellList: draft.raceFeatSpellList }] : []),
+    ]),
+  ];
+  return {
+    classes: draft.classes,
+    features,
+    escolhasHabilidades: draft.escolhasHabilidades,
+    spells: {
+      castingAbility: "cha" as const, saveDC: 8, attackMod: 0,
+      cantrips: [...draft.cantrips, ...concedidas.filter((m) => m.level === 0)],
+      known: [...draft.knownSpells, ...concedidas.filter((m) => m.level > 0)],
+    },
   };
 }

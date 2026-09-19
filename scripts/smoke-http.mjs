@@ -72,6 +72,7 @@ try {
   await assertEventsApi();
   await assertMasterHub();
   await assertPlayerLimits();
+  await verificarEscolhasHabilidades();
   await assertLatency();
   console.log("Smoke HTTP passou: SPA, APIs, persistência SQLite e SSE estão respondendo.");
 } finally {
@@ -1025,4 +1026,45 @@ async function waitForExit() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Criação, ganho de vagas pelo Mestre, escolha pelo jogador e persistência real. */
+async function verificarEscolhasHabilidades() {
+  const personagem = {
+    folderId: LEGACY, playerName: "Smoke", characterName: "Escolhas de habilidades", pin: "4567",
+    sheet: { species: "Humano", classes: [{ name: "Feiticeiro", level: 3 }], abilityScores: { str: 10 }, features: [], escolhasHabilidades: {} },
+    hpCurrent: 10, hpMax: 10, hpTemp: 0, spellSlots: {}, resources: [],
+  };
+  const criar = (character) => fetch(`${baseUrl}/api/characters`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ character }),
+  });
+  const excesso = await criar({ ...personagem, sheet: { ...personagem.sheet, escolhasHabilidades: { metamagica: ["Magia Sutil", "Magia Acelerada", "Magia Duplicada"] } } });
+  assert.equal(excesso.status, 400, "criação rejeita mais opções que o nível concede");
+  const criado = await criar(personagem);
+  assert.equal(criado.status, 201);
+  let atual = (await criado.json()).character;
+  const url = `${baseUrl}/api/characters/${atual.id}`;
+  const alterar = (sheet, pin = "4567") => fetch(url, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, patch: { sheet } }),
+  });
+  try {
+    const selecao = { metamagica: ["Magia Sutil", "Magia Acelerada"] };
+    const salvo = await alterar({ ...atual.sheet, escolhasHabilidades: selecao });
+    assert.equal(salvo.status, 200, "jogador escolhe as opções concedidas");
+    atual = (await salvo.json()).character;
+    const recarregado = await fetch(url, { headers: { "x-character-pin": "4567" } }).then((r) => r.json());
+    assert.deepEqual(recarregado.character.sheet.escolhasHabilidades, selecao, "escolhas persistem ao recarregar");
+    const tres = { metamagica: [...selecao.metamagica, "Magia Duplicada"] };
+    assert.equal((await alterar({ ...atual.sheet, escolhasHabilidades: tres })).status, 403);
+    const subiu = await alterar({ ...atual.sheet, classes: [{ name: "Feiticeiro", level: 10 }] }, MASTER_PIN);
+    assert.equal(subiu.status, 200);
+    atual = (await subiu.json()).character;
+    assert.deepEqual(atual.sheet.escolhasHabilidades, selecao, "subir de nível preserva as opções anteriores");
+    const nova = await alterar({ ...atual.sheet, escolhasHabilidades: tres });
+    assert.equal(nova.status, 200, "nível 10 abre a terceira vaga");
+    atual = (await nova.json()).character;
+    assert.equal((await alterar({ ...atual.sheet, escolhasHabilidades: { metamagica: ["Magia Sutil"] }, abilityScores: { str: 30 } })).status, 403, "escolhas não liberam atributos");
+  } finally {
+    await fetch(url, { method: "DELETE", headers: { "x-character-pin": "4567" } });
+  }
 }

@@ -19,6 +19,7 @@ const FRIENDLY: Record<string, string> = {
   name_taken: "Já existe um item homebrew com esse nome.",
   bad_type: "Formato de imagem não suportado (use JPEG, PNG ou WebP).",
   bad_image: "O arquivo não parece ser uma imagem válida.",
+  invalid_feature_choices: "Escolhas de habilidades inválidas. Confira os limites e pré-requisitos.",
   bad_request: "Dados inválidos.",
   bad_kind: "Tipo de homebrew inválido.",
   bad_json: "Dados inválidos.",

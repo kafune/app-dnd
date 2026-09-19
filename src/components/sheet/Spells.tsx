@@ -8,7 +8,7 @@ import { EditableNumber } from "@/components/sheet/edit/EditControls";
 const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
-import { allSpellCaps, grantedSpellNumbers, spellCastingOf, spellcastingStats, spellRoom } from "@/lib/progression";
+import { magiasComEscolhas, allSpellCaps, grantedSpellNumbers, spellCastingOf, spellcastingStats, spellRoom } from "@/lib/progression";
 import { sheetPermissions } from "@/lib/permissions";
 
 const selectCls =
@@ -23,7 +23,7 @@ export function Spells({ id }: { id: string }) {
   // Conjurador de um terço (Trapaceiro Arcano, Cavaleiro Arcano) tem lista fechada:
   // quem troca as magias dele é o Mestre.
   const canSwap = sheetPermissions(isMaster, c.sheet).spells;
-  const { cantrips, known, saveDC, attackMod, castingAbility } = c.sheet.spells;
+  const { cantrips, known, saveDC, attackMod, castingAbility } = magiasComEscolhas(c.sheet);
   const all = [...cantrips, ...known];
   if (all.length === 0 && !editMode) return null;
 

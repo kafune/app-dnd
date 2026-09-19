@@ -344,7 +344,11 @@ export type HouseRules = {
   multiclassSkills?: boolean;
 };
 
+/** Opções aprendidas, por concessão do catálogo (classe, subclasse ou talento). */
+export type EscolhasHabilidades = Record<string, string[]>;
+
 export type Sheet = {
+  escolhasHabilidades?: EscolhasHabilidades;
   species: string;
   /** Raça/sub-raça estruturadas (fichas antigas só têm `species`). */
   raceInfo?: RaceInfo;

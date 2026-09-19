@@ -11,6 +11,7 @@
 //!   APP_DND_CHARACTER_PINS  "id:pin,id:pin" para as fichas fixas do seed
 
 mod db;
+mod escolhas;
 mod util;
 mod web;
 
@@ -327,6 +328,9 @@ async fn create_character(
     if !valid_payload(payload) {
         return error(StatusCode::BAD_REQUEST, "bad_request");
     }
+    if payload.get("sheet").and_then(Value::as_object).is_some_and(|f| !escolhas::validas(f)) {
+        return error(StatusCode::BAD_REQUEST, "invalid_feature_choices");
+    }
     let Some(folder_id) = payload
         .get("folderId")
         .and_then(Value::as_str)
@@ -571,6 +575,12 @@ fn player_patch_violation(current: &CharMap, patch: &CharMap) -> Option<&'static
         && !matches!(field(next_sheet, "acOverride"), None | Some(Value::Null))
     {
         return Some("master_only_sheet");
+    }
+
+    if !same(field(next_sheet, "escolhasHabilidades"), field(now_sheet, "escolhasHabilidades"))
+        && !escolhas::validas(next_sheet)
+    {
+        return Some("invalid_feature_choices");
     }
 
     // Progressão: só muda junto com uma nova decisão de ASI/talento ou ao adotar
@@ -2544,6 +2554,18 @@ mod tests {
         assert_eq!(creature_fields(&json!({ "size": "MÉDIO" })).size, Ok(Some("Médio".into())));
         assert_eq!(creature_fields(&json!({})).size, Ok(None));
         assert_eq!(creature_fields(&json!({ "size": "Colossal" })).size, Err(()));
+    }
+
+    #[test]
+    fn escolhas_de_habilidades_nao_desbloqueiam_atributos_nem_caracteristicas() {
+        let mut c = character();
+        c.get_mut("sheet").unwrap()["classes"] = json!([{ "name": "Feiticeiro", "level": 3 }]);
+        let mut patch = sheet_patch(&c, "escolhasHabilidades", json!({"metamagica": ["Magia Sutil", "Magia Acelerada"]}));
+        assert_eq!(player_patch_violation(&c, &patch), None);
+        patch.get_mut("sheet").unwrap()["abilityScores"]["str"] = json!(30);
+        assert_eq!(player_patch_violation(&c, &patch), Some("master_only_sheet"));
+        let invalido = sheet_patch(&c, "escolhasHabilidades", json!({"metamagica": ["Magia Sutil", "Magia Acelerada", "Magia Duplicada"]}));
+        assert_eq!(player_patch_violation(&c, &invalido), Some("invalid_feature_choices"));
     }
 
     #[test]

@@ -5,7 +5,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useIsMaster, useStore } from "@/lib/store";
 import { EditableText } from "@/components/sheet/edit/EditControls";
 import { groupFeatures } from "@/lib/features";
-import { featFeature } from "@/lib/progression";
+import { caracteristicasComEscolhas, featFeature } from "@/lib/progression";
 import { allFeats } from "@/data/featsCatalog";
 import { OFFICIAL_RACE_TRAITS } from "@/data/racesCatalog";
 import type { Feature } from "@/lib/types";
@@ -70,7 +70,7 @@ export function Features({ id }: { id: string }) {
     );
   }
 
-  const groups = groupFeatures(c.sheet);
+  const groups = groupFeatures({ ...c.sheet, features: caracteristicasComEscolhas(c.sheet) });
 
   return (
     <Card>

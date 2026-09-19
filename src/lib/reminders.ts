@@ -15,6 +15,7 @@
  * varredura das descrições, mas agora a varredura detecta quando a característica
  * precisa ser ligada e marca o lembrete como condicional em vez de permanente.
  */
+import { caracteristicasComEscolhas } from "./progression";
 import { acWarnings } from "./armor";
 import {
   DRACONIC_DAMAGE,
@@ -211,7 +212,7 @@ export function remindersFor(character: Character): Reminder[] {
   for (const warning of acWarnings(sheet)) push({ text: warning, tone: "bad", source: "Armadura", when: null });
 
   // --- características e traços
-  for (const feature of sheet.features) {
+  for (const feature of caracteristicasComEscolhas(sheet)) {
     const base = baseName(feature.name);
     // Ancestral Dracônico: a resistência depende do dragão que o jogador escolheu.
     if (base === "ancestral draconico") {

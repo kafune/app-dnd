@@ -1,3 +1,4 @@
+import { EscolhasHabilidadesFicha } from "@/components/sheet/EscolhasHabilidadesFicha";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check, BellRing, Dices, Swords, Users, History, Map as MapIcon, ScrollText } from "lucide-react";
@@ -501,6 +502,7 @@ export default function CharacterPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Ordem da ficha: estado atual → combate → o que sabe fazer → o que carrega → texto livre. */}
         <div className="space-y-4 lg:col-span-2">
+          <EscolhasHabilidadesFicha id={id} />
           <HpTracker id={id} />
           <Abilities id={id} />
           <div className="grid gap-4 sm:grid-cols-2">

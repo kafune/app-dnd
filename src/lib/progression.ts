@@ -1,3 +1,4 @@
+import { ESCOLHAS_HABILIDADES, type RegraEscolhaHabilidade, type OpcaoHabilidade } from "@/data/featureChoicesCatalog";
 /**
  * Motor de progressão de nível (D&D 5e).
  *
@@ -1256,6 +1257,8 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
       advancement,
     },
   };
+  next.sheet.escolhasHabilidades = normalizarEscolhasHabilidades(next.sheet);
+  next.sheet.spells = magiasComEscolhas(next.sheet);
   warnings.push(...spellViolations(nextClasses, scores, spellsBlock.cantrips, spellsBlock.known));
 
   return {
@@ -1306,7 +1309,7 @@ export function applyAsiDecision(character: Character, decision: AsiDecision): C
   advancement.push(decision);
   // O talento pode conceder magias (Tocado pelas Sombras, Iniciado em Magia…): elas
   // entram de graça na ficha, marcadas com a origem, sem contar no limite da classe.
-  const granted = grantedSpellsForSheet(sheet.classes, sheet.raceInfo, features, advancement);
+  const granted = [...grantedSpellsForSheet(sheet.classes, sheet.raceInfo, features, advancement), ...magiasDasEscolhas({ ...sheet, features })];
   const { cantrips, known } = mergeSpellLists(
     [...sheet.spells.cantrips, ...sheet.spells.known],
     granted,
@@ -1477,4 +1480,140 @@ export function grantedSpellNumbers(sheet: CastingSheet, spell: Spell): GrantedS
     attackMod: prof + mod,
     differs: !owner || owner.ability !== ability,
   };
+}
+
+// ============================================================================
+// Escolhas permanentes de habilidades (metamágicas, manobras, estilos etc.)
+// ============================================================================
+
+export type ContextoEscolhasHabilidades = Pick<Sheet, "classes" | "features"> &
+  Partial<Pick<Sheet, "escolhasHabilidades" | "spells">>;
+export type EscolhaHabilidade = RegraEscolhaHabilidade & { chave: string; quantidade: number; origem: string; nivel: number };
+
+/** Concessões alcançadas; fichas antigas sem escolhas ficam pendentes, nunca recebem todas as opções. */
+export function escolhasHabilidadesDisponiveis(ficha: ContextoEscolhasHabilidades): EscolhaHabilidade[] {
+  const resultado: EscolhaHabilidade[] = [];
+  for (const regra of ESCOLHAS_HABILIDADES) {
+    if (regra.exigeOpcao && !temOpcaoHabilidade(ficha, regra.exigeOpcao.grupo, regra.exigeOpcao.nome)) continue;
+    if (regra.talento) {
+      ficha.features.filter((f) => (f.origin?.kind === "feat" || /^talento/i.test(f.source)) && norm(f.name) === norm(regra.talento!))
+        .forEach((f, indice) => resultado.push({ ...regra, chave: `${regra.id}:${indice}`, quantidade: regra.niveis["1"], origem: f.source, nivel: 1 }));
+      continue;
+    }
+    const classe = ficha.classes.find((c) => norm(c.name) === norm(regra.classe ?? ""));
+    if (regra.classe && !classe) continue;
+    if (regra.subclasse && findSubclassDef(classe!.name, classe!.subclass)?.name !== regra.subclasse) continue;
+    const nivel = classe?.level ?? 1;
+    const quantidade = Object.entries(regra.niveis).filter(([n]) => Number(n) <= nivel).sort((a, b) => Number(b[0]) - Number(a[0]))[0]?.[1] ?? 0;
+    if (quantidade) resultado.push({ ...regra, chave: regra.id, quantidade, origem: regra.subclasse ?? regra.classe ?? regra.exigeOpcao?.nome ?? "Habilidade", nivel });
+  }
+  return resultado;
+}
+
+function temOpcaoHabilidade(ficha: ContextoEscolhasHabilidades, grupo: string, nome: string): boolean {
+  return ESCOLHAS_HABILIDADES.filter((r) => r.grupo === grupo).some((r) =>
+    Object.entries(ficha.escolhasHabilidades ?? {}).some(([chave, nomes]) =>
+      (chave === r.id || chave.startsWith(`${r.id}:`)) && nomes.includes(nome)));
+}
+
+/** Motivo concreto para desabilitar uma opção; nível de pré-requisito é sempre o da classe. */
+export function impedimentoOpcaoHabilidade(ficha: ContextoEscolhasHabilidades, escolha: EscolhaHabilidade, opcao: OpcaoHabilidade): string | null {
+  if (escolha.fixas?.includes(opcao.nome)) return "Já concedida automaticamente.";
+  const bruxo = ficha.classes.find((c) => norm(c.name) === "bruxo");
+  const nivel = escolha.grupo === "invocacoes" ? bruxo?.level ?? 0 : escolha.nivel;
+  if (opcao.nivel && nivel < opcao.nivel) return `Exige nível ${opcao.nivel} de ${escolha.grupo === "invocacoes" ? "Bruxo" : escolha.classe}.`;
+  if (escolha.talento && escolha.grupo === "invocacoes" && !bruxo && (opcao.nivel || opcao.pacto || opcao.magia || opcao.maldicao)) return "Exige ser Bruxo e cumprir o pré-requisito.";
+  if (opcao.pacto && !temOpcaoHabilidade(ficha, "pacto", opcao.pacto)) return `Exige ${opcao.pacto}.`;
+  const magias = [...(ficha.spells?.cantrips ?? []), ...(ficha.spells?.known ?? [])].filter((m) => !m.granted?.startsWith("Escolha: ")).concat(magiasDasEscolhas(ficha));
+  if (opcao.magia && !magias.some((m) => norm(m.name) === norm(opcao.magia!))) return `Exige ${opcao.magia}.`;
+  if (opcao.maldicao && !magias.some((m) => norm(m.name) === "bruxaria") && !ficha.features.some((f) => norm(f.name) === "maldicao da lamina maldita") && !temOpcaoHabilidade(ficha, "invocacoes", "Sinal de Mau Agouro")) return "Exige Bruxaria ou uma característica que amaldiçoe.";
+  for (const outra of escolhasHabilidadesDisponiveis(ficha)) {
+    if (outra.chave !== escolha.chave && outra.grupo === escolha.grupo && ficha.escolhasHabilidades?.[outra.chave]?.includes(opcao.nome)) return `Já escolhida em ${outra.caracteristica} (${outra.origem}).`;
+  }
+  return null;
+}
+
+/** Limpa escolhas que perderam a origem, o nível ou o pré-requisito, preservando a ordem de aquisição. */
+export function normalizarEscolhasHabilidades(ficha: ContextoEscolhasHabilidades): NonNullable<Sheet["escolhasHabilidades"]> {
+  let escolhas = ficha.escolhasHabilidades ?? {};
+  // Dependências podem desaparecer em cadeia (estilo → manobra; pacto → invocação).
+  for (let rodada = 0; rodada < 4; rodada++) {
+    const contexto = { ...ficha, escolhasHabilidades: escolhas };
+    const proximas: NonNullable<Sheet["escolhasHabilidades"]> = {};
+    for (const escolha of escolhasHabilidadesDisponiveis(contexto)) {
+      const nomes = [...new Set(escolhas[escolha.chave] ?? [])].filter((nome) => {
+        const opcao = escolha.opcoes.find((o) => o.nome === nome);
+        return opcao && !impedimentoOpcaoHabilidade(contexto, escolha, opcao);
+      }).slice(0, escolha.quantidade);
+      if (nomes.length) proximas[escolha.chave] = nomes;
+    }
+    if (JSON.stringify(proximas) === JSON.stringify(escolhas)) return proximas;
+    escolhas = proximas;
+  }
+  return escolhas;
+}
+
+export function escolhasHabilidadesPendentes(ficha: ContextoEscolhasHabilidades): EscolhaHabilidade[] {
+  const escolhas = normalizarEscolhasHabilidades(ficha);
+  return escolhasHabilidadesDisponiveis({ ...ficha, escolhasHabilidades: escolhas }).filter((e) => (escolhas[e.chave]?.length ?? 0) < e.quantidade);
+}
+
+/** Projeção para consulta: regras comuns + somente as opções realmente aprendidas. */
+export function caracteristicasComEscolhas(ficha: ContextoEscolhasHabilidades): Feature[] {
+  const escolhas = normalizarEscolhasHabilidades(ficha);
+  const disponiveis = escolhasHabilidadesDisponiveis({ ...ficha, escolhasHabilidades: escolhas });
+  const vistas = new Set<string>();
+  const resultado = ficha.features.map((f) => {
+    const origem = (r: EscolhaHabilidade) => r.talento
+      ? f.origin?.kind === "feat" || /^talento/i.test(f.source)
+      : f.origin?.name === (r.subclasse ?? r.classe) || f.source.startsWith(r.subclasse ?? r.classe ?? "\0");
+    const principal = disponiveis.find((r) => origem(r) && r.dependentes?.some((d) => d.caracteristica === f.name));
+    if (principal) {
+      const dependente = principal.dependentes!.find((d) => d.caracteristica === f.name)!;
+      const nomes = escolhas[principal.chave] ?? [];
+      return { ...f, description: [dependente.resumo, ...(nomes.length ? nomes.map((n) => dependente.opcoes.find((o) => o.nome === n)!.descricao) : [`Escolha pendente em ${principal.caracteristica}.`])].join("\n\n") };
+    }
+    const regra = disponiveis.find((r) => !vistas.has(r.chave) && norm(r.caracteristica) === norm(f.name) &&
+      (r.talento ? f.origin?.kind === "feat" || /^talento/i.test(f.source) : f.origin?.name === (r.subclasse ?? r.classe) || f.source.startsWith(r.subclasse ?? r.classe ?? "\0")));
+    if (!regra) return f;
+    vistas.add(regra.chave);
+    const nomes = [...(regra.fixas ?? []), ...(escolhas[regra.chave] ?? [])];
+    const faltam = regra.quantidade - (escolhas[regra.chave]?.length ?? 0);
+    return { ...f, description: [regra.resumo, nomes.length ? `Opções aprendidas: ${nomes.join(", ")}.` : "", faltam > 0 ? `Escolha pendente: ${faltam} opção(ões).` : "", ...nomes.map((nome) => regra.opcoes.find((o) => o.nome === nome)!.descricao)].filter(Boolean).join("\n\n") };
+  });
+  // Escolhas concedidas por outra opção (Técnica Superior) não têm uma característica própria na ficha.
+  for (const regra of disponiveis.filter((r) => r.exigeOpcao)) {
+    const nomes = escolhas[regra.chave] ?? [];
+    const concessao = disponiveis.find((r) => r.grupo === regra.exigeOpcao!.grupo && escolhas[r.chave]?.includes(regra.exigeOpcao!.nome));
+    const origin: Feature["origin"] = concessao?.talento
+      ? { kind: "feat", name: concessao.talento }
+      : { kind: concessao?.subclasse ? "subclass" : "class", name: concessao?.subclasse ?? concessao?.classe ?? regra.origem };
+    resultado.push({ name: regra.caracteristica, source: concessao?.origem ?? regra.origem, description: nomes.length ? nomes.map((n) => regra.opcoes.find((o) => o.nome === n)!.descricao).join("\n\n") : "Escolha pendente.", origin });
+  }
+  return resultado;
+}
+
+/** Magias aprendidas por uma opção; a seleção é validada antes da persistência. */
+function magiasDasEscolhas(ficha: ContextoEscolhasHabilidades): Spell[] {
+  return escolhasHabilidadesDisponiveis(ficha).flatMap((regra) => {
+    if (!regra.conjuracao) return [];
+    const conjuracao = regra.conjuracao;
+    return (ficha.escolhasHabilidades?.[regra.chave] ?? []).flatMap((nome) => {
+      const opcao = regra.opcoes.find((o) => o.nome === nome);
+      return opcao?.concedeMagia ? [toGrantedSpell(opcao.concedeMagia, `Escolha: ${regra.caracteristica}`, conjuracao.classe, {
+        ability: conjuracao.atributo,
+        ...(conjuracao.ritual ? { free: "Somente como ritual por esta característica" } : { slots: true }),
+      })] : [];
+    });
+  });
+}
+
+/** Atualiza apenas magias concedidas pelas escolhas, sem apagar as aprendidas de outras fontes. */
+export function magiasComEscolhas(ficha: Sheet): Sheet["spells"] {
+  const escolhasHabilidades = normalizarEscolhasHabilidades(ficha);
+  const atuais = [...ficha.spells.cantrips, ...ficha.spells.known].filter((m) => !m.granted?.startsWith("Escolha: ") && m.granted !== "Alma Favorecida");
+  const concedidas = magiasDasEscolhas({ ...ficha, escolhasHabilidades });
+  const nomes = new Set(atuais.map((m) => norm(m.name)));
+  const todas = [...atuais, ...concedidas.filter((m) => { const nome = norm(m.name); if (nomes.has(nome)) return false; nomes.add(nome); return true; })];
+  return { ...ficha.spells, cantrips: todas.filter((m) => m.level === 0), known: todas.filter((m) => m.level > 0) };
 }

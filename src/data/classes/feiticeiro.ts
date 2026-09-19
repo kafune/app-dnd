@@ -280,9 +280,7 @@ export const FEITICEIRO: ClassDef = {
       source: "XGtE",
       description:
         "A centelha da magia que o alimenta vem de uma fonte divina que brilha dentro da sua alma — um ancestral angelical ou uma profecia antiga. Você aprende magias de clérigo e é protegido pelos deuses.",
-      spells: {
-        "1": ["Curar Ferimentos", "Infligir Ferimentos", "Bênção", "Perdição", "Proteção Contra o Bem e Mal"],
-      },
+      // A magia de afinidade depende da escolha em featureChoicesCatalog; não concede as cinco.
       features: [
         {
           name: "Magia Divina",
