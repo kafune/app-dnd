@@ -3,6 +3,7 @@ import { SPELLS_CATALOG } from "@/data/spellsCatalog";
 import type { CatalogSpell, Spell } from "@/lib/types";
 import type { ClassSpellCaps } from "@/lib/progression";
 import { Input } from "@/components/ui/Input";
+import { ComponentesMagia } from "@/components/ComponentesMagia";
 
 /** Magia concedida automaticamente (subclasse, raça), com a origem para exibir. */
 export type GrantedSpell = {
@@ -388,6 +389,9 @@ function SpellChoice({
               {countsFor.startsWith("concedida") ? countsFor : `conta para ${countsFor}`}
             </span>
           ))}
+      </div>
+      <div className="ml-6 pb-1">
+        <ComponentesMagia magia={s} resumido={!open} />
       </div>
       {open && (
         <div className="mb-1 ml-6 mr-1 rounded border border-zinc-200 bg-white p-2 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900">

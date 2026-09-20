@@ -64,6 +64,7 @@ describe("catálogos de regras", () => {
       }
     }
     for (const spell of SPELLS_CATALOG) {
+      expect(spell.components, spell.name).toMatch(/^[VSM](?:[\s,]+[VSM])*\s*(?:\(|$)/);
       expect(spell.description.trim().length, spell.name).toBeGreaterThan(0);
       expect(spell.classes.length, spell.name).toBeGreaterThan(0);
       expect(spell.level).toBeGreaterThanOrEqual(0);

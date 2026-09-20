@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapPin, RotateCw, Sparkles, X } from "lucide-react";
+import { MapPin, RotateCw, Shapes, Sparkles, X } from "lucide-react";
 import { useIsMaster, useStore } from "@/lib/store";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -7,8 +7,10 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { AREA_CATEGORY_LABELS, areaCategory, featureAreasOf, parseRangeMeters, spellAreaOf, type SpellArea } from "@/data/spellAreas";
 import { findSpell } from "@/data/spellsCatalog";
+import { ComponentesMagia } from "@/components/ComponentesMagia";
 import {
   characterTokenId,
+  canvasSize,
   describeShape,
   sizeInCells,
   snapCenter,
@@ -17,7 +19,8 @@ import {
   type MapShape,
 } from "@/lib/map";
 import { MapCanvas, type CanvasMode } from "./MapCanvas";
-import { baseDims, buildPreview, defaultPoint, type AreaPick } from "./areaPreview";
+import { ShapeForm } from "./ShapeForm";
+import { baseDims, buildPreview, type AreaPick } from "./areaPreview";
 
 /** A aba "Mapa" da ficha: o tabuleiro + as magias e habilidades em área do personagem. */
 export function PlayerMap({ characterId }: { characterId: string }) {
@@ -30,8 +33,9 @@ export function PlayerMap({ characterId }: { characterId: string }) {
   const folderId = character?.folderId;
 
   const [layers, setLayers] = useState<Record<Layer, boolean>>({ acima: true, normal: true, abaixo: true });
-  const [pick, setPick] = useState<AreaPick | null>(null);
-  const [point, setPoint] = useState<{ x: number; y: number; rotation: number } | null>(null);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [shapeForm, setShapeForm] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [placing, setPlacing] = useState(false);
 
   useEffect(() => {
@@ -80,23 +84,30 @@ export function PlayerMap({ characterId }: { characterId: string }) {
   if (!character || !folderId) return null;
 
   const color = character.color ?? "#7c3aed";
-  const previews =
-    pick && state && myToken && gridOn
-      ? buildPreview(pick, myToken, tokenDiameter(myFigure?.size, state.grid) / 2, state.grid, color, point)
-      : [];
+  const ownShapes = state?.shapes.filter((shape) => shape.ownerId === characterId) ?? [];
+  const activeShape = ownShapes.find((shape) => shape.sourceKey === activeKey) ?? ownShapes.find((shape) => shape.sourceKey);
+  const entry = [...areas.fixa, ...areas.regulavel].find((entry) => entry.key === activeShape?.sourceKey);
+  const pick = entry && activeShape ? { ...entry, dims: baseDims(activeShape) } : null;
+  const previews = pick && state && myToken && gridOn
+    ? buildPreview(pick, myToken, tokenDiameter(myFigure?.size, state.grid) / 2, state.grid, color, activeShape!).filter((p) => p.dashed)
+    : [];
 
-  const choose = (entry: AreaPick) => {
-    if (pick?.key === entry.key) {
-      setPick(null);
-      return;
+  const saveShape = (shape: MapShape) => patchMap({ op: "shape", id: shape.id, characterId, shape });
+  const removeShape = (shape: MapShape) => patchMap({ op: "shape", id: shape.id, characterId, remove: true });
+  const choose = async (entry: AreaPick) => {
+    if (saving || !state) return;
+    setSaving(true);
+    try {
+      const existing = ownShapes.find((shape) => shape.sourceKey === entry.key);
+      if (existing) {
+        await removeShape(existing);
+      } else if (myToken) {
+        const preview = buildPreview(entry, myToken, tokenDiameter(myFigure?.size, state.grid) / 2, state.grid, color, null).find((p) => !p.dashed)!;
+        if (await saveShape({ ...preview.shape, id: `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, ownerId: characterId, sourceKey: entry.key })) setActiveKey(entry.key);
+      }
+    } finally {
+      setSaving(false);
     }
-    setPick({ ...entry, dims: baseDims(entry.area) });
-    if (state && myToken) setPoint(defaultPoint(myToken, tokenDiameter(myFigure?.size, state.grid) / 2, state.grid));
-  };
-
-  const onPreviewChange = (shape: MapShape) => {
-    if (shape.id !== "preview:area") return;
-    setPoint({ x: shape.x, y: shape.y, rotation: shape.rotation });
   };
 
   const placeMe = (x: number, y: number) => {
@@ -129,11 +140,8 @@ export function PlayerMap({ characterId }: { characterId: string }) {
               onLayersChange={setLayers}
               mode={mode}
               previews={previews}
-              onPreviewChange={onPreviewChange}
               onTokenChange={(id, patch) => void patchMap({ op: "token", id, token: patch })}
-              onShapeChange={
-                isMaster ? (shape) => void patchMap({ op: "shapes", shapes: state.shapes.map((s) => (s.id === shape.id ? shape : s)) }) : undefined
-              }
+              onShapeChange={(shape) => void saveShape(shape)}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-zinc-500">Carregando o mapa…</div>
@@ -158,6 +166,20 @@ export function PlayerMap({ characterId }: { characterId: string }) {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardBody className="space-y-2">
+          <p className="text-xs text-zinc-500">As áreas ficam visíveis para toda a mesa. Clique novamente na magia para removê-la. Você pode mover apenas suas próprias áreas.</p>
+          <Button size="sm" variant="outline" disabled={!state || !gridOn} onClick={() => setShapeForm((v) => !v)}><Shapes className="h-3 w-3" /> Inserir forma geométrica</Button>
+          {shapeForm && state && gridOn && <ShapeForm fixedColor={color} onClose={() => setShapeForm(false)} onInsert={(shape) => {
+            const center = canvasSize(state);
+            void saveShape({ ...shape, ownerId: characterId, x: center.width / 2, y: center.height / 2 });
+          }} />}
+          {ownShapes.map((shape) => <div key={shape.id} className="flex items-center gap-2 text-xs">
+            <button type="button" className="underline" onClick={() => setActiveKey(shape.sourceKey ?? null)}>{shape.label ?? describeShape(shape)}</button>
+            <Button size="sm" variant="ghost" onClick={() => void removeShape(shape)}><X className="h-3 w-3" /> Remover</Button>
+          </div>)}
+        </CardBody>
+      </Card>
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -185,19 +207,19 @@ export function PlayerMap({ characterId }: { characterId: string }) {
                         <button
                           key={entry.key}
                           type="button"
-                          disabled={!myToken}
+                          disabled={saving || (!myToken && !ownShapes.some((shape) => shape.sourceKey === entry.key))}
                           title={[describeShape({ kind: entry.area.kind, ...entry.dims }), entry.area.note].filter(Boolean).join(" · ")}
                           onClick={() => choose(entry)}
                           className={cn(
                             "rounded-full border px-2.5 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-50",
-                            pick?.key === entry.key
+                            ownShapes.some((shape) => shape.sourceKey === entry.key)
                               ? "border-transparent text-white"
                               : "border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800",
                           )}
-                          style={pick?.key === entry.key ? { backgroundColor: color } : undefined}
+                          style={ownShapes.some((shape) => shape.sourceKey === entry.key) ? { backgroundColor: color } : undefined}
                         >
                           {entry.label}
-                          <span className={cn("ml-1 text-[10px]", pick?.key === entry.key ? "text-white/80" : "text-zinc-500")}>
+                          <span className={cn("ml-1 text-[10px]", ownShapes.some((shape) => shape.sourceKey === entry.key) ? "text-white/80" : "text-zinc-500")}>
                             {entry.area.origin === "self" ? "de você" : "num ponto"}
                           </span>
                         </button>
@@ -220,7 +242,7 @@ export function PlayerMap({ characterId }: { characterId: string }) {
                         onChange={(event) => {
                           const n = Number(event.target.value.replace(",", "."));
                           if (!Number.isFinite(n)) return;
-                          setPick({ ...pick, dims: { ...pick.dims, [adjustable.dimension]: Math.min(adjustable.max, Math.max(0.5, n)) } });
+                          if (activeShape) void saveShape({ ...activeShape, [adjustable.dimension]: Math.min(adjustable.max, Math.max(0.5, n)) });
                         }}
                         className="h-7 w-20 text-xs"
                       />
@@ -230,13 +252,20 @@ export function PlayerMap({ characterId }: { characterId: string }) {
                     </label>
                   )}
                   {pick.area.note && <span className="basis-full text-zinc-500">{pick.area.note}</span>}
+                  {pick.key.startsWith("spell:") && (
+                    <div className="basis-full">
+                      <ComponentesMagia magia={
+                        [...character.sheet.spells.cantrips, ...character.sheet.spells.known].find((spell) => spell.name === pick.label)
+                        ?? { name: pick.label }
+                      } />
+                    </div>
+                  )}
                   <span className="basis-full text-zinc-500">
-                    {pick.area.origin === "self"
-                      ? "A área sai do seu personagem: gire o token para apontá-la."
-                      : `Arraste a área para onde quiser${pick.range ? ` (alcance de ${pick.range.toLocaleString("pt-BR")} m, o círculo tracejado)` : ""}; com ela selecionada, puxe o círculo branco para girar.`}
+                    Arraste a área para posicionar e puxe o círculo branco para girar. Ela permanece nesse local ao trocar de aba.
+                    {pick.range ? ` Alcance: ${pick.range.toLocaleString("pt-BR")} m (círculo tracejado).` : ""}
                   </span>
-                  <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setPick(null)}>
-                    <X className="h-3 w-3" /> Ocultar área
+                  <Button size="sm" variant="ghost" className="ml-auto" onClick={() => activeShape && void removeShape(activeShape)}>
+                    <X className="h-3 w-3" /> Remover área
                   </Button>
                 </div>
               )}

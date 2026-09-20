@@ -1290,6 +1290,42 @@ fn clean_token(raw: &Value, allow_master_fields: bool) -> Option<Map<String, Val
     Some(out)
 }
 
+/// Valida a geometria e preserva a origem da área compartilhada.
+fn clean_map_shape(shape: &Value) -> Result<Value, &'static str> {
+    let obj = shape.as_object().ok_or("bad_request")?;
+    let id = obj.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("bad_request")?;
+    if id.len() > 128 { return Err("bad_request"); }
+    let kind = obj.get("kind").and_then(Value::as_str).ok_or("bad_request")?;
+    if !SHAPE_KINDS.contains(&kind) {
+        return Err("bad_request");
+    }
+    let mut out = Map::new();
+    out.insert("id".into(), Value::String(id.to_string()));
+    out.insert("kind".into(), Value::String(kind.into()));
+    for key in ["x", "y", "rotation", "radius", "length", "width", "side"] {
+        if let Some(v) = obj.get(key) {
+            let n = finite(Some(v)).ok_or("bad_request")?;
+            out.insert(key.into(), number(n));
+        }
+    }
+    if let Some(v) = obj.get("centered") {
+        out.insert("centered".into(), Value::Bool(v.as_bool().ok_or("bad_request")?));
+    }
+    for key in ["color", "label"] {
+        if let Some(v) = obj.get(key) {
+            let text = v.as_str().ok_or("bad_request")?;
+            out.insert(key.into(), Value::String(text.chars().take(80).collect()));
+        }
+    }
+    for key in ["ownerId", "sourceKey"] {
+        if let Some(v) = obj.get(key) {
+            let text = v.as_str().filter(|s| !s.is_empty() && s.len() <= 512).ok_or("bad_request")?;
+            out.insert(key.into(), Value::String(text.into()));
+        }
+    }
+    Ok(Value::Object(out))
+}
+
 /// Aplica uma operação no estado. Devolve o código do erro se o ator não pode
 /// fazê-la ou o corpo é inválido.
 fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) -> Result<(), &'static str> {
@@ -1423,6 +1459,38 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
             }
             Ok(())
         }
+        "shape" => {
+            let id = op.get("id").and_then(Value::as_str).filter(|s| !s.is_empty() && s.len() <= 128).ok_or("bad_request")?;
+            let shapes = state.get_mut("shapes").and_then(Value::as_array_mut).ok_or("bad_request")?;
+            let index = shapes.iter().position(|s| s.get("id").and_then(Value::as_str) == Some(id));
+            if let MapActor::Player { character_id } = actor {
+                if let Some(index) = index {
+                    if shapes[index].get("ownerId").and_then(Value::as_str) != Some(character_id.as_str()) {
+                        return Err("master_only_map");
+                    }
+                }
+            }
+            if op.get("remove").and_then(Value::as_bool).unwrap_or(false) {
+                if let Some(index) = index { shapes.remove(index); }
+                return Ok(());
+            }
+            let clean = clean_map_shape(op.get("shape").ok_or("bad_request")?)?;
+            if clean.get("id").and_then(Value::as_str) != Some(id) { return Err("bad_request"); }
+            if let MapActor::Player { character_id } = actor {
+                if clean.get("ownerId").and_then(Value::as_str) != Some(character_id.as_str()) {
+                    return Err("master_only_map");
+                }
+            }
+            if let Some(index) = index {
+                // A autoria não muda ao mover ou girar uma área, nem pelo Mestre.
+                if clean.get("ownerId") != shapes[index].get("ownerId") { return Err("bad_request"); }
+                shapes[index] = clean;
+            } else {
+                if shapes.len() >= MAP_SHAPES_MAX { return Err("too_large"); }
+                shapes.push(clean);
+            }
+            Ok(())
+        }
         "shapes" => {
             if !master {
                 return Err("master_only_map");
@@ -1433,31 +1501,7 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
             }
             let mut clean = Vec::with_capacity(shapes.len());
             for shape in shapes {
-                let obj = shape.as_object().ok_or("bad_request")?;
-                let id = obj.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("bad_request")?;
-                let kind = obj.get("kind").and_then(Value::as_str).ok_or("bad_request")?;
-                if !SHAPE_KINDS.contains(&kind) {
-                    return Err("bad_request");
-                }
-                let mut out = Map::new();
-                out.insert("id".into(), Value::String(id.chars().take(64).collect()));
-                out.insert("kind".into(), Value::String(kind.into()));
-                for key in ["x", "y", "rotation", "radius", "length", "width", "side"] {
-                    if let Some(v) = obj.get(key) {
-                        let n = finite(Some(v)).ok_or("bad_request")?;
-                        out.insert(key.into(), number(n));
-                    }
-                }
-                if let Some(v) = obj.get("centered") {
-                    out.insert("centered".into(), Value::Bool(v.as_bool().ok_or("bad_request")?));
-                }
-                for key in ["color", "label"] {
-                    if let Some(v) = obj.get(key) {
-                        let text = v.as_str().ok_or("bad_request")?;
-                        out.insert(key.into(), Value::String(text.chars().take(80).collect()));
-                    }
-                }
-                clean.push(Value::Object(out));
+                clean.push(clean_map_shape(shape)?);
             }
             state.insert("shapes".into(), Value::Array(clean));
             Ok(())
@@ -1569,7 +1613,17 @@ fn map_figures(db: &Db, folder_id: &str, map: &Map<String, Value>, master: bool)
 
 fn map_response(db: &Db, folder_id: &str, map: Map<String, Value>, master: bool) -> Result<Value, Response> {
     let figures = map_figures(db, folder_id, &map, master).map_err(db_error)?;
-    let map = if master { map } else { map_for_player(map) };
+    let mut map = if master { map } else { map_for_player(map) };
+    // A cor acompanha a ficha mesmo quando o jogador troca sua cor depois de conjurar.
+    if let Some(shapes) = map.get_mut("shapes").and_then(Value::as_array_mut) {
+        for shape in shapes {
+            if let Some(owner) = shape.get("ownerId").and_then(Value::as_str) {
+                let color = figures.iter().find(|f| f.get("refId").and_then(Value::as_str) == Some(owner) && f["kind"] == "character")
+                    .and_then(|f| f.get("color")).and_then(Value::as_str).unwrap_or("#7c3aed").to_string();
+                shape["color"] = json!(color);
+            }
+        }
+    }
     Ok(json!({ "map": Value::Object(map), "figures": figures }))
 }
 
@@ -1600,8 +1654,8 @@ async fn get_map(State(st): State<Shared>, Path(id): Path<String>, headers: Head
     }
 }
 
-/// Uma operação no mapa (`{ op: "token" | "mark" | "grid" | "shapes" | "tiles" | "reset", … }`).
-/// Chave mestra faz tudo; o PIN de uma ficha só move o token dela.
+/// Uma operação no mapa (`{ op: "token" | "mark" | "grid" | "shape" | "shapes" | "tiles" | "reset", … }`).
+/// Chave mestra faz tudo; o PIN de uma ficha altera seu token e suas áreas.
 async fn patch_map(
     State(st): State<Shared>,
     Path(id): Path<String>,
@@ -1623,9 +1677,14 @@ async fn patch_map(
         let actor = if st.pins.is_master(pin.as_deref()) {
             MapActor::Master
         } else {
-            // Jogador: o PIN tem de ser o da ficha dona do token que ele quer mover.
+            // Jogador: o PIN deve corresponder à ficha na mesma pasta; a operação valida a autoria.
             let token_id = body.get("id").and_then(Value::as_str).unwrap_or("");
-            let Some(character_id) = token_id.strip_prefix("c:").filter(|c| !c.is_empty()) else {
+            let character_id = if body.get("op").and_then(Value::as_str) == Some("shape") {
+                body.get("characterId").and_then(Value::as_str)
+            } else {
+                token_id.strip_prefix("c:")
+            };
+            let Some(character_id) = character_id.filter(|c| !c.is_empty()) else {
                 return error(StatusCode::FORBIDDEN, "bad_pin");
             };
             let stored = match db.get_stored(character_id) {
@@ -2464,6 +2523,56 @@ mod tests {
         for op in ["mark", "grid", "shapes", "tiles", "reset"] {
             assert_eq!(apply_map_op(&mut state, &json!({ "op": op }), &me), Err("master_only_map"), "{op}");
         }
+    }
+
+    #[test]
+    fn jogadores_editam_apenas_suas_areas_compartilhadas() {
+        let mut state = map_state();
+        let dono = MapActor::Player { character_id: "zorrilho".into() };
+        let outro = MapActor::Player { character_id: "outro".into() };
+        let shape = json!({"id": "area-1", "kind": "cone", "ownerId": "zorrilho", "sourceKey": "spell:Mãos Flamejantes", "x": 10, "y": 20, "rotation": 90, "length": 4.5});
+        let criar = json!({"op": "shape", "id": "area-1", "shape": shape});
+        assert_eq!(apply_map_op(&mut state, &criar, &outro), Err("master_only_map"));
+        assert_eq!(apply_map_op(&mut state, &criar, &dono), Ok(()));
+        assert_eq!(map_for_player(state.clone())["shapes"][0], shape);
+        let mut mover = criar.clone();
+        mover["shape"]["x"] = json!(300);
+        mover["shape"]["rotation"] = json!(180);
+        assert_eq!(apply_map_op(&mut state, &mover, &dono), Ok(()));
+        let salvo = state.clone();
+        mover["shape"]["ownerId"] = json!("outro");
+        assert_eq!(apply_map_op(&mut state, &mover, &outro), Err("master_only_map"));
+        assert_eq!(apply_map_op(&mut state, &mover, &dono), Err("master_only_map"));
+        let remover = json!({"op": "shape", "id": "area-1", "remove": true});
+        assert_eq!(apply_map_op(&mut state, &remover, &outro), Err("master_only_map"));
+        assert_eq!(state, salvo, "tentativas negadas preservam a área");
+        // Uma operação individual preserva a área que outro participante acabou de criar.
+        assert_eq!(apply_map_op(&mut state, &json!({"op": "shape", "id": "area-2", "shape": {"id": "area-2", "kind": "esfera", "ownerId": "outro", "radius": 6}}), &outro), Ok(()));
+        mover["shape"]["ownerId"] = json!("zorrilho");
+        assert_eq!(apply_map_op(&mut state, &mover, &MapActor::Master), Ok(()));
+        assert_eq!(apply_map_op(&mut state, &remover, &dono), Ok(()));
+        assert_eq!(state["shapes"].as_array().unwrap().len(), 1);
+        assert_eq!(state["shapes"][0]["id"], "area-2");
+        assert_eq!(apply_map_op(&mut state, &json!({"op": "shape", "id": "livre", "shape": {"id": "livre", "kind": "quadrado", "side": 3}}), &MapActor::Master), Ok(()));
+        assert_eq!(apply_map_op(&mut state, &json!({"op": "shape", "id": "livre", "remove": true}), &dono), Err("master_only_map"));
+        assert_eq!(apply_map_op(&mut state, &json!({"op": "shape", "id": "area-2", "remove": true}), &MapActor::Master), Ok(()));
+    }
+
+    #[test]
+    fn areas_invalidas_nao_alteram_o_mapa() {
+        let mut state = map_state();
+        let original = state.clone();
+        for shape in [
+            json!({"id": "diferente", "kind": "cone"}),
+            json!({"id": "area", "kind": "triângulo"}),
+            json!({"id": "area", "kind": "cone", "length": "inválido"}),
+            json!({"id": "area", "kind": "cone", "ownerId": ""}),
+        ] {
+            assert_eq!(apply_map_op(&mut state, &json!({"op": "shape", "id": "area", "shape": shape}), &MapActor::Master), Err("bad_request"));
+        }
+        assert_eq!(state["shapes"], original["shapes"]);
+        state.insert("shapes".into(), json!(vec![json!({"id": "existente", "kind": "esfera"}); MAP_SHAPES_MAX]));
+        assert_eq!(apply_map_op(&mut state, &json!({"op": "shape", "id": "nova", "shape": {"id": "nova", "kind": "esfera"}}), &MapActor::Master), Err("too_large"));
     }
 
     #[test]

@@ -4,7 +4,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useIsMaster, useStore } from "@/lib/store";
 import { ABILITY_LABELS, ABILITY_ORDER, formatMod, type AbilityKey, type Sheet, type Spell } from "@/lib/types";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
-// Catálogo de magias (600 KB) só entra na rede quando o modo de edição abre.
+import { ComponentesMagia } from "@/components/ComponentesMagia";
+// O seletor de magias só é carregado quando o modo de edição abre.
 const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
 );
@@ -193,6 +194,9 @@ function SpellRow({ spell, sheet }: { spell: Spell; sheet: Sheet }) {
           )}
         </span>
       </button>
+      <div className="px-3 pb-2">
+        <ComponentesMagia magia={spell} resumido={!open} />
+      </div>
       {open && (
         <div className="space-y-1 border-t border-zinc-100 px-3 py-2 text-xs dark:border-zinc-800">
           {spell.granted && (
@@ -219,9 +223,6 @@ function SpellRow({ spell, sheet }: { spell: Spell; sheet: Sheet }) {
             </div>
             <div>
               <strong>Alcance:</strong> {spell.range}
-            </div>
-            <div>
-              <strong>Componentes:</strong> {spell.components}
             </div>
             <div>
               <strong>Duração:</strong> {spell.duration}

@@ -44,6 +44,16 @@ LABELS = ["Tempo de Conjura", "Alcance", "Componentes", "Duração"]
 INTRO = ("DESCRIÇÕES DAS MAGIAS","DESCRIÇÃO DAS MAGIAS","DESCRIÇÃO DE MAGIAS",
          "Descrições de Magia","DESCRIÇÕES DE MAGIAS","Descrições de Magias")
 
+# Cabeçalhos perdidos pelo OCR; revisão dos componentes das edições XGtE/TCoE.
+# Referências: https://dnd5e.wikidot.com/spell:summon-greater-demon
+# https://dnd5e.wikidot.com/spell:shadow-of-moil
+# https://dnd5e.wikidot.com/spell:booming-blade
+COMPONENTES_REVISADOS = {
+    "Invocar Demônio Maior": "V, S, M (um frasco de sangue de um humanoide morto nas últimas 24 horas)",
+    "Sombra de Transtorno": "V, S, M (um olho de morto-vivo envolto em uma gema de valor mínimo de 150 po)",
+    "Lâmina Estrondosa": "S, M (uma arma corpo a corpo com valor mínimo de 1 pp)",
+}
+
 def match_level(line):
     m=LVL_PHB.match(line)
     if m and m.group(2).lower() in ESCOLAS: return int(m.group(1)),m.group(2).lower(),bool(m.group(3)),'phb'
@@ -156,6 +166,8 @@ def parse(path, source, lo, hi):
         tempo=val("Tempo de Conjura","Alcance")
         alc=val("Alcance","Componentes")
         comp=val("Componentes","Duração")
+        if not re.match(r"^[VSM]\b", comp):
+            comp=COMPONENTES_REVISADOS.get(pt_title(r["name"]), comp)
         du=pos.get("Duração")
         dur=lines[du].split(':',1)[1].strip().rstrip('.') if du is not None else ""
         body=(du+1) if du is not None else cur

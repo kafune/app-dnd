@@ -22,7 +22,7 @@ export type AreaPick = {
 };
 
 /** Dimensões iniciais de uma área (as do livro). */
-export function baseDims(area: SpellArea): AreaDims {
+export function baseDims(area: AreaDims): AreaDims {
   return {
     ...(area.radius !== undefined ? { radius: area.radius } : {}),
     ...(area.length !== undefined ? { length: area.length } : {}),

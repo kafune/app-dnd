@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_GRID,
+  canEditShape,
   cellAt,
   directionOf,
   encaixarRotacao,
@@ -161,5 +162,19 @@ describe("normalizeMapState", () => {
     expect(state.shapes).toHaveLength(1);
     expect(state.shapes[0]).toMatchObject({ id: "s", kind: "cone", length: 9, rotation: 0 });
     expect(state.background).toEqual({ version: "v1", width: 10, height: 20 });
+  });
+});
+
+
+describe("áreas compartilhadas", () => {
+  test("preserva autoria, magia, posição e dimensões ao reabrir o mapa", () => {
+    const shape = { id: "area-1", ownerId: "jogador-1", sourceKey: "spell:Bola de Fogo", kind: "esfera" as const, x: 310, y: 220, rotation: 45, radius: 6, color: "#123456" };
+    const state = normalizeMapState(JSON.parse(JSON.stringify({ shapes: [shape] })));
+    expect(state.shapes).toEqual([shape]);
+    expect(canEditShape(state.shapes[0], false, "c:jogador-1")).toBe(true);
+    expect(canEditShape(state.shapes[0], false, "c:jogador-2")).toBe(false);
+    expect(canEditShape(state.shapes[0], false)).toBe(false);
+    expect(canEditShape(state.shapes[0], true)).toBe(true);
+    expect(canEditShape({ ...shape, ownerId: undefined }, false, "c:jogador-1")).toBe(false);
   });
 });

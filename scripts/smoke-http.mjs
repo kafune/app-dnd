@@ -71,6 +71,7 @@ try {
   await assertRollsApi();
   await assertEventsApi();
   await assertMasterHub();
+  await verificarAreasCompartilhadas();
   await assertPlayerLimits();
   await verificarEscolhasHabilidades();
   await assertLatency();
@@ -1066,5 +1067,66 @@ async function verificarEscolhasHabilidades() {
     assert.equal((await alterar({ ...atual.sheet, escolhasHabilidades: { metamagica: ["Magia Sutil"] }, abilityScores: { str: 30 } })).status, 403, "escolhas não liberam atributos");
   } finally {
     await fetch(url, { method: "DELETE", headers: { "x-character-pin": "4567" } });
+  }
+}
+
+
+/** Áreas persistentes, autoria e sincronização entre dois jogadores e o Mestre. */
+async function verificarAreasCompartilhadas() {
+  const url = `${baseUrl}/api/folders/${LEGACY}/map`;
+  const alterar = (op, pin = JOAO_PIN) => fetch(url, { method: "PATCH", headers: json(pin), body: JSON.stringify(op) });
+  const ler = async (pin) => {
+    const response = await fetch(url, { headers: json(pin) });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const area = { id: "magia-joao", ownerId: "joao-lindao", sourceKey: "spell:Bola de Fogo", kind: "esfera", radius: 6, x: 320, y: 240, rotation: 0, color: "#ffffff" };
+  const outra = { ...area, id: "magia-camargo", ownerId: "camargo-fofo" };
+  const controlador = new AbortController();
+  const limite = setTimeout(() => controlador.abort(), 5000);
+  try {
+    const eventos = await fetch(`${baseUrl}/api/events?folder=${LEGACY}`, { signal: controlador.signal });
+    const leitor = eventos.body.getReader();
+    await leitor.read();
+    const respostas = await Promise.all([
+      alterar({ op: "shape", id: area.id, characterId: area.ownerId, shape: area }),
+      alterar({ op: "shape", id: outra.id, characterId: outra.ownerId, shape: outra }, "3816"),
+      alterar({ op: "shape", id: "forma-mestre", shape: { id: "forma-mestre", kind: "quadrado", side: 3, x: 500, y: 500, rotation: 45 } }, MASTER_PIN),
+    ]);
+    for (const resposta of respostas) assert.equal(resposta.status, 200);
+    let texto = "";
+    const decoder = new TextDecoder();
+    while (!texto.includes("event: map")) {
+      const chunk = await leitor.read();
+      assert.equal(chunk.done, false);
+      texto += decoder.decode(chunk.value);
+    }
+    await leitor.cancel();
+    const mestre = await ler(MASTER_PIN);
+    for (const pin of [JOAO_PIN, "3816"]) {
+      const jogador = await ler(pin);
+      assert.deepEqual(jogador.map.shapes, mestre.map.shapes, "todos recebem as mesmas áreas");
+    }
+    assert.equal(mestre.map.shapes.length, 3, "criações simultâneas não apagam áreas alheias");
+    const cor = mestre.figures.find((f) => f.refId === area.ownerId).color ?? "#7c3aed";
+    assert.equal(mestre.map.shapes.find((s) => s.id === area.id).color, cor, "a cor da ficha prevalece");
+    const movida = { ...area, x: 700, y: 550, rotation: 90 };
+    assert.equal((await alterar({ op: "shape", id: area.id, characterId: area.ownerId, shape: movida })).status, 200);
+    const reaberto = await ler("3816");
+    assert.equal(reaberto.map.shapes.find((s) => s.id === area.id).x, 700, "nova leitura mantém o local salvo");
+    assert.equal(reaberto.map.shapes.find((s) => s.id === area.id).rotation, 90);
+    for (const ataque of [
+      { op: "shape", id: area.id, characterId: outra.ownerId, shape: { ...movida, ownerId: outra.ownerId } },
+      { op: "shape", id: area.id, characterId: outra.ownerId, remove: true },
+      { op: "shape", id: area.id, characterId: area.ownerId, shape: movida },
+      { op: "shape", id: "forma-mestre", characterId: outra.ownerId, remove: true },
+      { op: "shapes", shapes: [] },
+    ]) assert.equal((await alterar(ataque, "3816")).status, 403, "jogador não altera áreas alheias nem forja autoria");
+    assert.equal((await alterar({ op: "shape", id: area.id, characterId: area.ownerId, remove: true })).status, 200);
+    assert.deepEqual((await ler(MASTER_PIN)).map.shapes.map((s) => s.id).sort(), ["forma-mestre", outra.id].sort(), "desselecionar remove somente a magia do dono");
+    assert.equal((await alterar({ op: "shapes", shapes: [] }, MASTER_PIN)).status, 200);
+  } finally {
+    clearTimeout(limite);
+    controlador.abort();
   }
 }

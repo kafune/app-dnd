@@ -5,6 +5,7 @@ import { initials } from "@/lib/avatar";
 import {
   LAYERS,
   canvasSize,
+  canEditShape,
   cellAt,
   cellKey,
   cellRect,
@@ -200,6 +201,7 @@ export function MapCanvas({
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt]);
 
+  const canMoveShape = (shape: MapShape) => mode.kind === "normal" && canEditShape(shape, master, myTokenId);
   const canMoveToken = (id: string) => (master ? true : id === myTokenId);
 
   const tokenOf = (id: string): MapToken | undefined => dragging.tokens[id] ?? state.tokens[id];
@@ -249,7 +251,7 @@ export function MapCanvas({
       } else {
         const local = kind === "preview";
         const shape = local ? previewOf(id)?.shape : sharedShapeOf(id);
-        if (shape) drag.current = { type: "rotate-shape", pointerId: event.pointerId, id, local, center: { x: shape.x, y: shape.y }, moved: false };
+        if (shape && (local ? previewOf(id)?.rotatable : canMoveShape(shape))) drag.current = { type: "rotate-shape", pointerId: event.pointerId, id, local, center: { x: shape.x, y: shape.y }, moved: false };
       }
       return;
     }
@@ -286,7 +288,7 @@ export function MapCanvas({
 
     const shapeId = target.closest<SVGElement>("[data-shape]")?.dataset.shape;
     const previewId = target.closest<SVGElement>("[data-preview]")?.dataset.preview;
-    if ((shapeId && master && mode.kind === "normal") || (previewId && previewOf(previewId)?.movable)) {
+    if ((shapeId && state.shapes.some((s) => s.id === shapeId && canMoveShape(s))) || (previewId && previewOf(previewId)?.movable)) {
       const local = !!previewId;
       const id = (previewId ?? shapeId)!;
       const shape = local ? previewOf(id)?.shape : sharedShapeOf(id);
@@ -590,7 +592,7 @@ export function MapCanvas({
   };
 
   const renderShape = (shape: MapShape, opts: { local: boolean; movable: boolean; rotatable: boolean; dashed?: boolean }) => {
-    const color = shape.color ?? "#a855f7";
+    const color = shape.ownerId ? figureById.get(`c:${shape.ownerId}`)?.color ?? "#7c3aed" : shape.color ?? "#a855f7";
     const active = activeId === shape.id;
     const reach = shapeReach(shape, grid);
     const dir = directionOf(shape.rotation);
@@ -771,9 +773,9 @@ export function MapCanvas({
                 />
               );
             })}
-          {/* Formas do Mestre (compartilhadas) */}
+          {/* Áreas compartilhadas da mesa */}
           {state.shapes.map((shape) =>
-            renderShape(sharedShapeOf(shape.id) ?? shape, { local: false, movable: master && mode.kind === "normal", rotatable: master && mode.kind === "normal" }),
+            renderShape(sharedShapeOf(shape.id) ?? shape, { local: false, movable: canMoveShape(shape), rotatable: canMoveShape(shape) }),
           )}
           {/* Prévias locais (magias do jogador / do Mestre) */}
           {previews.map((p) => renderShape(p.shape, { local: true, movable: !!p.movable, rotatable: !!p.rotatable, dashed: p.dashed }))}

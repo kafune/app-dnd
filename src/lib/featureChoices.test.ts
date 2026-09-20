@@ -26,6 +26,19 @@ describe("escolhas de habilidades", () => {
     expect(ESCOLHAS_HABILIDADES.find((r) => r.id === "invocacoes")?.opcoes).toHaveLength(54);
   });
 
+  test("os quatro pactos podem ser escolhidos sem exigir a si mesmos", () => {
+    const bruxo = ficha([{ name: "Bruxo", level: 3 }]);
+    const escolha = escolhasHabilidadesDisponiveis(bruxo).find((e) => e.id === "pacto")!;
+    expect(escolha.opcoes).toHaveLength(4);
+    for (const opcao of escolha.opcoes) {
+      expect(opcao.pacto).toBeUndefined();
+      expect(impedimentoOpcaoHabilidade(bruxo, escolha, opcao)).toBeNull();
+      expect(normalizarEscolhasHabilidades({ ...bruxo, escolhasHabilidades: { pacto: [opcao.nome] } }).pacto).toEqual([opcao.nome]);
+    }
+    const invocacoes = escolhasHabilidadesDisponiveis(bruxo).find((e) => e.id === "invocacoes")!;
+    expect(impedimentoOpcaoHabilidade(bruxo, invocacoes, invocacoes.opcoes.find((o) => o.nome === "Livro de Segredos Antigos")!)).toBe("Exige Pacto do Tomo.");
+  });
+
   test("metamágica libera 2/3/4 opções nos níveis 3/10/17 da classe", () => {
     for (const [nivel, total] of [[1, 0], [2, 0], [3, 2], [9, 2], [10, 3], [16, 3], [17, 4], [20, 4]]) {
       expect(escolhasHabilidadesDisponiveis(feiticeiro(nivel)).find((e) => e.id === "metamagica")?.quantidade ?? 0).toBe(total);

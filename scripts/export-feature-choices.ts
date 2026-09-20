@@ -29,9 +29,11 @@ function separar(descricao: string, primeira: string): { resumo: string; opcoes:
     }
     const titulo = m[1];
     const nome = titulo.replace(/\s*\(.*$/u, "").trim();
-    const nivel = /(?:pré-requisito: |\()(\d+)[°º] nível/u.exec(titulo)?.[1];
-    const pacto = /Pacto (?:da|do) (?:Corrente|Lâmina|Tomo|Talismã)/u.exec(titulo)?.[0];
-    opcoes.push({ nome, descricao: `${titulo}. ${m[2]}`, ...(nivel ? { nivel: Number(nivel) } : {}), ...(pacto ? { pacto } : {}), ...(/truque rajada mística/u.test(titulo) ? { magia: "Rajada Mística" } : {}), ...(/magia bruxaria/u.test(titulo) ? { maldicao: true } : {}) });
+    // O nome da opção não é um pré-requisito (ex.: Pacto da Lâmina).
+    const requisitos = titulo.slice(nome.length);
+    const nivel = /(?:pré-requisito: |\()(\d+)[°º] nível/u.exec(requisitos)?.[1];
+    const pacto = /Pacto (?:da|do) (?:Corrente|Lâmina|Tomo|Talismã)/u.exec(requisitos)?.[0];
+    opcoes.push({ nome, descricao: `${titulo}. ${m[2]}`, ...(nivel ? { nivel: Number(nivel) } : {}), ...(pacto ? { pacto } : {}), ...(/truque rajada mística/u.test(requisitos) ? { magia: "Rajada Mística" } : {}), ...(/magia bruxaria/u.test(requisitos) ? { maldicao: true } : {}) });
   }
   return { resumo, opcoes };
 }

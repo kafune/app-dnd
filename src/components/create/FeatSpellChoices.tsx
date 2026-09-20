@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { featSpellOptions, grantedCastingLabel } from "@/lib/progression";
 import type { AbilityKey, FeatDef, FeatSpellChoice, SpellClass } from "@/lib/types";
 import { selectCls } from "./common";
+import { ComponentesMagia } from "@/components/ComponentesMagia";
 
 /** Uma vaga de magia aberta pelo talento (uma escolha de `count: 2` vira duas vagas). */
 function slotsOf(feat: FeatDef | undefined): FeatSpellChoice[] {
@@ -83,9 +84,14 @@ export function FeatSpellChoices({
     <div className="space-y-2 rounded-md border border-violet-300 bg-violet-50/60 p-2 text-xs dark:border-violet-900 dark:bg-violet-950/20">
       <div className="font-medium text-violet-900 dark:text-violet-200">Magias do talento</div>
       {feat.spells?.fixed?.length ? (
-        <p className="text-zinc-700 dark:text-zinc-300">
-          Já vêm com o talento: <strong>{feat.spells.fixed.join(", ")}</strong>.
-        </p>
+        <div className="text-zinc-700 dark:text-zinc-300">
+          <p>Já vêm com o talento:</p>
+          {feat.spells.fixed.map((name) => (
+            <div key={name} className="mt-1">
+              <strong>{name}</strong> — <ComponentesMagia magia={{ name }} />
+            </div>
+          ))}
+        </div>
       ) : null}
       {pickList && (
         <label className="block text-zinc-600 dark:text-zinc-300">
@@ -134,6 +140,7 @@ export function FeatSpellChoices({
                   </option>
                 ))}
             </select>
+            {chosen[index] && <span className="mt-1 block"><ComponentesMagia magia={{ name: chosen[index] }} /></span>}
           </label>
         );
       })}

@@ -77,6 +77,8 @@ export type MapOp =
   | { op: "mark"; tokens?: string[]; tiles?: string[]; elevation?: "acima" | "abaixo" | null; difficult?: boolean }
   | { op: "grid"; grid: Partial<MapGrid> }
   | { op: "shapes"; shapes: MapShape[] }
+  | { op: "shape"; id: string; characterId?: string; shape: MapShape }
+  | { op: "shape"; id: string; characterId?: string; remove: true }
   | { op: "tiles"; tiles: MapState["tiles"] }
   | { op: "reset" };
 
@@ -248,7 +250,7 @@ export const api = {
   getMap: (folderId: string, pin?: string) =>
     send<MapPayload>(`/api/folders/${enc(folderId)}/map`, { cache: "no-store", headers: pinHeader(pin) }),
 
-  /** Uma operação no mapa (ver `MapOp`). Chave mestra faz tudo; o PIN da ficha só move o token dela. */
+  /** Uma operação no mapa (ver `MapOp`). Chave mestra faz tudo; o PIN da ficha altera seu token e suas áreas. */
   patchMap: (folderId: string, op: MapOp, pin?: string) =>
     send<MapPayload>(`/api/folders/${enc(folderId)}/map`, {
       method: "PATCH",

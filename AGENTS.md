@@ -12,7 +12,7 @@ SQLite) e serve o próprio front embutido (`server/build.rs` embute o `dist/`).
 - Mapa da mesa (um por pasta): geometria e escala em `src/lib/map.ts` (1 quadrado =
   1,5 m), áreas das magias/habilidades em `src/data/spellAreas.ts`, tela em
   `src/components/map/`. No servidor, `apply_map_op` decide o que o jogador pode
-  (só mover e girar o próprio token) e `map_for_player` esconde os monstros que o
+  (mover e girar o próprio token e editar as próprias áreas) e `map_for_player` esconde os monstros que o
   Mestre ainda não liberou.
 - Antes de entregar: `bun run lint`, `bun run typecheck`, `bun test` e
   `cargo test --manifest-path server/Cargo.toml`.

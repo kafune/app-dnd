@@ -55,6 +55,10 @@ export const SHAPE_LABELS: Record<ShapeKind, string> = {
 export type MapShape = {
   id: string;
   kind: ShapeKind;
+  /** Ficha dona da área; ausente nas formas livres do Mestre. */
+  ownerId?: string;
+  /** Magia/habilidade selecionada que originou a área. */
+  sourceKey?: string;
   x: number;
   y: number;
   /** Direção (graus, horário, 0 = para cima) — vale para cone, linha e cubo. */
@@ -153,6 +157,8 @@ export function normalizeMapState(raw: unknown): MapState {
         .map((s) => ({
           id: s.id!,
           kind: s.kind as ShapeKind,
+          ...(typeof s.ownerId === "string" ? { ownerId: s.ownerId } : {}),
+          ...(typeof s.sourceKey === "string" ? { sourceKey: s.sourceKey } : {}),
           x: num(s.x, 0),
           y: num(s.y, 0),
           rotation: num(s.rotation, 0),
@@ -454,3 +460,8 @@ export const LAYERS: { key: Layer; label: string }[] = [
 ];
 
 export const layerOf = (elevation: Elevation | null | undefined): Layer => elevation ?? "normal";
+
+/** O Mestre altera qualquer área; jogadores, apenas as áreas da própria ficha. */
+export function canEditShape(shape: MapShape, master: boolean, myTokenId?: string | null): boolean {
+  return master || (!!shape.ownerId && characterTokenId(shape.ownerId) === myTokenId);
+}

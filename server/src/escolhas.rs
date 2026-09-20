@@ -349,6 +349,14 @@ mod testes {
     }
 
     #[test]
+    fn pactos_nao_exigem_a_si_mesmos() {
+        for nome in ["Pacto da Corrente", "Pacto da Lâmina", "Pacto do Tomo", "Pacto do Talismã"] {
+            assert!(aceita("Bruxo", 3, "", json!({"pacto": [nome]})));
+            assert!(!aceita("Bruxo", 2, "", json!({"pacto": [nome]})));
+        }
+    }
+
+    #[test]
     fn pactos_invocacoes_e_escolhas_encadeadas() {
         assert!(!aceita(
             "Bruxo",
