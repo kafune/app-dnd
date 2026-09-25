@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Camera } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { compressAvatar, initials } from "@/lib/avatar";
+import { initials } from "@/lib/avatar";
+import { ImageCropDialog } from "@/components/ui/ImageCropDialog";
 import { creatureAvatarUrl } from "@/lib/map";
 import { errorMessage } from "@/lib/api";
 import type { Creature } from "@/lib/types";
@@ -23,12 +24,18 @@ export function CreatureAvatar({ creature, size = 40, editable = false, classNam
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const src = creatureAvatarUrl(creature);
   const showImage = !!src && failedSrc !== src;
+  /** Arquivo escolhido, aguardando o ajuste (recorte/zoom) no diálogo. */
+  const [pending, setPending] = useState<File | null>(null);
 
-  const onPick = async (file: File | undefined) => {
-    if (!file) return;
+  const onError = (e: unknown) => {
+    setPending(null);
+    pushToast({ title: "Não foi possível usar essa imagem", description: errorMessage(e), tone: "danger" });
+  };
+
+  const onCropped = async (image: Blob) => {
+    setPending(null);
     setBusy(true);
     try {
-      const image = await compressAvatar(file);
       await uploadCreatureAvatar(creature.folderId, creature.id, image);
     } catch (e) {
       pushToast({ title: "Não foi possível usar essa imagem", description: errorMessage(e), tone: "danger" });
@@ -76,8 +83,9 @@ export function CreatureAvatar({ creature, size = 40, editable = false, classNam
         className="sr-only"
         disabled={busy}
         onChange={(event) => {
-          void onPick(event.target.files?.[0]);
-          event.target.value = "";
+          const file = event.target.files?.[0];
+          if (file) setPending(file);
+          event.target.value = ""; // permite escolher o mesmo arquivo de novo
         }}
       />
       {face}
@@ -93,6 +101,15 @@ export function CreatureAvatar({ creature, size = 40, editable = false, classNam
           <Camera className="h-4 w-4" />
         )}
       </span>
+      {pending && (
+        <ImageCropDialog
+          file={pending}
+          title="Ajustar foto da criatura"
+          onConfirm={(image) => void onCropped(image)}
+          onCancel={() => setPending(null)}
+          onError={onError}
+        />
+      )}
     </label>
   );
 }

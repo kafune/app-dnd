@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Camera, X } from "lucide-react";
-import { compressAvatar, initials } from "@/lib/avatar";
+import { initials } from "@/lib/avatar";
+import { ImageCropDialog } from "@/components/ui/ImageCropDialog";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
@@ -19,7 +20,7 @@ type Props = {
   square?: boolean;
 };
 
-/** Foto de perfil na criação: comprime no navegador e só envia depois que a ficha/pasta existe. */
+/** Foto de perfil na criação: ajusta o recorte, comprime no navegador e só envia depois que a ficha/pasta existe. */
 export function AvatarPicker({
   value,
   onChange,
@@ -32,7 +33,6 @@ export function AvatarPicker({
   square = false,
 }: Props) {
   const [blobPreview, setBlobPreview] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,18 +48,9 @@ export function AvatarPicker({
   const preview = blobPreview ?? currentUrl ?? null;
   const canRemove = !!value || (!!currentUrl && !!onRemoveCurrent);
 
-  const onPick = async (file: File | undefined) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      onChange(await compressAvatar(file));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  /** Arquivo escolhido, aguardando o ajuste (recorte/zoom) no diálogo. */
+  const [pending, setPending] = useState<File | null>(null);
+  const busy = !!pending;
 
   return (
     <div className="flex items-center gap-3">
@@ -77,8 +68,12 @@ export function AvatarPicker({
           className="sr-only"
           disabled={busy}
           onChange={(event) => {
-            void onPick(event.target.files?.[0]);
-            event.target.value = "";
+            const file = event.target.files?.[0];
+            if (file) {
+              setError(null);
+              setPending(file);
+            }
+            event.target.value = ""; // permite escolher o mesmo arquivo de novo
           }}
         />
         {preview ? (
@@ -108,6 +103,22 @@ export function AvatarPicker({
         )}
         {error && <p className="text-red-600">{error}</p>}
       </div>
+      {pending && (
+        <ImageCropDialog
+          file={pending}
+          shape={square ? "square" : "circle"}
+          title={square ? "Ajustar foto da pasta" : "Ajustar foto de perfil"}
+          onConfirm={(image) => {
+            setPending(null);
+            onChange(image);
+          }}
+          onCancel={() => setPending(null)}
+          onError={(e) => {
+            setPending(null);
+            setError(errorMessage(e));
+          }}
+        />
+      )}
     </div>
   );
 }

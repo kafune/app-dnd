@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Camera } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { avatarUrl, compressAvatar, initials } from "@/lib/avatar";
+import { avatarUrl, initials } from "@/lib/avatar";
+import { ImageCropDialog } from "@/components/ui/ImageCropDialog";
 import { errorMessage } from "@/lib/api";
 import type { Character } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -21,14 +22,20 @@ export function CharacterAvatar({ character, size = 48, editable = false, classN
   const pushToast = useStore((s) => s.pushToast);
   const [busy, setBusy] = useState(false);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  /** Arquivo escolhido, aguardando o ajuste (recorte/zoom) no diálogo. */
+  const [pending, setPending] = useState<File | null>(null);
   const src = avatarUrl(character);
   const showImage = !!src && failedSrc !== src;
 
-  const onPick = async (file: File | undefined) => {
-    if (!file) return;
+  const onError = (e: unknown) => {
+    setPending(null);
+    pushToast({ title: "Não foi possível usar essa imagem", description: errorMessage(e), tone: "danger" });
+  };
+
+  const onCropped = async (image: Blob) => {
+    setPending(null);
     setBusy(true);
     try {
-      const image = await compressAvatar(file);
       await uploadAvatar(character.id, image);
     } catch (e) {
       pushToast({ title: "Não foi possível usar essa imagem", description: errorMessage(e), tone: "danger" });
@@ -77,8 +84,9 @@ export function CharacterAvatar({ character, size = 48, editable = false, classN
           className="sr-only"
           disabled={busy}
           onChange={(event) => {
-            void onPick(event.target.files?.[0]);
-            event.target.value = "";
+            const file = event.target.files?.[0];
+            if (file) setPending(file);
+            event.target.value = ""; // permite escolher o mesmo arquivo de novo
           }}
         />
         {face}
@@ -99,6 +107,15 @@ export function CharacterAvatar({ character, size = 48, editable = false, classN
         <span className="pointer-events-none absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
           <Camera className="h-3.5 w-3.5" />
         </span>
+      )}
+      {pending && (
+        <ImageCropDialog
+          file={pending}
+          title="Ajustar foto de perfil"
+          onConfirm={(image) => void onCropped(image)}
+          onCancel={() => setPending(null)}
+          onError={onError}
+        />
       )}
     </span>
   );
