@@ -1957,7 +1957,7 @@
       },
       {
         "nome": "Controlar Chamas",
-        "descricao": "Você escolhe uma chama não mágica que você possa ver, dentro do alcance , e que ocupe até um cubo de 1,5 metros. Você afeta ela de uma das seguintes formas: • Você instantaneamente expande a chama em 1,5 metro em uma direçào, considerando que exista madeira ou outro combustível no local novo. • Você instantaneamente extingue as chamas dentro do cubo. • Você dobra ou reduz à metade a área de luz plena e de penumbra emitida pela chama, muda a cor dela, ou ambos. As mudanças duram por 1 hora. • Você faz com que formas simples - como um forma imprecisa de uma criatu:ra, objeto inanimado ou local - apareçam dentro das chamas e se animem como você quiser. As fonnas duram por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até três dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses\n\ncom uma ação.",
+        "descricao": "Você escolhe uma chama não mágica que você possa ver, dentro do alcance , e que ocupe até um cubo de 1,5 metros. Você afeta ela de uma das seguintes formas: • Você instantaneamente expande a chama em 1,5 metro em uma direçào, considerando que exista madeira ou outro combustível no local novo. • Você instantaneamente extingue as chamas dentro do cubo. • Você dobra ou reduz à metade a área de luz plena e de penumbra emitida pela chama, muda a cor dela, ou ambos. As mudanças duram por 1 hora. • Você faz com que formas simples - como um forma imprecisa de uma criatu:ra, objeto inanimado ou local - apareçam dentro das chamas e se animem como você quiser. As fonnas duram por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até três dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses com uma ação.",
         "concedeMagia": "Controlar Chamas"
       },
       {
@@ -2007,12 +2007,12 @@
       },
       {
         "nome": "Infestação",
-        "descricao": "Você provoca uma nuvem de ácaros, pulgas e outros parasitas a aparecer momentaneamente sobre uma criatura que você pode ver dentro alcance. O alvo deve ser bem-sucedido em teste de resistência de\n\nConstituição, ou sofre 1d6 de dano de veneno e se move 1,5 metros em uma direção aleatória, se ele pode se mover e sua velocidade é de pelo menos 1,5 metros. Role um d4 pela direção: 1, norte; 2 , sul; 3 , leste; ou 4 , oeste. Este movimento não provoca ataques de oportunidade, e se a direção rolada estiver bloqueada, o alvo não se move. O dano da magia aumenta em 1d6 quando você alcança 5 o nível (2d6) , ll o nível (3016) e 17o nível (4d6).",
+        "descricao": "Você provoca uma nuvem de ácaros, pulgas e outros parasitas a aparecer momentaneamente sobre uma criatura que você pode ver dentro alcance. O alvo deve ser bem-sucedido em teste de resistência de Constituição, ou sofre 1d6 de dano de veneno e se move 1,5 metros em uma direção aleatória, se ele pode se mover e sua velocidade é de pelo menos 1,5 metros. Role um d4 pela direção: 1, norte; 2 , sul; 3 , leste; ou 4 , oeste. Este movimento não provoca ataques de oportunidade, e se a direção rolada estiver bloqueada, o alvo não se move. O dano da magia aumenta em 1d6 quando você alcança 5 o nível (2d6) , ll o nível (3016) e 17o nível (4d6).",
         "concedeMagia": "Infestação"
       },
       {
         "nome": "Lufada",
-        "descricao": "persianas ou suas roupas balançarem com uma brisa.",
+        "descricao": "Você toma o controle do ar e cria um dos efeitos a seguir num ponto que você possa ver, dentro do alcance: • Uma criatura Média ou menor, à sua escolha, deve ser bem-sucedida num teste de resistência de Força ou será empurrada até 1,5 metro para longe de você. • Um pequeno sopro de ar move um objeto que não esteja sendo vestido nem carregado e que pese até 2,5 quilos: ele é empurrado até 3 metros para longe de você, sem força para causar dano. • Um efeito sensorial inofensivo com o ar, como fazer folhas farfalharem, portas e persianas ou suas roupas balançarem com uma brisa.",
         "concedeMagia": "Lufada"
       },
       {
@@ -2037,7 +2037,7 @@
       },
       {
         "nome": "Moldar Terra",
-        "descricao": "dano. • Você faz com que formas , cores ou ambos apareçam na terra ou pedra, escrevendo palavras, criando imagens ou moldando padrões. As mudanças duram por 1 hora. • Se a terra ou pedra que você afetou estiver no solo, você faz com que ele se tome terreno dificil. Altemativamente, você pode fazer com que solo se tome terreno normal, caso ele já seja terreno dificil. Essa mudança dura por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até dois dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses com uma ação.",
+        "descricao": "Você escolhe uma porção de terra ou pedra que você possa ver, dentro do alcance, e que caiba num cubo de 1,5 metro. Você a manipula de uma das seguintes formas: • Se escolher uma área de terra solta, você pode escavá-la instantaneamente, movê-la pelo chão e depositá-la a até 1,5 metro. Esse movimento não tem força suficiente para causar dano. • Você faz com que formas , cores ou ambos apareçam na terra ou pedra, escrevendo palavras, criando imagens ou moldando padrões. As mudanças duram por 1 hora. • Se a terra ou pedra que você afetou estiver no solo, você faz com que ele se tome terreno dificil. Altemativamente, você pode fazer com que solo se tome terreno normal, caso ele já seja terreno dificil. Essa mudança dura por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até dois dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses com uma ação.",
         "concedeMagia": "Moldar Terra"
       },
       {
@@ -2117,7 +2117,7 @@
       },
       {
         "nome": "Soar Os Mortos",
-        "descricao": "Você aponta para uma criatura que você pode ver dentro do alcance , e o som de um sino doloroso preenche o ar á volta dela por um momento. O alvo deve ter sucesso em um teste de resistência de Sabedoria ou sofrerá 1d8 de dano necrótico. Se o alvo tiver perdido qualquer de seus pontos de vida, ele sofre um dano necrótico de 1d12. O dano da magia aumenta em um dado quando atinge o 5o nível (2d8 ou 2d12), 11 o nível (3d8 ou ~~d12) e 17° nível (4d8 ou 4d12).",
+        "descricao": "Você aponta para uma criatura que você pode ver dentro do alcance , e o som de um sino doloroso preenche o ar á volta dela por um momento. O alvo deve ter sucesso em um teste de resistência de Sabedoria ou sofrerá 1d8 de dano necrótico. Se o alvo tiver perdido qualquer de seus pontos de vida, ele sofre um dano necrótico de 1d12. O dano da magia aumenta em um dado quando atinge o 5o nível (2d8 ou 2d12), 11 o nível (3d8 ou 3d12) e 17° nível (4d8 ou 4d12).",
         "concedeMagia": "Soar Os Mortos"
       },
       {
@@ -2196,7 +2196,7 @@
       },
       {
         "nome": "Soar Os Mortos",
-        "descricao": "Você aponta para uma criatura que você pode ver dentro do alcance , e o som de um sino doloroso preenche o ar á volta dela por um momento. O alvo deve ter sucesso em um teste de resistência de Sabedoria ou sofrerá 1d8 de dano necrótico. Se o alvo tiver perdido qualquer de seus pontos de vida, ele sofre um dano necrótico de 1d12. O dano da magia aumenta em um dado quando atinge o 5o nível (2d8 ou 2d12), 11 o nível (3d8 ou ~~d12) e 17° nível (4d8 ou 4d12).",
+        "descricao": "Você aponta para uma criatura que você pode ver dentro do alcance , e o som de um sino doloroso preenche o ar á volta dela por um momento. O alvo deve ter sucesso em um teste de resistência de Sabedoria ou sofrerá 1d8 de dano necrótico. Se o alvo tiver perdido qualquer de seus pontos de vida, ele sofre um dano necrótico de 1d12. O dano da magia aumenta em um dado quando atinge o 5o nível (2d8 ou 2d12), 11 o nível (3d8 ou 3d12) e 17° nível (4d8 ou 4d12).",
         "concedeMagia": "Soar Os Mortos"
       },
       {
@@ -2240,7 +2240,7 @@
       },
       {
         "nome": "Controlar Chamas",
-        "descricao": "Você escolhe uma chama não mágica que você possa ver, dentro do alcance , e que ocupe até um cubo de 1,5 metros. Você afeta ela de uma das seguintes formas: • Você instantaneamente expande a chama em 1,5 metro em uma direçào, considerando que exista madeira ou outro combustível no local novo. • Você instantaneamente extingue as chamas dentro do cubo. • Você dobra ou reduz à metade a área de luz plena e de penumbra emitida pela chama, muda a cor dela, ou ambos. As mudanças duram por 1 hora. • Você faz com que formas simples - como um forma imprecisa de uma criatu:ra, objeto inanimado ou local - apareçam dentro das chamas e se animem como você quiser. As fonnas duram por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até três dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses\n\ncom uma ação.",
+        "descricao": "Você escolhe uma chama não mágica que você possa ver, dentro do alcance , e que ocupe até um cubo de 1,5 metros. Você afeta ela de uma das seguintes formas: • Você instantaneamente expande a chama em 1,5 metro em uma direçào, considerando que exista madeira ou outro combustível no local novo. • Você instantaneamente extingue as chamas dentro do cubo. • Você dobra ou reduz à metade a área de luz plena e de penumbra emitida pela chama, muda a cor dela, ou ambos. As mudanças duram por 1 hora. • Você faz com que formas simples - como um forma imprecisa de uma criatu:ra, objeto inanimado ou local - apareçam dentro das chamas e se animem como você quiser. As fonnas duram por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até três dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses com uma ação.",
         "concedeMagia": "Controlar Chamas"
       },
       {
@@ -2265,17 +2265,17 @@
       },
       {
         "nome": "Infestação",
-        "descricao": "Você provoca uma nuvem de ácaros, pulgas e outros parasitas a aparecer momentaneamente sobre uma criatura que você pode ver dentro alcance. O alvo deve ser bem-sucedido em teste de resistência de\n\nConstituição, ou sofre 1d6 de dano de veneno e se move 1,5 metros em uma direção aleatória, se ele pode se mover e sua velocidade é de pelo menos 1,5 metros. Role um d4 pela direção: 1, norte; 2 , sul; 3 , leste; ou 4 , oeste. Este movimento não provoca ataques de oportunidade, e se a direção rolada estiver bloqueada, o alvo não se move. O dano da magia aumenta em 1d6 quando você alcança 5 o nível (2d6) , ll o nível (3016) e 17o nível (4d6).",
+        "descricao": "Você provoca uma nuvem de ácaros, pulgas e outros parasitas a aparecer momentaneamente sobre uma criatura que você pode ver dentro alcance. O alvo deve ser bem-sucedido em teste de resistência de Constituição, ou sofre 1d6 de dano de veneno e se move 1,5 metros em uma direção aleatória, se ele pode se mover e sua velocidade é de pelo menos 1,5 metros. Role um d4 pela direção: 1, norte; 2 , sul; 3 , leste; ou 4 , oeste. Este movimento não provoca ataques de oportunidade, e se a direção rolada estiver bloqueada, o alvo não se move. O dano da magia aumenta em 1d6 quando você alcança 5 o nível (2d6) , ll o nível (3016) e 17o nível (4d6).",
         "concedeMagia": "Infestação"
       },
       {
         "nome": "Lufada",
-        "descricao": "persianas ou suas roupas balançarem com uma brisa.",
+        "descricao": "Você toma o controle do ar e cria um dos efeitos a seguir num ponto que você possa ver, dentro do alcance: • Uma criatura Média ou menor, à sua escolha, deve ser bem-sucedida num teste de resistência de Força ou será empurrada até 1,5 metro para longe de você. • Um pequeno sopro de ar move um objeto que não esteja sendo vestido nem carregado e que pese até 2,5 quilos: ele é empurrado até 3 metros para longe de você, sem força para causar dano. • Um efeito sensorial inofensivo com o ar, como fazer folhas farfalharem, portas e persianas ou suas roupas balançarem com uma brisa.",
         "concedeMagia": "Lufada"
       },
       {
         "nome": "Moldar Terra",
-        "descricao": "dano. • Você faz com que formas , cores ou ambos apareçam na terra ou pedra, escrevendo palavras, criando imagens ou moldando padrões. As mudanças duram por 1 hora. • Se a terra ou pedra que você afetou estiver no solo, você faz com que ele se tome terreno dificil. Altemativamente, você pode fazer com que solo se tome terreno normal, caso ele já seja terreno dificil. Essa mudança dura por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até dois dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses com uma ação.",
+        "descricao": "Você escolhe uma porção de terra ou pedra que você possa ver, dentro do alcance, e que caiba num cubo de 1,5 metro. Você a manipula de uma das seguintes formas: • Se escolher uma área de terra solta, você pode escavá-la instantaneamente, movê-la pelo chão e depositá-la a até 1,5 metro. Esse movimento não tem força suficiente para causar dano. • Você faz com que formas , cores ou ambos apareçam na terra ou pedra, escrevendo palavras, criando imagens ou moldando padrões. As mudanças duram por 1 hora. • Se a terra ou pedra que você afetou estiver no solo, você faz com que ele se tome terreno dificil. Altemativamente, você pode fazer com que solo se tome terreno normal, caso ele já seja terreno dificil. Essa mudança dura por 1 hora. Se você conjurar essa magia diversas vezes , você pode ter até dois dos seus efeitos não instantâneos ativos ao mesmo tempo, e você pode dissipar um efeito desses com uma ação.",
         "concedeMagia": "Moldar Terra"
       },
       {

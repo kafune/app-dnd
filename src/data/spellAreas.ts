@@ -186,6 +186,7 @@ export const SPELL_AREAS: Record<string, SpellArea> = {
     note: "Cubo de 1,5 m a 30 m de lado.",
   },
   "Sombra de Transtorno": sphere(3, "self"),
+  "Esfera Tempestuosa": sphere(6, "point", "Terreno difícil; relâmpagos a até 18 m do centro."),
   "Tempestade de Gelo": cylinder(6, "Cilindro de 12 m de altura."),
   "Tentáculos Negros de Evard": square(6),
   "Terreno Alucinógeno": cube(45, "point"),
@@ -214,6 +215,7 @@ export const SPELL_AREAS: Record<string, SpellArea> = {
   "Parede de Luz": wall(18, 1.5, "Até 18 m de comprimento, 3 m de altura e 1,5 m de espessura."),
   "Praga de Insetos": sphere(6, "point"),
   "Redemoinho": sphere(9, "point"),
+  "Ira da Natureza": cube(18, "point"),
   "Transmutar Pedra": cube(12, "point"),
 
   // --- 6º círculo ---
@@ -256,6 +258,7 @@ export const SPELL_AREAS: Record<string, SpellArea> = {
 
   // --- 7º círculo ---
   "Bola de Fogo Controlável": sphere(6, "point"),
+  "Vendaval": cylinder(3, "Cilindro de 9 m de altura; move-se até 9 m com a sua ação."),
   "Inverter a Gravidade": cylinder(15, "Cilindro de 30 m de altura."),
   "Rajada Prismática": cone(18),
   "Símbolo": sphere(18, "point"),
@@ -266,6 +269,7 @@ export const SPELL_AREAS: Record<string, SpellArea> = {
   "Campo Antimagia": sphere(3, "self"),
   "Dragão Ilusório": cone(18, "point", "O sopro sai do espaço da ilusão."),
   "Escuridão Enlouquecedora": sphere(18, "point"),
+  "Evaporação de Abi-Dalzim": cube(9, "point"),
   "Explosão Solar": sphere(18, "point"),
   "Nuvem Incendiária": sphere(6, "point"),
   "Terremoto": sphere(30, "point"),
