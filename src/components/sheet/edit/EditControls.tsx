@@ -2,6 +2,22 @@ import { useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/cn";
 
+/**
+ * Rascunho local de um campo que salva ao sair do foco. Quando o valor de fora muda
+ * (outra linha foi apagada e a lista andou, ou outro aparelho salvou), o rascunho
+ * acompanha — senão o campo continuava mostrando o item antigo e a lista parecia
+ * ter apagado o de baixo.
+ */
+function useDraft<T>(value: T): [T, (v: T) => void] {
+  const [draft, setDraft] = useState(value);
+  const [synced, setSynced] = useState(value);
+  if (!Object.is(value, synced)) {
+    setSynced(value);
+    setDraft(value);
+  }
+  return [draft, setDraft];
+}
+
 /** Campo de texto editável que salva ao sair do foco (ou Enter). */
 export function EditableText({
   value,
@@ -16,7 +32,7 @@ export function EditableText({
   className?: string;
   multiline?: boolean;
 }) {
-  const [v, setV] = useState(value);
+  const [v, setV] = useDraft(value);
   const commit = () => {
     if (v !== value) onSave(v);
   };
@@ -62,7 +78,7 @@ export function EditableNumber({
   min?: number;
   max?: number;
 }) {
-  const [v, setV] = useState(String(value));
+  const [v, setV] = useDraft(String(value));
   const commit = () => {
     let n = Number(v);
     if (!Number.isFinite(n)) n = value;

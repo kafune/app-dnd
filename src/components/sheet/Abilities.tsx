@@ -1,5 +1,5 @@
 import { Card, CardBody } from "@/components/ui/Card";
-import { useIsMaster, useStore } from "@/lib/store";
+import { useIsMaster, useCharacterSheet, useStore } from "@/lib/store";
 import { sheetPermissions } from "@/lib/permissions";
 import {
   ABILITY_LABELS,
@@ -12,7 +12,7 @@ import { roll } from "@/lib/dice";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
 
 export function Abilities({ id }: { id: string }) {
-  const c = useStore((s) => s.characters[id]);
+  const c = useCharacterSheet(id);
   const addRoll = useStore((s) => s.addRoll);
   const editMode = useStore((s) => s.editMode);
   const isMaster = useIsMaster(id);

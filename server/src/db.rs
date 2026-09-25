@@ -166,6 +166,20 @@ CREATE TABLE IF NOT EXISTS maps (
   background_height INTEGER,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS map_presets (
+  id TEXT PRIMARY KEY,
+  folder_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  state TEXT NOT NULL,
+  background_mime TEXT,
+  background_data BLOB,
+  background_width INTEGER,
+  background_height INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS map_presets_folder_idx ON map_presets (folder_id, created_at);
 "#;
 
 impl Db {
@@ -530,6 +544,7 @@ impl Db {
         }
         self.conn.execute("DELETE FROM creatures WHERE folder_id = ?", [id])?;
         self.conn.execute("DELETE FROM maps WHERE folder_id = ?", [id])?;
+        self.conn.execute("DELETE FROM map_presets WHERE folder_id = ?", [id])?;
         self.conn.execute("DELETE FROM folders WHERE id = ?", [id])?;
         Ok(FolderDelete::Deleted)
     }
@@ -792,6 +807,112 @@ impl Db {
             .execute(params![now_iso(), folder_id])?
             > 0;
         Ok(self.get_map(folder_id)?.map(|m| (m, changed)))
+    }
+
+    // === Mapas prontos (presets) ===
+
+    /// Mapas que o Mestre montou antes da sessão, do mais antigo ao mais novo (sem a imagem).
+    pub fn list_map_presets(&self, folder_id: &str) -> rusqlite::Result<Vec<Value>> {
+        let mut st = self.conn.prepare_cached(
+            "SELECT id, name, state, background_data IS NOT NULL, background_width, background_height, created_at
+             FROM map_presets WHERE folder_id = ? ORDER BY created_at, rowid",
+        )?;
+        let rows = st.query_map([folder_id], |r| {
+            let state: String = r.get(2)?;
+            let state: Map<String, Value> = serde_json::from_str(&state).unwrap_or_default();
+            let count = |key: &str| match state.get(key) {
+                Some(Value::Object(o)) => o.len(),
+                Some(Value::Array(a)) => a.len(),
+                _ => 0,
+            };
+            let has_background: bool = r.get(3)?;
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "name": r.get::<_, String>(1)?,
+                "background": if has_background {
+                    json!({ "width": r.get::<_, Option<i64>>(4)?, "height": r.get::<_, Option<i64>>(5)? })
+                } else {
+                    Value::Null
+                },
+                "tokens": count("tokens"),
+                "shapes": count("shapes"),
+                "tiles": count("tiles"),
+                "createdAt": r.get::<_, String>(6)?,
+            }))
+        })?;
+        rows.collect()
+    }
+
+    pub fn count_map_presets(&self, folder_id: &str) -> rusqlite::Result<i64> {
+        self.conn
+            .prepare_cached("SELECT COUNT(*) FROM map_presets WHERE folder_id = ?")?
+            .query_row([folder_id], |r| r.get(0))
+    }
+
+    /// Guarda o mapa atual da pasta (estado + imagem de fundo) com um nome. Um preset
+    /// com o mesmo nome é substituído. `state` já vem limpo (sem as áreas dos jogadores).
+    pub fn save_map_preset(&self, folder_id: &str, name: &str, state: &Map<String, Value>) -> rusqlite::Result<()> {
+        let mut clean = state.clone();
+        clean.remove("background");
+        clean.remove("updatedAt");
+        let tx = self.conn.unchecked_transaction()?;
+        let existing: Option<String> = tx
+            .prepare_cached("SELECT id FROM map_presets WHERE folder_id = ? AND name = ? COLLATE NOCASE")?
+            .query_row(params![folder_id, name], |r| r.get(0))
+            .optional()?;
+        let id = existing.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        tx.execute("DELETE FROM map_presets WHERE id = ?", [&id])?;
+        tx.prepare_cached(
+            "INSERT INTO map_presets (id, folder_id, name, state, background_mime, background_data,
+               background_width, background_height, created_at)
+             SELECT ?1, ?2, ?3, ?4, m.background_mime, m.background_data, m.background_width, m.background_height, ?5
+             FROM (SELECT 1) LEFT JOIN maps m ON m.folder_id = ?2",
+        )?
+        .execute(params![id, folder_id, name, serde_json::to_string(&clean).unwrap(), now_iso()])?;
+        tx.commit()
+    }
+
+    /// Troca o mapa da pasta pelo preset (estado e imagem de fundo). `None` = preset não existe.
+    pub fn apply_map_preset(&self, folder_id: &str, preset_id: &str) -> rusqlite::Result<Option<Value>> {
+        let has_background: Option<bool> = self
+            .conn
+            .prepare_cached("SELECT background_data IS NOT NULL FROM map_presets WHERE folder_id = ? AND id = ?")?
+            .query_row(params![folder_id, preset_id], |r| r.get(0))
+            .optional()?;
+        let Some(has_background) = has_background else { return Ok(None) };
+        let version = has_background.then(new_version);
+        self.conn
+            .prepare_cached(
+                "INSERT INTO maps (folder_id, state, background_mime, background_data, background_version,
+                   background_width, background_height, updated_at)
+                 SELECT folder_id, state, background_mime, background_data, ?3, background_width, background_height, ?4
+                 FROM map_presets WHERE folder_id = ?1 AND id = ?2
+                 ON CONFLICT(folder_id) DO UPDATE SET state = excluded.state,
+                   background_mime = excluded.background_mime, background_data = excluded.background_data,
+                   background_version = excluded.background_version, background_width = excluded.background_width,
+                   background_height = excluded.background_height, updated_at = excluded.updated_at",
+            )?
+            .execute(params![folder_id, preset_id, version, now_iso()])?;
+        self.get_map(folder_id)
+    }
+
+    pub fn delete_map_preset(&self, folder_id: &str, preset_id: &str) -> rusqlite::Result<bool> {
+        Ok(self
+            .conn
+            .prepare_cached("DELETE FROM map_presets WHERE folder_id = ? AND id = ?")?
+            .execute(params![folder_id, preset_id])?
+            > 0)
+    }
+
+    /// Miniatura do preset: a imagem de fundo guardada com ele.
+    pub fn get_map_preset_background(&self, folder_id: &str, preset_id: &str) -> rusqlite::Result<Option<Avatar>> {
+        self.conn
+            .prepare_cached(
+                "SELECT background_mime, background_data, created_at FROM map_presets
+                 WHERE folder_id = ? AND id = ? AND background_data IS NOT NULL",
+            )?
+            .query_row(params![folder_id, preset_id], |r| Ok(Avatar { mime: r.get(0)?, data: r.get(1)?, version: r.get(2)? }))
+            .optional()
     }
 
     pub fn delete_creature(&self, folder_id: &str, id: &str) -> rusqlite::Result<bool> {
@@ -1214,6 +1335,107 @@ fn field_label(key: &str) -> &str {
     }
 }
 
+/// Nome legível de um campo dentro da ficha (ou de um item de lista).
+fn sheet_label(key: &str) -> &str {
+    match key {
+        "species" => "Espécie",
+        "raceInfo" => "Raça",
+        "race" => "raça",
+        "subrace" => "sub-raça",
+        "choices" => "escolhas",
+        "advancement" => "Progressão",
+        "houseRules" => "Regras da casa",
+        "classes" => "Classes",
+        "background" => "Antecedente",
+        "alignment" => "Tendência",
+        "abilityScores" => "Atributos",
+        "saves" => "Resistências",
+        "skills" => "Perícias",
+        "proficiencies" => "Proficiências",
+        "languages" => "Idiomas",
+        "ac" => "CA",
+        "acOverride" => "CA manual",
+        "acBonus" => "Bônus de CA",
+        "equippedArmor" => "Armadura equipada",
+        "equippedShield" => "Escudo equipado",
+        "optionalFeatures" => "Características opcionais",
+        "declinedFeatures" => "Características recusadas",
+        "expertTools" => "Especialização em ferramentas",
+        "speed" => "Deslocamento",
+        "initiativeBonus" => "Bônus de iniciativa",
+        "proficiencyBonus" => "Bônus de proficiência",
+        "weapons" => "Armas",
+        "features" => "Características",
+        "spells" => "Magias",
+        "cantrips" => "Truques",
+        "known" => "Magias",
+        "saveDC" => "CD de magia",
+        "attackMod" => "Ataque mágico",
+        "castingAbility" => "Atributo de conjuração",
+        "inventory" => "Inventário",
+        "coins" => "Moedas",
+        "items" => "Itens",
+        "gp" => "PO",
+        "sp" => "PP",
+        "cp" => "PC",
+        "appearance" => "Aparência",
+        "personality" => "Personalidade",
+        "trait" => "traço",
+        "ideal" => "ideal",
+        "flaw" => "defeito",
+        "why" => "motivação",
+        "backstory" => "história",
+        "size" => "tamanho",
+        "height" => "altura",
+        "description" => "descrição",
+        "imageUrl" => "imagem",
+        "escolhasHabilidades" => "Escolhas de habilidades",
+        "multiclassSkills" => "perícias de multiclasse",
+        "name" => "nome",
+        "source" => "origem",
+        "quantity" => "quantidade",
+        "weight" => "peso",
+        "category" => "categoria",
+        "prepared" => "preparada",
+        "level" => "nível",
+        "subclass" => "subclasse",
+        "subclassChoice" => "opção da subclasse",
+        "proficient" => "proficiente",
+        "expert" => "especialista",
+        "damage" => "dano",
+        "damageType" => "tipo de dano",
+        "attackBonus" => "bônus de ataque",
+        "properties" => "propriedades",
+        "current" => "atual",
+        "max" => "máximo",
+        "recharge" => "recarga",
+        "kind" => "tipo",
+        "masterOnly" => "só o Mestre concede",
+        "str" => "Força",
+        "dex" => "Destreza",
+        "con" => "Constituição",
+        "int" => "Inteligência",
+        "wis" => "Sabedoria",
+        "cha" => "Carisma",
+        other => other,
+    }
+}
+
+/// Singular de uma lista de itens com nome ("Magias" → "Magia").
+fn singular(label: &str) -> &str {
+    match label {
+        "Classes" => "Classe",
+        "Perícias" => "Perícia",
+        "Armas" => "Arma",
+        "Características" => "Característica",
+        "Truques" => "Truque",
+        "Magias" => "Magia",
+        "Itens" => "Item",
+        "Recursos" => "Recurso",
+        other => other,
+    }
+}
+
 /// Em JS, `typeof` de objeto, array e `null` é "object".
 fn is_object_like(v: Option<&Value>) -> bool {
     matches!(v, Some(Value::Object(_)) | Some(Value::Array(_)) | Some(Value::Null))
@@ -1230,7 +1452,214 @@ fn scalar_text(v: Option<&Value>) -> String {
     }
 }
 
-/// Compara o estado atual com o patch e descreve o que mudou (mesma regra do Node).
+/// Valor escalar para ler no log ("sim"/"não" em vez de true/false).
+fn readable(v: Option<&Value>) -> String {
+    match v {
+        Some(Value::Bool(true)) => "sim".into(),
+        Some(Value::Bool(false)) => "não".into(),
+        other => short(&scalar_text(other)),
+    }
+}
+
+fn scalar_change(field: String, before: Option<&Value>, after: Option<&Value>) -> Change {
+    Change { field, from: Some(readable(before)), to: Some(readable(after)), note: None }
+}
+
+fn note_of(field: String, note: String) -> Change {
+    Change { field, from: None, to: None, note: Some(note) }
+}
+
+fn is_scalar(v: Option<&Value>) -> bool {
+    matches!(v, None | Some(Value::Null) | Some(Value::Bool(_)) | Some(Value::Number(_)) | Some(Value::String(_)))
+}
+
+/// Lista de textos (idiomas, proficiências…), ou `None` se não for isso.
+fn string_list(v: Option<&Value>) -> Option<Vec<String>> {
+    match v {
+        None | Some(Value::Null) => Some(Vec::new()),
+        Some(Value::Array(a)) => a.iter().map(|x| x.as_str().map(str::to_string)).collect(),
+        _ => None,
+    }
+}
+
+/// Lista de objetos com `name` (magias, itens, armas…), ou `None` se não for isso.
+fn named_list(v: Option<&Value>) -> Option<Vec<(String, &Value)>> {
+    match v {
+        None | Some(Value::Null) => Some(Vec::new()),
+        Some(Value::Array(a)) if !a.is_empty() => a
+            .iter()
+            .map(|x| x.get("name").and_then(Value::as_str).map(|n| (n.to_string(), x)))
+            .collect(),
+        _ => None,
+    }
+}
+
+fn join_names(names: &[String]) -> String {
+    let mut text = names.join(", ");
+    if text.chars().count() > 120 {
+        text = text.chars().take(119).collect::<String>() + "…";
+    }
+    text
+}
+
+/// Tradução dos atributos quando a lista é de chaves ("dex" → "Destreza").
+fn list_item_text(label: &str, item: &str) -> String {
+    if label == "Resistências" {
+        sheet_label(item).to_string()
+    } else {
+        item.to_string()
+    }
+}
+
+fn diff_strings(label: &str, before: &[String], after: &[String], out: &mut Vec<Change>) {
+    let added: Vec<String> = after.iter().filter(|x| !before.contains(x)).map(|x| list_item_text(label, x)).collect();
+    let removed: Vec<String> = before.iter().filter(|x| !after.contains(x)).map(|x| list_item_text(label, x)).collect();
+    if !added.is_empty() {
+        out.push(note_of(label.to_string(), format!("adicionado: {}", join_names(&added))));
+    }
+    if !removed.is_empty() {
+        out.push(note_of(label.to_string(), format!("removido: {}", join_names(&removed))));
+    }
+    if added.is_empty() && removed.is_empty() && before != after {
+        out.push(note_of(label.to_string(), "reordenado".into()));
+    }
+}
+
+/// "2/3" de um contador com atual/máximo.
+fn counter(v: &Value) -> Option<String> {
+    let current = v.get("current")?.as_i64()?;
+    let max = v.get("max")?.as_i64()?;
+    Some(format!("{current}/{max}"))
+}
+
+/// Listas de itens com nome: o que entrou, o que saiu e o que mudou em cada um.
+fn diff_named(label: &str, before: &[(String, &Value)], after: &[(String, &Value)], out: &mut Vec<Change>) {
+    // Nomes repetidos (duas adagas) casam na ordem em que aparecem.
+    let key = |list: &[(String, &Value)], i: usize| {
+        let name = &list[i].0;
+        let nth = list[..i].iter().filter(|(n, _)| n == name).count();
+        (name.clone(), nth)
+    };
+    let before_keys: Vec<(String, usize)> = (0..before.len()).map(|i| key(before, i)).collect();
+    let after_keys: Vec<(String, usize)> = (0..after.len()).map(|i| key(after, i)).collect();
+    let one = singular(label);
+    let start = out.len();
+
+    let added: Vec<String> = after_keys.iter().filter(|k| !before_keys.contains(k)).map(|(n, _)| n.clone()).collect();
+    let removed: Vec<String> = before_keys.iter().filter(|k| !after_keys.contains(k)).map(|(n, _)| n.clone()).collect();
+    if !added.is_empty() {
+        out.push(note_of(label.to_string(), format!("adicionado: {}", join_names(&added))));
+    }
+    if !removed.is_empty() {
+        out.push(note_of(label.to_string(), format!("removido: {}", join_names(&removed))));
+    }
+    for (i, k) in after_keys.iter().enumerate() {
+        let Some(j) = before_keys.iter().position(|b| b == k) else { continue };
+        let (old, new) = (before[j].1, after[i].1);
+        if old == new {
+            continue;
+        }
+        let field = format!("{one} {}", k.0);
+        // Contadores (recursos) ficam "2/3 → 1/3" quando só o atual/máximo mudou.
+        if let (Some(a), Some(b), Some(oa), Some(ob)) = (counter(old), counter(new), old.as_object(), new.as_object()) {
+            let others_same = oa.iter().filter(|(k, _)| *k != "current" && *k != "max").all(|(k, v)| ob.get(k) == Some(v))
+                && ob.keys().filter(|k| *k != "current" && *k != "max").all(|k| oa.contains_key(k));
+            if others_same {
+                out.push(Change { field, from: Some(a), to: Some(b), note: None });
+                continue;
+            }
+        }
+        diff_value(&field, Some(old), Some(new), out);
+    }
+    if out.len() == start && before_keys != after_keys {
+        out.push(note_of(label.to_string(), "reordenado".into()));
+    }
+}
+
+/// Uma decisão de progressão em texto ("Ladino 4: talento Sortudo").
+fn describe_advancement(v: &Value) -> String {
+    let class = v.get("className").and_then(Value::as_str).unwrap_or("?");
+    let level = v.get("level").and_then(Value::as_i64).unwrap_or(0);
+    if let Some(feat) = v.get("feat").and_then(Value::as_str) {
+        return format!("{class} {level}: talento {feat}");
+    }
+    let abilities = v
+        .get("abilities")
+        .and_then(Value::as_object)
+        .map(|a| {
+            a.iter()
+                .map(|(k, n)| format!("+{} {}", n.as_i64().unwrap_or(0), sheet_label(k)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    format!("{class} {level}: {abilities}")
+}
+
+/// Descreve a diferença entre dois valores quaisquer da ficha, descendo nos objetos.
+fn diff_value(label: &str, before: Option<&Value>, after: Option<&Value>, out: &mut Vec<Change>) {
+    if before == after {
+        return;
+    }
+    if is_scalar(before) && is_scalar(after) {
+        out.push(scalar_change(label.to_string(), before, after));
+        return;
+    }
+    if label == "Progressão" {
+        let empty = Vec::new();
+        let old = before.and_then(Value::as_array).unwrap_or(&empty);
+        let new = after.and_then(Value::as_array).unwrap_or(&empty);
+        let added: Vec<String> = new.iter().filter(|x| !old.contains(x)).map(describe_advancement).collect();
+        let removed: Vec<String> = old.iter().filter(|x| !new.contains(x)).map(describe_advancement).collect();
+        if !added.is_empty() {
+            out.push(note_of(label.to_string(), format!("escolhido: {}", join_names(&added))));
+        }
+        if !removed.is_empty() {
+            out.push(note_of(label.to_string(), format!("desfeito: {}", join_names(&removed))));
+        }
+        return;
+    }
+    if let (Some(old), Some(new)) = (string_list(before), string_list(after)) {
+        diff_strings(label, &old, &new, out);
+        return;
+    }
+    if let (Some(old), Some(new)) = (named_list(before), named_list(after)) {
+        diff_named(label, &old, &new, out);
+        return;
+    }
+    let empty = Map::new();
+    match (before, after) {
+        (None | Some(Value::Null) | Some(Value::Object(_)), Some(Value::Object(_)) | None | Some(Value::Null)) => {
+            let old = before.and_then(Value::as_object).unwrap_or(&empty);
+            let new = after.and_then(Value::as_object).unwrap_or(&empty);
+            let mut keys: Vec<&String> = new.keys().collect();
+            keys.extend(old.keys().filter(|k| !new.contains_key(*k)));
+            for key in keys {
+                let (a, b) = (old.get(key), new.get(key));
+                if a == b {
+                    continue;
+                }
+                let child = sheet_label(key);
+                // Blocos da ficha viram o nome da seção; campos internos, "Seção · campo".
+                let field = if label.is_empty() {
+                    child.to_string()
+                } else if matches!(key.as_str(), "cantrips" | "known" | "items" | "coins") {
+                    child.to_string()
+                } else {
+                    format!("{label} · {child}")
+                };
+                diff_value(&field, a, b, out);
+            }
+        }
+        _ => out.push(note_of(label.to_string(), "atualizado".into())),
+    }
+}
+
+/// Máximo de linhas por entrada do log (uma ficha recriada inteira não vira um livro).
+const LOG_MAX_CHANGES: usize = 30;
+
+/// Compara o estado atual com o patch e descreve o que mudou, campo a campo: o
+/// atributo que subiu, a magia que entrou, o espaço de magia gasto, o item removido.
 pub fn diff_changes(current: &CharMap, patch: &CharMap) -> Vec<Change> {
     let mut out = Vec::new();
     for (key, after) in patch {
@@ -1249,9 +1678,42 @@ pub fn diff_changes(current: &CharMap, patch: &CharMap) -> Vec<Change> {
                 to: Some(short(&scalar_text(Some(after)))),
                 note: None,
             });
-        } else {
+            continue;
+        }
+        let start = out.len();
+        match key.as_str() {
+            "spellSlots" => {
+                let empty = Map::new();
+                let old = before.and_then(Value::as_object).unwrap_or(&empty);
+                let new = after.as_object().unwrap_or(&empty);
+                let mut levels: Vec<&String> = new.keys().chain(old.keys().filter(|k| !new.contains_key(*k))).collect();
+                levels.sort();
+                for level in levels {
+                    let (a, b) = (old.get(level), new.get(level));
+                    if a == b {
+                        continue;
+                    }
+                    let field = format!("Espaços de {level}º círculo");
+                    match (a.and_then(counter), b.and_then(counter)) {
+                        (Some(x), Some(y)) => out.push(Change { field, from: Some(x), to: Some(y), note: None }),
+                        (None, Some(y)) => out.push(note_of(field, format!("adicionado ({y})"))),
+                        (Some(_), None) => out.push(note_of(field, "removido".into())),
+                        (None, None) => out.push(note_of(field, "atualizado".into())),
+                    }
+                }
+            }
+            "resources" => diff_value("Recursos", before, Some(after), &mut out),
+            "sheet" => diff_value("", before, Some(after), &mut out),
+            _ => diff_value(&field, before, Some(after), &mut out),
+        }
+        if out.len() == start {
             out.push(Change { field, from: None, to: None, note: Some("atualizado".into()) });
         }
+    }
+    if out.len() > LOG_MAX_CHANGES {
+        let extra = out.len() - (LOG_MAX_CHANGES - 1);
+        out.truncate(LOG_MAX_CHANGES - 1);
+        out.push(note_of("…".into(), format!("e mais {extra} mudanças")));
     }
     out
 }
@@ -1322,10 +1784,69 @@ mod tests {
         assert_eq!(ch[0].field, "PV atual");
         assert_eq!(ch[0].from.as_deref(), Some("18"));
         assert_eq!(ch[0].to.as_deref(), Some("13"));
-        assert_eq!(ch[1].field, "Ficha");
-        assert_eq!(ch[1].note.as_deref(), Some("atualizado"));
+        assert_eq!(ch[1].field, "CA");
+        assert_eq!(ch[1].from.as_deref(), Some("1"));
+        assert_eq!(ch[1].to.as_deref(), Some("2"));
         assert_eq!(ch[2].field, "Cor");
         assert_eq!(ch[2].from.as_deref(), Some(""));
+    }
+
+    /// O log diz o que mudou, não só "a ficha foi atualizada".
+    #[test]
+    fn diff_describes_what_changed_inside_the_sheet() {
+        let cur = map(json!({
+            "spellSlots": { "1": { "current": 3, "max": 3 }, "2": { "current": 2, "max": 2 } },
+            "resources": [{ "name": "Fúria", "current": 3, "max": 3, "recharge": "long" }],
+            "sheet": {
+                "abilityScores": { "str": 14, "dex": 12 },
+                "languages": ["Comum"],
+                "saves": ["str"],
+                "spells": { "saveDC": 13, "cantrips": [], "known": [{ "name": "Escudo", "level": 1, "prepared": true }] },
+                "inventory": { "coins": { "gp": 10, "sp": 0, "cp": 0 }, "items": [{ "name": "Corda", "quantity": 1 }] },
+                "features": [{ "name": "Fúria", "source": "Bárbaro" }, { "name": "Defesa sem Armadura", "source": "Bárbaro" }],
+                "advancement": []
+            }
+        }));
+        let patch = map(json!({
+            "spellSlots": { "1": { "current": 2, "max": 3 }, "2": { "current": 2, "max": 2 } },
+            "resources": [{ "name": "Fúria", "current": 2, "max": 3, "recharge": "long" }],
+            "sheet": {
+                "abilityScores": { "str": 16, "dex": 12 },
+                "languages": ["Comum", "Élfico"],
+                "saves": ["str", "con"],
+                "spells": {
+                    "saveDC": 13,
+                    "cantrips": [],
+                    "known": [{ "name": "Escudo", "level": 1, "prepared": false }, { "name": "Bola de Fogo", "level": 3 }]
+                },
+                "inventory": { "coins": { "gp": 4, "sp": 0, "cp": 0 }, "items": [{ "name": "Corda", "quantity": 2 }] },
+                "features": [{ "name": "Fúria", "source": "Bárbaro" }],
+                "advancement": [{ "className": "Bárbaro", "level": 4, "kind": "feat", "feat": "Sortudo" }]
+            }
+        }));
+        let text: Vec<String> = diff_changes(&cur, &patch)
+            .iter()
+            .map(|c| match &c.note {
+                Some(n) => format!("{} {n}", c.field),
+                None => format!("{}: {} → {}", c.field, c.from.as_deref().unwrap_or(""), c.to.as_deref().unwrap_or("")),
+            })
+            .collect();
+        for expected in [
+            "Espaços de 1º círculo: 3/3 → 2/3",
+            "Recurso Fúria: 3/3 → 2/3",
+            "Atributos · Força: 14 → 16",
+            "Idiomas adicionado: Élfico",
+            "Resistências adicionado: Constituição",
+            "Magias adicionado: Bola de Fogo",
+            "Magia Escudo · preparada: sim → não",
+            "Moedas · PO: 10 → 4",
+            "Item Corda · quantidade: 1 → 2",
+            "Características removido: Defesa sem Armadura",
+            "Progressão escolhido: Bárbaro 4: talento Sortudo",
+        ] {
+            assert!(text.iter().any(|t| t == expected), "faltou {expected:?} em {text:#?}");
+        }
+        assert!(!text.iter().any(|t| t.contains("atualizado")), "{text:#?}");
     }
 
     #[test]
@@ -1496,6 +2017,50 @@ mod tests {
 
         assert_eq!(db.delete_folder(&folder).unwrap(), FolderDelete::Deleted);
         assert!(db.get_map(&folder).unwrap().is_none());
+    }
+
+    #[test]
+    fn map_presets_save_apply_and_delete() {
+        let db = Db::open(":memory:", "[]").unwrap();
+        db.insert_folder("Mesa", "1234").unwrap();
+        let folder = db.list_folders().unwrap()[0]["id"].as_str().unwrap().to_string();
+
+        // Preset sem mapa ainda: estado vazio, sem fundo.
+        db.save_map_preset(&folder, "Vazio", &Map::new()).unwrap();
+        let cave = json!({ "grid": { "size": 40 }, "tokens": { "m:lobo": { "x": 5, "y": 5, "rotation": 0 } }, "tiles": {}, "shapes": [] });
+        db.save_map(&folder, cave.as_object().unwrap()).unwrap();
+        db.set_map_background(&folder, "image/png", &png_1x1(), Some(1), Some(1)).unwrap();
+        db.save_map_preset(&folder, "Caverna", cave.as_object().unwrap()).unwrap();
+        let presets = db.list_map_presets(&folder).unwrap();
+        assert_eq!(presets.len(), 2);
+        assert_eq!(presets[1]["name"], "Caverna");
+        assert_eq!(presets[1]["tokens"], 1);
+        assert_eq!(presets[1]["background"]["width"], 1);
+        assert!(presets[0]["background"].is_null());
+        let cave_id = presets[1]["id"].as_str().unwrap().to_string();
+        assert!(db.get_map_preset_background(&folder, &cave_id).unwrap().is_some());
+
+        // Mesmo nome substitui em vez de duplicar.
+        db.save_map_preset(&folder, "caverna", cave.as_object().unwrap()).unwrap();
+        assert_eq!(db.count_map_presets(&folder).unwrap(), 2);
+        let cave_id = db.list_map_presets(&folder).unwrap()[1]["id"].as_str().unwrap().to_string();
+
+        // A mesa muda; aplicar o preset traz o estado e o fundo de volta.
+        db.save_map(&folder, json!({ "grid": { "size": 90 } }).as_object().unwrap()).unwrap();
+        db.remove_map_background(&folder).unwrap();
+        let applied = db.apply_map_preset(&folder, &cave_id).unwrap().unwrap();
+        assert_eq!(applied["grid"]["size"], 40);
+        assert_eq!(applied["tokens"]["m:lobo"]["x"], 5);
+        assert!(applied["background"]["version"].is_string());
+        assert!(db.apply_map_preset(&folder, "nao-existe").unwrap().is_none());
+
+        // Apagar o preset não mexe na mesa.
+        assert!(db.delete_map_preset(&folder, &cave_id).unwrap());
+        assert!(!db.delete_map_preset(&folder, &cave_id).unwrap());
+        assert_eq!(db.get_map(&folder).unwrap().unwrap()["grid"]["size"], 40);
+
+        assert_eq!(db.delete_folder(&folder).unwrap(), FolderDelete::Deleted);
+        assert_eq!(db.count_map_presets(&folder).unwrap(), 0);
     }
 
     #[test]

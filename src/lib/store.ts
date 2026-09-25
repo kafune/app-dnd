@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useShallow } from "zustand/react/shallow";
 import type { Character, Creature, DiceRoll, Folder, HomebrewItem, HomebrewKind, Sheet } from "./types";
 import { PUBLIC_CHARACTER_MAP, PUBLIC_CHARACTERS } from "@/data/publicCharacters";
 import { setHomebrewItems } from "@/data/homebrewRegistry";
@@ -122,6 +123,8 @@ type Store = {
   /** Uma operação no mapa aberto, com a credencial usada para abri-lo. */
   patchMap: (op: MapOp) => Promise<boolean>;
   closeMap: () => void;
+  /** Põe um mapa pronto na mesa (só o Mestre). */
+  applyMapPreset: (folderId: string, presetId: string) => Promise<boolean>;
   uploadMapBackground: (folderId: string, image: Blob, size: { width: number; height: number }) => Promise<boolean>;
   removeMapBackground: (folderId: string) => Promise<boolean>;
   pushToast: (toast: Omit<AppToast, "id">) => void;
@@ -135,6 +138,45 @@ type Store = {
  * que fazia a ficha "voltar" depois de deletada.
  */
 const deletedIds = new Set<string>();
+
+/**
+ * PATCHes de ficha pendentes, por ficha. Toques rápidos (gastar três espaços de
+ * magia seguidos no celular) viravam três PATCHes em paralelo: a resposta do
+ * primeiro chegava depois do terceiro toque e "desfazia" a tela por um instante,
+ * e o servidor podia aplicar fora de ordem. Agora vai um de cada vez; o que chega
+ * enquanto um está em voo é mesclado e segue no próximo.
+ */
+type PatchQueue = {
+  /** Patch mesclado esperando a vez. */
+  pending: Partial<Character> | null;
+  inflight: boolean;
+  /** Quem espera o resultado do `pending`. */
+  waiters: ((ok: boolean) => void)[];
+  /** Última versão confirmada pelo servidor (para desfazer se o PATCH falhar). */
+  confirmed: Character | null;
+};
+const patchQueues = new Map<string, PatchQueue>();
+
+/** Há PATCH desta ficha em voo ou esperando? A resposta dele traz a versão nova. */
+const patchBusy = (id: string) => {
+  const q = patchQueues.get(id);
+  return !!q && (q.inflight || !!q.pending);
+};
+
+/**
+ * Reaproveita as partes da ficha que não mudaram (mesmo conteúdo = mesmo objeto),
+ * para a resposta do servidor não re-renderizar a ficha inteira à toa.
+ */
+function shareUnchanged(prev: Character | undefined, next: Character): Character {
+  if (!prev) return next;
+  const out = { ...next };
+  for (const key of ["sheet", "spellSlots", "resources"] as const) {
+    if (prev[key] !== next[key] && JSON.stringify(prev[key]) === JSON.stringify(next[key])) {
+      (out as Record<string, unknown>)[key] = prev[key];
+    }
+  }
+  return out;
+}
 
 function sortHomebrew(items: HomebrewItem[]): HomebrewItem[] {
   return [...items].sort(
@@ -180,7 +222,7 @@ export const useStore = create<Store>()(
       const storeAuthorized = (id: string, character: Character, role?: AccessRole) => {
         if (deletedIds.has(id)) return;
         set((s) => ({
-          characters: { ...s.characters, [id]: character },
+          characters: { ...s.characters, [id]: shareUnchanged(s.characters[id], character) },
           roles: role ? { ...s.roles, [id]: role } : s.roles,
           patchError: null,
         }));
@@ -275,6 +317,11 @@ export const useStore = create<Store>()(
         if (pin && previous) {
           // Mesma versão que já temos (ex.: eco do nosso próprio PATCH): nada a buscar.
           if (previous.updatedAt && previous.updatedAt === incoming.updatedAt) return;
+          // Versão mais velha que a nossa (eco atrasado de um PATCH anterior) ou um PATCH
+          // nosso ainda em voo, cuja resposta já traz a ficha nova: buscar agora só faria
+          // a tela voltar um passo (o "engasgo" ao gastar espaços em sequência).
+          if (previous.updatedAt && incoming.updatedAt && incoming.updatedAt < previous.updatedAt) return;
+          if (patchBusy(incoming.id)) return;
           set((s) => ({
             characters: {
               ...s.characters,
@@ -291,8 +338,8 @@ export const useStore = create<Store>()(
           void api
             .getCharacter(incoming.id, pin)
             .then(({ character }) => {
-              if (deletedIds.has(character.id)) return;
-              set((s) => ({ characters: { ...s.characters, [character.id]: character } }));
+              if (deletedIds.has(character.id) || patchBusy(character.id)) return;
+              set((s) => ({ characters: { ...s.characters, [character.id]: shareUnchanged(s.characters[character.id], character) } }));
             })
             .catch((e) => {
               if (deletedIds.has(incoming.id)) return;
@@ -320,8 +367,16 @@ export const useStore = create<Store>()(
             receivePublic(character, true);
             if (character.folderId) {
               scheduleHubRefresh(character.folderId);
-              // Foto ou nome novos mudam o token no mapa.
-              scheduleMapRefresh(character.folderId);
+              // Foto, cor ou nome novos mudam o token no mapa; gastar um espaço de magia não.
+              const figure = get().map?.figures.find((f) => f.id === `c:${character.id}`);
+              if (
+                !figure ||
+                figure.name !== character.characterName ||
+                (figure.color ?? null) !== (character.color ?? null) ||
+                (figure.avatarVersion ?? null) !== (character.avatarVersion ?? null)
+              ) {
+                scheduleMapRefresh(character.folderId);
+              }
             }
           },
           "character-deleted": ({ id }: { id: string }) => {
@@ -374,6 +429,57 @@ export const useStore = create<Store>()(
         (ready) => set({ realtimeReady: ready }),
       );
 
+      /** Manda o próximo PATCH da fila da ficha (um de cada vez). */
+      const flushPatches = async (id: string): Promise<void> => {
+        const q = patchQueues.get(id);
+        if (!q || q.inflight || !q.pending) return;
+        const batch = q.pending;
+        const waiters = q.waiters;
+        q.pending = null;
+        q.waiters = [];
+        q.inflight = true;
+        let ok = false;
+        try {
+          const { character, role } = await api.patchCharacter(id, batch, get().pins[id]);
+          q.confirmed = character;
+          // (o `await` acima deixa chegar toques novos: o TS não sabe disso)
+          const later = q.pending as Partial<Character> | null;
+          if (later) {
+            // Chegaram toques novos enquanto este viajava: mantém-nos por cima da resposta.
+            if (!deletedIds.has(id)) {
+              set((s) => ({
+                characters: { ...s.characters, [id]: { ...shareUnchanged(s.characters[id], character), ...later } },
+                roles: role ? { ...s.roles, [id]: role } : s.roles,
+              }));
+            }
+          } else {
+            storeAuthorized(id, character, role);
+          }
+          ok = !deletedIds.has(id);
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            // Apagada em outro aparelho: tira da tela em vez de restaurar.
+            deletedIds.add(id);
+            set((s) => withoutCharacter(s, id));
+            q.pending = null;
+            for (const resolve of q.waiters.splice(0)) resolve(false);
+          } else {
+            // rollback se falhou (o que ainda está na fila continua por cima)
+            const base = q.confirmed;
+            const later = q.pending as Partial<Character> | null;
+            if (base && !deletedIds.has(id)) {
+              set((s) => ({ characters: { ...s.characters, [id]: later ? { ...base, ...later } : base } }));
+            }
+            set({ patchError: errorMessage(e) });
+          }
+        } finally {
+          q.inflight = false;
+          for (const resolve of waiters) resolve(ok);
+          if (q.pending) void flushPatches(id);
+          else if (!q.waiters.length) patchQueues.delete(id);
+        }
+      };
+
       /** Credencial mais forte deste aparelho para uma pasta (senha > chave mestra). */
       const folderCredential = (folderId: string) => get().folderPins[folderId] ?? get().masterPin ?? undefined;
 
@@ -418,31 +524,18 @@ export const useStore = create<Store>()(
           return saved.id;
         },
 
-        patchCharacter: async (id, patch) => {
-          const pin = get().pins[id];
-          // optimistic update
+        patchCharacter: (id, patch) => {
           const prev = get().characters[id];
-          if (prev) {
-            set((s) => ({ characters: { ...s.characters, [id]: { ...prev, ...patch } } }));
-          }
-          try {
-            const { character, role } = await api.patchCharacter(id, patch, pin);
-            storeAuthorized(id, character, role);
-            return !deletedIds.has(id);
-          } catch (e) {
-            if (e instanceof ApiError && e.status === 404) {
-              // Apagada em outro aparelho: tira da tela em vez de restaurar.
-              deletedIds.add(id);
-              set((s) => withoutCharacter(s, id));
-              return false;
-            }
-            // rollback se falhou
-            if (prev && !deletedIds.has(id)) {
-              set((s) => ({ characters: { ...s.characters, [id]: prev } }));
-            }
-            set({ patchError: errorMessage(e) });
-            return false;
-          }
+          const q: PatchQueue = patchQueues.get(id) ?? { pending: null, inflight: false, waiters: [], confirmed: null };
+          patchQueues.set(id, q);
+          // Fila parada: o que está na tela é o que o servidor tem.
+          if (!q.inflight && !q.pending) q.confirmed = prev ?? null;
+          // optimistic update
+          if (prev) set((s) => ({ characters: { ...s.characters, [id]: { ...prev, ...patch } } }));
+          q.pending = { ...q.pending, ...patch };
+          const done = new Promise<boolean>((resolve) => q.waiters.push(resolve));
+          void flushPatches(id);
+          return done;
         },
 
         deleteCharacter: async (id) => {
@@ -896,6 +989,19 @@ export const useStore = create<Store>()(
 
         closeMap: () => set({ map: null }),
 
+        applyMapPreset: async (folderId, presetId) => {
+          const master = get().masterPin;
+          if (!master) return false;
+          try {
+            const payload = await api.applyMapPreset(folderId, presetId, master);
+            applyMap(folderId, payload);
+            return true;
+          } catch (e) {
+            get().pushToast({ title: "Não foi possível usar esse mapa", description: errorMessage(e), tone: "danger" });
+            return false;
+          }
+        },
+
         uploadMapBackground: async (folderId, image, size) => {
           const master = get().masterPin;
           if (!master) return false;
@@ -1060,6 +1166,23 @@ function cryptoRandomId(): string {
 }
 
 export const useCharacter = (id: string) => useStore((s) => s.characters[id]);
+
+/** Identidade + ficha, sem PV, espaços de magia e recursos. */
+export type CharacterSheetView = Pick<Character, "id" | "characterName" | "playerName" | "color" | "sheet">;
+
+/**
+ * A ficha sem as partes voláteis: quem usa isto não re-renderiza quando o jogador
+ * gasta um espaço de magia, um recurso ou PV (o que pesava no celular).
+ */
+export const useCharacterSheet = (id: string): CharacterSheetView | undefined =>
+  useStore(
+    useShallow((s) => {
+      const c = s.characters[id];
+      return c
+        ? { id: c.id, characterName: c.characterName, playerName: c.playerName, color: c.color, sheet: c.sheet }
+        : undefined;
+    }),
+  );
 
 /** A ficha foi destravada com a chave mestra neste aparelho? */
 export const useIsMaster = (id: string) => useStore((s) => s.roles[id] === "mestre");

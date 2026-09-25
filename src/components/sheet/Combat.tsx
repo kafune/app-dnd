@@ -1,6 +1,6 @@
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { useIsMaster, useStore } from "@/lib/store";
+import { useIsMaster, useCharacterSheet, useStore } from "@/lib/store";
 import { roll } from "@/lib/dice";
 import { ABILITY_LABELS, abilityMod, formatMod, type Weapon } from "@/lib/types";
 import { acWarnings, computeAc } from "@/lib/armor";
@@ -10,7 +10,7 @@ import { AlertTriangle, Trash2 } from "lucide-react";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 
 export function Combat({ id }: { id: string }) {
-  const c = useStore((s) => s.characters[id]);
+  const c = useCharacterSheet(id);
   const addRoll = useStore((s) => s.addRoll);
   const editMode = useStore((s) => s.editMode);
   const isMaster = useIsMaster(id);
@@ -222,7 +222,7 @@ export function Combat({ id }: { id: string }) {
             <div className="text-xs uppercase tracking-wide text-zinc-500">Armas</div>
             {weapons.map((w, i) => (
               <div
-                key={i}
+                key={`${i}:${w.name}`}
                 className="space-y-1 rounded border border-zinc-200 p-2 dark:border-zinc-800"
               >
                 <div className="flex items-center gap-1">

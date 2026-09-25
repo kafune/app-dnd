@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapPin, RotateCw, Shapes, Sparkles, X } from "lucide-react";
+import { Eraser, MapPin, RotateCw, Shapes, Sparkles, X } from "lucide-react";
 import { useIsMaster, useStore } from "@/lib/store";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -50,6 +50,8 @@ export function PlayerMap({ characterId }: { characterId: string }) {
   const myFigure = figures.find((f) => f.id === myTokenId);
   const myToken = state?.tokens[myTokenId];
   const gridOn = state?.grid.enabled ?? true;
+  // O Mestre tirou o personagem do mapa: só ele o põe de volta.
+  const removedByMaster = !isMaster && !myToken && !!state?.excluded?.includes(myTokenId);
 
   // As magias e habilidades da ficha que têm área, separadas em fixas e reguláveis.
   const areas = useMemo(() => {
@@ -94,6 +96,15 @@ export function PlayerMap({ characterId }: { characterId: string }) {
 
   const saveShape = (shape: MapShape) => patchMap({ op: "shape", id: shape.id, characterId, shape });
   const removeShape = (shape: MapShape) => patchMap({ op: "shape", id: shape.id, characterId, remove: true });
+  const clearMine = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (await patchMap({ op: "clearShapes", characterId })) setActiveKey(null);
+    } finally {
+      setSaving(false);
+    }
+  };
   const choose = async (entry: AreaPick) => {
     if (saving || !state) return;
     setSaving(true);
@@ -148,7 +159,9 @@ export function PlayerMap({ characterId }: { characterId: string }) {
           )}
         </div>
         <CardBody className="flex flex-wrap items-center gap-2 border-t border-zinc-100 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
-          {state && !myToken ? (
+          {state && removedByMaster ? (
+            <span>O Mestre tirou seu personagem do mapa. Quando for a sua vez na cena, ele coloca você de volta.</span>
+          ) : state && !myToken ? (
             <>
               <span>Seu personagem ainda não está no mapa.</span>
               <Button size="sm" variant={placing ? "success" : "outline"} onClick={() => setPlacing((v) => !v)}>
@@ -163,13 +176,23 @@ export function PlayerMap({ characterId }: { characterId: string }) {
               <span>Arraste o token para se mover.</span>
             </>
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            disabled={saving || ownShapes.length === 0}
+            onClick={() => void clearMine()}
+            title="Remove do mapa todas as magias e formas que você colocou (as dos outros ficam)"
+          >
+            <Eraser className="h-3 w-3" /> Limpar minhas áreas{ownShapes.length ? ` (${ownShapes.length})` : ""}
+          </Button>
         </CardBody>
       </Card>
 
       <Card>
         <CardBody className="space-y-2">
           <p className="text-xs text-zinc-500">As áreas ficam visíveis para toda a mesa. Clique novamente na magia para removê-la. Você pode mover apenas suas próprias áreas.</p>
-          <Button size="sm" variant="outline" disabled={!state || !gridOn} onClick={() => setShapeForm((v) => !v)}><Shapes className="h-3 w-3" /> Inserir forma geométrica</Button>
+          <Button size="sm" variant="outline" disabled={!state || !gridOn || removedByMaster} onClick={() => setShapeForm((v) => !v)}><Shapes className="h-3 w-3" /> Inserir forma geométrica</Button>
           {shapeForm && state && gridOn && <ShapeForm fixedColor={color} onClose={() => setShapeForm(false)} onInsert={(shape) => {
             const center = canvasSize(state);
             void saveShape({ ...shape, ownerId: characterId, x: center.width / 2, y: center.height / 2 });
