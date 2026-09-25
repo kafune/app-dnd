@@ -682,3 +682,223 @@ export const MUSICAL_INSTRUMENTS: string[] = names(INSTRUMENT_SPECS);
 export const ARTISAN_TOOLS: string[] = names(ARTISAN_SPECS);
 /** Kits de jogo da tabela Ferramentas. */
 export const GAMING_SETS: string[] = names(GAMING_SPECS);
+
+// ---------------------------------------------------------------------------
+// Grupos do seletor de itens (catálogo agrupado e em ordem alfabética)
+// ---------------------------------------------------------------------------
+
+/** Subgrupo do catálogo mostrado no seletor: mais fino que `ItemCategory`
+ *  (separa corpo a corpo de à distância, ferramentas de artesão de kits de jogo…). */
+export type CatalogGroupId =
+  | "arma-simples-corpo"
+  | "arma-simples-distancia"
+  | "arma-marcial-corpo"
+  | "arma-marcial-distancia"
+  | "armadura-leve"
+  | "armadura-media"
+  | "armadura-pesada"
+  | "escudo"
+  | "municao"
+  | "foco"
+  | "ferramenta-artesao"
+  | "ferramenta-outra"
+  | "kit"
+  | "kit-jogo"
+  | "instrumento"
+  | "pacote"
+  | "aventura";
+
+/** Filtro rápido (chip) do seletor; cada grupo pertence a um só. */
+export type CatalogFilterId = "armas" | "armaduras" | "conjuracao" | "ferramentas" | "aventura";
+
+export type CatalogGroupDef = {
+  id: CatalogGroupId;
+  /** Cabeçalho do grupo ("Armas marciais — corpo a corpo"). */
+  label: string;
+  /** Uma linha explicando o que o grupo tem em comum (proficiência, regra de CA…). */
+  hint: string;
+  filter: CatalogFilterId;
+};
+
+export type CatalogGroup = CatalogGroupDef & { items: CatalogItem[] };
+
+/** Ordem fixa dos grupos no seletor, com o rótulo e a dica de cada um. */
+export const CATALOG_GROUPS: CatalogGroupDef[] = [
+  {
+    id: "arma-simples-corpo",
+    label: "Armas simples — corpo a corpo",
+    hint: "Exigem proficiência com armas simples, que quase todas as classes têm.",
+    filter: "armas",
+  },
+  {
+    id: "arma-simples-distancia",
+    label: "Armas simples — à distância",
+    hint: "Proficiência com armas simples. Arcos, bestas e fundas gastam munição.",
+    filter: "armas",
+  },
+  {
+    id: "arma-marcial-corpo",
+    label: "Armas marciais — corpo a corpo",
+    hint: "Exigem proficiência com armas marciais (bárbaro, guerreiro, paladino, patrulheiro…).",
+    filter: "armas",
+  },
+  {
+    id: "arma-marcial-distancia",
+    label: "Armas marciais — à distância",
+    hint: "Exigem proficiência com armas marciais. A maioria gasta munição.",
+    filter: "armas",
+  },
+  {
+    id: "municao",
+    label: "Munição",
+    hint: "Cada ataque gasta uma. Depois da luta, dá para recuperar metade.",
+    filter: "armas",
+  },
+  {
+    id: "armadura-leve",
+    label: "Armaduras leves",
+    hint: "CA = base + mod. de Destreza (sem limite). Vestir leva 1 minuto.",
+    filter: "armaduras",
+  },
+  {
+    id: "armadura-media",
+    label: "Armaduras médias",
+    hint: "CA = base + mod. de Destreza (no máximo +2). Vestir leva 5 minutos.",
+    filter: "armaduras",
+  },
+  {
+    id: "armadura-pesada",
+    label: "Armaduras pesadas",
+    hint: "CA fixa, sem Destreza. Sem a Força mínima, o deslocamento cai 3 m. Vestir leva 10 minutos.",
+    filter: "armaduras",
+  },
+  {
+    id: "escudo",
+    label: "Escudos",
+    hint: "Somam à CA e ocupam uma mão. Só vale um escudo por vez.",
+    filter: "armaduras",
+  },
+  {
+    id: "foco",
+    label: "Focos de conjuração",
+    hint: "Substituem componentes materiais sem custo: arcano (feiticeiro, bruxo, mago), druídico (druida), símbolo sagrado (clérigo, paladino).",
+    filter: "conjuracao",
+  },
+  {
+    id: "ferramenta-artesao",
+    label: "Ferramentas de artesão",
+    hint: "Cada ofício exige a proficiência daquela ferramenta.",
+    filter: "ferramentas",
+  },
+  {
+    id: "ferramenta-outra",
+    label: "Outras ferramentas",
+    hint: "Ladrão (fechaduras e armadilhas) e navegação.",
+    filter: "ferramentas",
+  },
+  {
+    id: "kit",
+    label: "Kits",
+    hint: "Disfarce, falsificação, herbalismo e venenos; cada um tem proficiência própria.",
+    filter: "ferramentas",
+  },
+  {
+    id: "kit-jogo",
+    label: "Kits de jogo",
+    hint: "Cartas, dados e tabuleiro; proficiência separada para cada jogo.",
+    filter: "ferramentas",
+  },
+  {
+    id: "instrumento",
+    label: "Instrumentos musicais",
+    hint: "Proficiência própria por instrumento. O bardo usa como foco de conjuração.",
+    filter: "ferramentas",
+  },
+  {
+    id: "pacote",
+    label: "Pacotes de equipamento",
+    hint: "Conjuntos prontos do livro; entram na ficha como um item só.",
+    filter: "aventura",
+  },
+  {
+    id: "aventura",
+    label: "Equipamento de aventura",
+    hint: "Luz, cordas, recipientes, roupas, consumíveis e utilidades em geral.",
+    filter: "aventura",
+  },
+];
+
+/** Rótulo de cada filtro rápido, na ordem em que aparecem. */
+export const CATALOG_FILTERS: { id: CatalogFilterId; label: string }[] = [
+  { id: "armas", label: "Armas" },
+  { id: "armaduras", label: "Armaduras" },
+  { id: "conjuracao", label: "Conjuração" },
+  { id: "ferramentas", label: "Ferramentas" },
+  { id: "aventura", label: "Aventura" },
+];
+
+const SIMPLE_RANGED_SET = new Set(names(SIMPLE_RANGED));
+const MARTIAL_RANGED_SET = new Set(names(MARTIAL_RANGED));
+const OTHER_TOOLS_SET = new Set(names(OTHER_TOOLS));
+const GAMING_SET = new Set(names(GAMING_SPECS));
+
+/** Em que grupo do seletor o item cai. */
+export function catalogGroupOf(item: CatalogItem): CatalogGroupId {
+  switch (item.category) {
+    case "Arma simples":
+      return SIMPLE_RANGED_SET.has(item.name) ? "arma-simples-distancia" : "arma-simples-corpo";
+    case "Arma marcial":
+      return MARTIAL_RANGED_SET.has(item.name) ? "arma-marcial-distancia" : "arma-marcial-corpo";
+    case "Armadura leve":
+      return "armadura-leve";
+    case "Armadura média":
+      return "armadura-media";
+    case "Armadura pesada":
+      return "armadura-pesada";
+    case "Escudo":
+      return "escudo";
+    case "Munição":
+      return "municao";
+    case "Pacote":
+      return "pacote";
+    case "Foco de conjuração":
+      return "foco";
+    case "Ferramenta":
+      if (GAMING_SET.has(item.name)) return "kit-jogo";
+      return OTHER_TOOLS_SET.has(item.name) ? "ferramenta-outra" : "ferramenta-artesao";
+    case "Kit":
+      return "kit";
+    case "Instrumento musical":
+      return "instrumento";
+    case "Equipamento de aventura":
+      return "aventura";
+  }
+}
+
+/** Ordem alfabética do português (acentos não mandam o item para o fim da lista). */
+export function compareItemNames(a: string, b: string): number {
+  return a.localeCompare(b, "pt-BR", { sensitivity: "base", numeric: true });
+}
+
+/**
+ * Agrupa itens do catálogo na ordem de `CATALOG_GROUPS`, com os itens de cada
+ * grupo em ordem alfabética. Grupos vazios ficam de fora.
+ */
+export function groupCatalogItems(items: readonly CatalogItem[]): CatalogGroup[] {
+  const buckets = new Map<CatalogGroupId, CatalogItem[]>();
+  for (const item of items) {
+    const id = catalogGroupOf(item);
+    const bucket = buckets.get(id);
+    if (bucket) bucket.push(item);
+    else buckets.set(id, [item]);
+  }
+  return CATALOG_GROUPS.flatMap((def) => {
+    const bucket = buckets.get(def.id);
+    return bucket ? [{ ...def, items: [...bucket].sort((a, b) => compareItemNames(a.name, b.name)) }] : [];
+  });
+}
+
+/** Igual a `groupCatalogItems`, a partir de nomes (ignora os que não estão no catálogo). */
+export function groupCatalogNames(itemNames: readonly string[]): CatalogGroup[] {
+  return groupCatalogItems(itemNames.map((name) => findItem(name)).filter((item): item is CatalogItem => !!item));
+}
