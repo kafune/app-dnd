@@ -421,6 +421,7 @@ export const MAGO: ClassDef = {
         },
         {
           name: "Mestre Transmutador",
+          resource: { max: 1, recharge: "long" },
           level: 14,
           description:
             "Você pode usar sua ação para consumir a reserva de magia de transmutação armazenada em sua pedra de transmutador em uma única explosão. Escolha um dos efeitos a seguir; a pedra é destruída e não pode ser refeita até você terminar um descanso longo.\n" +
@@ -535,6 +536,7 @@ export const MAGO: ClassDef = {
         },
         {
           name: "Livro de Magia Desperto",
+          resource: { name: "Ritual Acelerado (Livro Desperto)", max: 1, recharge: "long" },
           level: 2,
           description:
             "Usando tintas especialmente preparadas e encantamentos antigos de sua ordem, você desperta uma consciência arcana dentro do seu grimório. Enquanto estiver segurando o livro, ele fornece os seguintes benefícios:\n" +

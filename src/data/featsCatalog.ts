@@ -21,6 +21,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Adepto Marcial",
+    resource: { name: "Dado de Superioridade (Adepto Marcial)", max: 1, recharge: "short" },
     source: "PHB",
     description:
       "Você tem treinamento marcial que permite a você realizar manobras de combate especiais. Você ganha os seguintes benefícios:\n" +
@@ -182,6 +183,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Iniciado em Magia",
+    resource: { name: "Magia de 1º círculo (Iniciado em Magia)", max: 1, recharge: "long" },
     source: "PHB",
     spells: {
       pickList: ["Bardo", "Bruxo", "Clérigo", "Druida", "Feiticeiro", "Mago"],
@@ -393,6 +395,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Sortudo",
+    resource: { name: "Pontos de Sorte", max: 3, recharge: "long" },
     source: "PHB",
     description:
       "Você tem uma sorte inexplicável que parece surgir nos momentos exatos.\n" +
@@ -420,6 +423,8 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Alta Magia Drow",
+    resource: { name: "Levitação (Alta Magia Drow)", max: 1, recharge: "long" },
+    extraResources: [{ name: "Dissipar Magia (Alta Magia Drow)", max: 1, recharge: "long" }],
     source: "XGtE",
     prerequisite: "Elfo (Drow)",
     races: ["Elfo"],
@@ -482,6 +487,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Desvanecer",
+    resource: { max: 1, recharge: "short" },
     source: "XGtE",
     prerequisite: "Gnomo",
     races: ["Gnomo"],
@@ -504,6 +510,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Fúria Orc",
+    resource: { max: 1, recharge: "short" },
     source: "XGtE",
     prerequisite: "Meio-orc",
     races: ["Meio-orc"],
@@ -516,6 +523,8 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Magia do Elfo da Floresta",
+    resource: { name: "Passos Longos (Magia do Elfo da Floresta)", max: 1, recharge: "long" },
+    extraResources: [{ name: "Passos Sem Pegadas (Magia do Elfo da Floresta)", max: 1, recharge: "long" }],
     source: "XGtE",
     prerequisite: "Elfo (floresta)",
     races: ["Elfo"],
@@ -552,6 +561,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Segunda Chance",
+    resource: { max: 1, recharge: "short" },
     source: "XGtE",
     prerequisite: "Halfling",
     races: ["Halfling"],
@@ -563,6 +573,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Teleporte das Fadas",
+    resource: { name: "Passo Nebuloso (Teleporte das Fadas)", max: 1, recharge: "short" },
     source: "XGtE",
     prerequisite: "Elfo (alto)",
     races: ["Elfo"],
@@ -594,6 +605,7 @@ const FEATS: FeatDef[] = [
   // ==========================================================================
   {
     name: "Adepto Metamágico",
+    resource: { name: "Pontos de Feitiçaria (Adepto Metamágico)", max: 2, recharge: "long" },
     source: "TCoE",
     prerequisite: "Habilidade de Conjuração ou característica de Magia de Pacto",
     description:
@@ -611,6 +623,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Chef",
+    resource: { name: "Aperitivos do Chef", max: "prof", recharge: "long" },
     source: "TCoE",
     abilityIncrease: { choose: ["con", "wis"], amount: 1 },
     description:
@@ -653,6 +666,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Iniciado Artífice",
+    resource: { name: "Magia de 1º círculo (Iniciado Artífice)", max: 1, recharge: "long" },
     source: "TCoE",
     spells: {
       choices: [
@@ -719,6 +733,7 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Telepático",
+    resource: { name: "Detectar Pensamentos (Telepático)", max: 1, recharge: "long" },
     source: "TCoE",
     spells: {
       fixed: ["Detectar Pensamentos"],
@@ -737,6 +752,8 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Tocado pelas Fadas",
+    resource: { name: "Passo Nebuloso (Tocado pelas Fadas)", max: 1, recharge: "long" },
+    extraResources: [{ name: "Magia de 1º círculo (Tocado pelas Fadas)", max: 1, recharge: "long" }],
     source: "TCoE",
     spells: {
       fixed: ["Passo Nebuloso"],
@@ -758,6 +775,8 @@ const FEATS: FeatDef[] = [
   },
   {
     name: "Tocado pelas Sombras",
+    resource: { name: "Invisibilidade (Tocado pelas Sombras)", max: 1, recharge: "long" },
+    extraResources: [{ name: "Magia de 1º círculo (Tocado pelas Sombras)", max: 1, recharge: "long" }],
     source: "TCoE",
     spells: {
       fixed: ["Invisibilidade"],

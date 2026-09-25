@@ -342,6 +342,13 @@ export const BRUXO: ClassDef = {
         },
         {
           name: "Iluminação Curativa",
+          // reserva de d6 = 1 + nível de bruxo
+          resource: {
+            name: "Iluminação Curativa (d6)",
+            max: 2,
+            recharge: "long",
+            byLevel: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [String(i + 1), i + 2])),
+          },
           level: 1,
           description:
             "No 1° nível, você ganha a capacidade de canalizar energia celestial para curar ferimentos. Você tem uma reserva de d6 que gasta para alimentar essa cura. O número de dados na reserva é igual a 1 + seu nível de bruxo.\nCom uma ação bônus, você pode curar uma criatura que possa ver a até 18 metros de você, gastando dados dessa reserva. O número máximo de dados que pode gastar de uma vez é igual ao seu modificador de Carisma (mínimo de um dado). Role os dados gastos, some-os e a criatura recupera essa quantidade de pontos de vida.\nSua reserva recupera todos os dados gastos quando você termina um descanso longo.",
