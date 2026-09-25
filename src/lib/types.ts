@@ -578,6 +578,8 @@ export type FeatureResource = {
   /** Progressão do máximo por nível de classe, ex.: Fúria { "1": 2, "3": 3, "6": 4, "12": 5, "17": 6 }.
    *  Vale o maior limiar <= nível atual; sobrescreve `max`. */
   byLevel?: Record<string, number>;
+  /** Nível (total, para raça e talento) a partir do qual o recurso existe — ex.: "a partir do 3º nível". */
+  minLevel?: number;
 };
 
 /** Característica de classe ou subclasse, com descrição completa. */
@@ -710,6 +712,10 @@ export type FeatDef = {
   spells?: FeatSpellGrant;
   /** Talento racial: raças que podem escolhê-lo. */
   races?: string[];
+  /** Usos rastreáveis do talento (viram recurso na ficha). "prof"/"level" usam o nível total. */
+  resource?: FeatureResource;
+  /** Usos independentes além de `resource` (ex.: uma magia de graça por descanso, cada). Precisam de `name`. */
+  extraResources?: FeatureResource[];
   /** Lembrete que o Mestre pendurou no talento (aparece na caixa de Lembretes da ficha). */
   reminder?: HomebrewReminder;
   /** Presente quando o talento é homebrew do Mestre (id no servidor). */
@@ -754,6 +760,8 @@ export type RaceTraitDef = {
   skillChoiceFrom?: SkillName[];
   /** Usos rastreáveis do traço (viram recurso na ficha). "prof"/"level" usam o nível total. */
   resource?: FeatureResource;
+  /** Usos independentes além de `resource` (ex.: uma magia de graça por descanso, cada). Precisam de `name`. */
+  extraResources?: FeatureResource[];
   /** Atributo de conjuração e uso sem espaço de magia das magias deste traço. */
   casting?: GrantedCasting;
   /** Lembrete que o Mestre pendurou no traço (aparece na caixa de Lembretes da ficha). */

@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { Minus, Plus, Shield, ShieldOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useIsMaster, useStore } from "@/lib/store";
 import { EditableText, EditableNumber } from "@/components/sheet/edit/EditControls";
 import { ABILITY_LABELS, ABILITY_ORDER, type InventoryCategory, type Item } from "@/lib/types";
-import { ITEMS_CATALOG, findItem, isArmorItem, isShieldItem, itemDisplayName } from "@/data/itemsCatalog";
+import { findItem, isArmorItem, isShieldItem, itemDisplayName } from "@/data/itemsCatalog";
 import { equipPatch } from "@/lib/armor";
-import { homebrewItem } from "@/lib/items";
+import { homebrewItem, itemFromName, mergeItems } from "@/lib/items";
+import { ItemCatalogPicker } from "@/components/ItemCatalogPicker";
 import { sheetPermissions } from "@/lib/permissions";
 import { groupProficiencies, splitProficiencies } from "@/lib/proficiencies";
 import {
@@ -334,48 +334,15 @@ function QuantityStepper({
 
 /** Põe na ficha um item que já existe no site — o Mestre não reescreve nada. */
 function InventoryCatalogAdd({ items, onChange }: { items: Item[]; onChange: (items: Item[]) => void }) {
-  const [query, setQuery] = useState("");
-  const [name, setName] = useState(ITEMS_CATALOG[0]?.name ?? "");
-  const q = norm(query);
-  const matches = q
-    ? ITEMS_CATALOG.filter((item) => norm(item.name).includes(q) || norm(item.detail).includes(q))
-    : ITEMS_CATALOG;
-  const selected = matches.some((item) => item.name === name) ? name : (matches[0]?.name ?? "");
-  const add = () => {
-    const catalog = findItem(selected);
-    if (!catalog) return;
-    const existing = items.find((item) => item.name === catalog.name);
-    if (existing) {
-      onChange(items.map((item) => (item === existing ? { ...item, quantity: (item.quantity ?? 1) + 1 } : item)));
-    } else {
-      onChange([...items, { name: catalog.name, description: catalog.detail, quantity: 1 }]);
-    }
-  };
+  const ownedQuantity = (name: string) =>
+    items.filter((item) => norm(item.name) === norm(name)).reduce((sum, item) => sum + (item.quantity ?? 1), 0);
   return (
     <div className="space-y-1">
-      <input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Buscar no catálogo de itens…"
-        className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Adicionar do catálogo</div>
+      <ItemCatalogPicker
+        ownedQuantity={ownedQuantity}
+        onAdd={(catalog, quantity) => onChange(mergeItems(items, [itemFromName(catalog.name, quantity)]))}
       />
-      <div className="flex gap-2">
-        <select
-          className="h-8 min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-          value={selected}
-          onChange={(event) => setName(event.target.value)}
-        >
-          {matches.map((item) => (
-            <option key={item.name} value={item.name}>
-              {item.name} — {item.detail}
-            </option>
-          ))}
-        </select>
-        <Button variant="outline" size="sm" disabled={!selected} onClick={add}>
-          Adicionar
-        </Button>
-      </div>
-      {matches.length === 0 && <p className="text-xs text-zinc-500">Nenhum item do catálogo com esse nome.</p>}
     </div>
   );
 }

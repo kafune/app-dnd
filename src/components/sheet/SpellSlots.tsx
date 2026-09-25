@@ -53,13 +53,17 @@ export function SpellSlots({ id }: { id: string }) {
 
   const toggle = (level: string, idx: number) => {
     if (!unlocked) return;
-    const slot = c.spellSlots[level];
+    // Lê a versão mais nova da loja: dois toques rápidos contam como dois.
+    const latest = useStore.getState().characters[id] ?? c;
+    const slot = latest.spellSlots[level];
+    if (!slot) return;
     // bolinhas representam usadas a partir da direita; clicar inverte uma
     const used = slot.max - slot.current;
     const newUsed = idx < used ? used - 1 : used + 1;
     const newCurrent = Math.max(0, Math.min(slot.max, slot.max - newUsed));
+    if (newCurrent === slot.current) return;
     void patch(id, {
-      spellSlots: { ...c.spellSlots, [level]: { ...slot, current: newCurrent } },
+      spellSlots: { ...latest.spellSlots, [level]: { ...slot, current: newCurrent } },
     });
   };
 
@@ -75,7 +79,7 @@ export function SpellSlots({ id }: { id: string }) {
           return (
             <div key={lv} className="flex items-center justify-between">
               <span className="text-sm font-medium">Nível {lv}</span>
-              <div className="flex items-center gap-1.5" style={{ color: c.color ?? "#7c3aed" }}>
+              <div className="flex flex-wrap items-center justify-end gap-2.5" style={{ color: c.color ?? "#7c3aed" }}>
                 {Array.from({ length: slot.max }).map((_, i) => {
                   const isUsed = i < used;
                   return (

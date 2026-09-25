@@ -1,5 +1,5 @@
 import type { Character, CharacterLogEntry, Creature, DiceRoll, Folder, HomebrewItem, HomebrewKind } from "./types";
-import type { MapFigure, MapGrid, MapShape, MapState, MapToken } from "./map";
+import type { MapFigure, MapGrid, MapPreset, MapShape, MapState, MapToken } from "./map";
 
 /** Erro de API com o código do servidor (`{"error": "bad_pin"}`) e mensagem em PT-BR. */
 export class ApiError extends Error {
@@ -32,9 +32,13 @@ const FRIENDLY: Record<string, string> = {
   folder_not_empty: "A pasta ainda tem fichas. Apague as fichas dela antes.",
   master_only_hp_max: "Só o Mestre muda o PV máximo.",
   master_only_spell_slots: "Só o Mestre muda os espaços de magia (você só marca os usados).",
-  master_only_resources: "Só o Mestre cria recursos e concede Inspiração.",
+  master_only_resources: "Usos gastos só voltam com o descanso (quem aplica é o Mestre); criar recursos e conceder Inspiração também é com ele.",
   master_only_sheet: "Essa parte da ficha só o Mestre edita.",
   master_only_map: "No mapa, você só move e gira o seu próprio personagem.",
+  removed_from_map: "O Mestre tirou seu personagem do mapa; só ele pode colocá-lo de volta.",
+  preset_not_found: "Esse mapa pronto não existe mais.",
+  too_many_presets: "Limite de mapas prontos atingido: apague algum que já foi usado.",
+  bad_name: "Dê um nome ao mapa pronto.",
   bad_size: "Tamanho de criatura inválido.",
   too_large: "Grande demais para o servidor.",
 };
@@ -80,6 +84,8 @@ export type MapOp =
   | { op: "shape"; id: string; characterId?: string; shape: MapShape }
   | { op: "shape"; id: string; characterId?: string; remove: true }
   | { op: "tiles"; tiles: MapState["tiles"] }
+  /** Tira todas as áreas de uma ficha (o jogador só as dele; o Mestre informa qual). */
+  | { op: "clearShapes"; characterId?: string }
   | { op: "reset" };
 
 /** Papel de quem abriu a ficha, informado pelo servidor conforme o PIN usado. */
@@ -256,6 +262,34 @@ export const api = {
       method: "PATCH",
       headers: pinHeader(pin),
       body: JSON.stringify(op),
+    }),
+
+  /** Mapas prontos da pasta (só o Mestre). */
+  listMapPresets: (folderId: string, masterPin: string) =>
+    send<{ presets: MapPreset[] }>(`/api/folders/${enc(folderId)}/map/presets`, {
+      cache: "no-store",
+      headers: pinHeader(masterPin),
+    }),
+
+  /** Guarda o mapa atual como pronto (mesmo nome substitui). */
+  saveMapPreset: (folderId: string, name: string, masterPin: string) =>
+    send<{ presets: MapPreset[] }>(`/api/folders/${enc(folderId)}/map/presets`, {
+      method: "POST",
+      headers: pinHeader(masterPin),
+      body: JSON.stringify({ name }),
+    }),
+
+  /** Põe o mapa pronto na mesa (troca o mapa atual). */
+  applyMapPreset: (folderId: string, presetId: string, masterPin: string) =>
+    send<MapPayload>(`/api/folders/${enc(folderId)}/map/presets/${enc(presetId)}/apply`, {
+      method: "POST",
+      headers: pinHeader(masterPin),
+    }),
+
+  deleteMapPreset: (folderId: string, presetId: string, masterPin: string) =>
+    send<{ presets: MapPreset[] }>(`/api/folders/${enc(folderId)}/map/presets/${enc(presetId)}`, {
+      method: "DELETE",
+      headers: pinHeader(masterPin),
     }),
 
   uploadMapBackground: (folderId: string, image: Blob, size: { width: number; height: number }, masterPin: string) =>

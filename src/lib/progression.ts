@@ -920,27 +920,126 @@ export function classResourcesFor(classes: ClassEntry[], scores: AbilityScores):
   return [...byName.values()];
 }
 
-/** Recursos rastreáveis dos traços raciais (ex.: Bênção da Rainha Corvo = bônus de proficiência por descanso longo). */
+/** Algo que concede recursos: traço racial ou talento. */
+type ResourceGranter = { name: string; resource?: FeatureResource; extraResources?: FeatureResource[] };
+
+/** Recursos de um traço/talento no nível total dado (respeita `minLevel`). */
+function granterResources(
+  granter: ResourceGranter,
+  totalLevel: number,
+  scores: AbilityScores,
+  description: string,
+): Resource[] {
+  const level = Math.max(1, totalLevel);
+  const prof = proficiencyBonusForLevel(level);
+  const list = [...(granter.resource ? [granter.resource] : []), ...(granter.extraResources ?? [])];
+  return list.flatMap((res) => {
+    if (res.minLevel && level < res.minLevel) return [];
+    const max = resourceMax(res, level, scores, prof);
+    return [{ name: res.name ?? granter.name, current: max, max, recharge: res.recharge, description }];
+  });
+}
+
+/** Recursos rastreáveis dos traços raciais (ex.: Bênção da Rainha Corvo = 1 uso por descanso longo). */
 export function raceResourcesFor(
   traits: RaceTraitDef[],
   totalLevel: number,
   scores: AbilityScores,
   raceName: string,
 ): Resource[] {
-  const prof = proficiencyBonusForLevel(totalLevel);
-  return traits.flatMap((trait) => {
-    if (!trait.resource) return [];
-    const max = resourceMax(trait.resource, Math.max(1, totalLevel), scores, prof);
-    return [
-      {
-        name: trait.resource.name ?? trait.name,
-        current: max,
-        max,
-        recharge: trait.resource.recharge,
-        description: `${raceName || "Raça"}: ${trait.name}`,
-      },
-    ];
-  });
+  return traits.flatMap((trait) => granterResources(trait, totalLevel, scores, `${raceName || "Raça"}: ${trait.name}`));
+}
+
+/** Recursos rastreáveis dos talentos da ficha (ex.: Sortudo = 3 pontos de sorte por descanso longo). */
+export function featResourcesFor(features: Feature[], totalLevel: number, scores: AbilityScores): Resource[] {
+  const byName = new Map<string, Resource>();
+  for (const featName of featNamesOf(features)) {
+    const feat = findFeat(featName);
+    if (!feat) continue;
+    for (const r of granterResources(feat, totalLevel, scores, `Talento: ${feat.name}`)) {
+      if (!byName.has(norm(r.name))) byName.set(norm(r.name), r);
+    }
+  }
+  return [...byName.values()];
+}
+
+/** Nomes antigos (fichas semeadas / versões anteriores) -> nome atual do catálogo. */
+const RESOURCE_ALIASES: Record<string, string> = {
+  "graca da rainha corvo": "bencao da rainha corvo",
+  "canalizacao divina": "canalizar divindade",
+  "cura pelas maos (pool)": "cura pelas maos (pv)",
+};
+
+const resourceKey = (name: string) => {
+  const n = norm(name).replace(/\s+/g, " ");
+  return RESOURCE_ALIASES[n] ?? n;
+};
+const withoutDetail = (key: string) => key.replace(/\s*\([^)]*\)\s*$/, "");
+
+/**
+ * Dois nomes de recurso são o mesmo recurso? Ignora acento/caixa, aceita apelidos
+ * antigos e um detalhe entre parênteses de um lado só ("Cura pelas Mãos" = "Cura pelas Mãos (PV)").
+ */
+export function sameResourceName(a: string, b: string): boolean {
+  const ka = resourceKey(a);
+  const kb = resourceKey(b);
+  if (ka === kb) return true;
+  const ba = withoutDetail(ka);
+  const bb = withoutDetail(kb);
+  return (ba === ka || bb === kb) && ba === bb;
+}
+
+/** Recursos que a ficha deveria ter pelas regras: classe, raça e talentos (sem repetir nome). */
+export function expectedResources(character: Pick<Character, "sheet">): Resource[] {
+  const sheet = character.sheet;
+  const level = totalLevelOf(sheet.classes);
+  const scores = sheet.abilityScores;
+  const race = sheet.raceInfo ? resolveRace(sheet.raceInfo.race, sheet.raceInfo.subrace) : undefined;
+  const all = [
+    ...classResourcesFor(sheet.classes, scores),
+    ...(race ? raceResourcesFor(race.traits, level, scores, race.race.name) : []),
+    ...featResourcesFor(sheet.features, level, scores),
+  ];
+  const out: Resource[] = [];
+  for (const r of all) if (!out.some((o) => sameResourceName(o.name, r.name))) out.push(r);
+  return out;
+}
+
+/**
+ * Recursos de usos limitados que a ficha ainda não tem (fichas criadas antes do
+ * catálogo conhecer o recurso, ou talento escolhido depois pelo jogador — o
+ * servidor não deixa o jogador mudar a lista de recursos). Cheios, prontos para entrar.
+ */
+export function missingResources(character: Pick<Character, "sheet" | "resources">): Resource[] {
+  return expectedResources(character).filter(
+    (e) => !character.resources.some((r) => sameResourceName(r.name, e.name)),
+  );
+}
+
+/**
+ * Sincroniza recursos derivados (raça e talentos) entre dois estados da ficha:
+ * atualiza o máximo dos que existem (mantendo o que já foi gasto), acrescenta os
+ * que passaram a valer agora (nível novo, talento novo) e tira os que deixaram de
+ * valer. Um recurso que já valia antes e não está na ficha foi removido à mão: respeita.
+ */
+function syncDerivedResources(resources: Resource[], before: Resource[], after: Resource[]): Resource[] {
+  let out = resources.filter(
+    (r) =>
+      r.kind === "moeda" ||
+      !before.some((b) => sameResourceName(b.name, r.name)) ||
+      after.some((a) => sameResourceName(a.name, r.name)),
+  );
+  for (const a of after) {
+    const index = out.findIndex((r) => sameResourceName(r.name, a.name));
+    if (index === -1) {
+      if (!before.some((b) => sameResourceName(b.name, a.name))) out = [...out, a];
+      continue;
+    }
+    const current = out[index];
+    const used = Math.max(0, current.max - current.current);
+    out = out.map((r, i) => (i === index ? { ...r, max: a.max, current: Math.max(0, a.max - used) } : r));
+  }
+  return out;
 }
 
 /** ASIs alcançados pelas classes (className + level), em ordem de nível. */
@@ -1203,11 +1302,11 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
   const resources = character.resources.filter((r) => {
     // Moedas (Inspiração e afins) não vêm da classe: nunca somem num recálculo.
     if (r.kind === "moeda") return true;
-    const isAuto = /^[^:]+: /.test(r.description ?? "") && classResourcesFor(prevClasses, sheet.abilityScores).some((p) => norm(p.name) === norm(r.name));
-    return !isAuto || autoRes.some((a) => norm(a.name) === norm(r.name));
+    const isAuto = /^[^:]+: /.test(r.description ?? "") && classResourcesFor(prevClasses, sheet.abilityScores).some((p) => sameResourceName(p.name, r.name));
+    return !isAuto || autoRes.some((a) => sameResourceName(a.name, r.name));
   });
   for (const a of autoRes) {
-    const i = resources.findIndex((r) => norm(r.name) === norm(a.name));
+    const i = resources.findIndex((r) => sameResourceName(r.name, a.name));
     if (i === -1) resources.push(a);
     else {
       const used = Math.max(0, resources[i].max - resources[i].current);
@@ -1215,16 +1314,18 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
     }
   }
 
-  // --- recursos de traços raciais que escalam com o nível (ex.: bônus de proficiência)
+  // --- recursos de traços raciais e talentos: escalam com o nível (bônus de proficiência),
+  // entram quando o nível os libera ("a partir do 3º nível") e saem com o talento revertido.
   const race = sheet.raceInfo ? resolveRace(sheet.raceInfo.race, sheet.raceInfo.subrace) : undefined;
-  if (race) {
-    for (const raceResource of raceResourcesFor(race.traits, nextLevel, scores, race.race.name)) {
-      const index = resources.findIndex((r) => norm(r.name) === norm(raceResource.name));
-      if (index === -1) continue; // removido da ficha à mão: respeita
-      const used = Math.max(0, resources[index].max - resources[index].current);
-      resources[index] = { ...resources[index], max: raceResource.max, current: Math.max(0, raceResource.max - used) };
-    }
-  }
+  const derivedBefore = [
+    ...(race ? raceResourcesFor(race.traits, prevLevel, sheet.abilityScores, race.race.name) : []),
+    ...featResourcesFor(sheet.features, prevLevel, sheet.abilityScores),
+  ];
+  const derivedAfter = [
+    ...(race ? raceResourcesFor(race.traits, nextLevel, scores, race.race.name) : []),
+    ...featResourcesFor(features, nextLevel, scores),
+  ];
+  const syncedResources = syncDerivedResources(resources, derivedBefore, derivedAfter);
 
   // --- bônus de proficiência e CD/ataque de magia
   const profBonus = proficiencyBonusForLevel(nextLevel);
@@ -1246,7 +1347,7 @@ export function applyClassChange(character: Character, nextClassesRaw: ClassEntr
     hpMax,
     hpCurrent,
     spellSlots: slots,
-    resources,
+    resources: syncedResources,
     sheet: {
       ...sheet,
       classes: nextClasses,

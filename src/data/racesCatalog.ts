@@ -259,6 +259,8 @@ const ELFO: RaceDef = {
         SENSIBILIDADE_LUZ_SOLAR,
         {
           name: "Magia Drow",
+          resource: { name: "Fogo das Fadas (Magia Drow)", max: 1, recharge: "long", minLevel: 3 },
+          extraResources: [{ name: "Escuridão (Magia Drow)", max: 1, recharge: "long", minLevel: 5 }],
           description:
             "Você conhece o truque globos de luz. Quando você alcança o 3º nível, você pode conjurar a magia fogo das fadas uma vez. Quando você alcança o 5º nível, você também pode conjurar escuridão uma vez. Você precisa terminar um descanso longo para poder conjurar as magias desse traço novamente. Carisma é sua habilidade de conjuração para essas magias.",
           spells: ["Globos de Luz", "Fogo das Fadas", "Escuridão"],
@@ -291,6 +293,7 @@ const ELFO: RaceDef = {
         },
         {
           name: "Bênção da Rainha Corvo",
+          resource: { max: 1, recharge: "long" },
           description:
             "Com uma ação bônus, você pode se teleportar magicamente até 9 metros para um espaço desocupado que possa ver. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso longo. A partir do 3º nível, você também ganha resistência a todo dano quando se teleporta usando esse traço; a resistência dura até o início do seu próximo turno, e durante esse tempo você parece fantasmagórico e translúcido.",
         },
@@ -430,6 +433,7 @@ const DRACONATO: RaceDef = {
     },
     {
       name: "Arma de Sopro",
+      resource: { max: 1, recharge: "short" },
       description:
         "Você pode usar uma ação para exalar energia destrutiva. Seu ancestral dracônico determina o tamanho, o formato e o tipo de dano que você expele. Quando você usa sua arma de sopro, cada criatura na área exalada deve realizar um teste de resistência, cujo tipo é determinado pelo seu ancestral dracônico. A CD do teste de resistência é 8 + seu modificador de Constituição + seu bônus de proficiência. Uma criatura sofre 2d6 de dano em um fracasso e metade desse dano em um sucesso. O dano aumenta para 3d6 no 6º nível, 4d6 no 11º nível e 5d6 no 16º nível. Depois de usar sua arma de sopro, você não poderá utilizá-la novamente até completar um descanso curto ou longo.",
     },
@@ -543,6 +547,8 @@ const MARCA_DA_DESCOBERTA: SubraceDef = {
     },
     {
       name: "Magia do Descobridor",
+      resource: { name: "Marca do Caçador (Magia do Descobridor)", max: 1, recharge: "long" },
+      extraResources: [{ name: "Localizar Objeto (Magia do Descobridor)", max: 1, recharge: "long", minLevel: 3 }],
       description:
         "Você pode conjurar a magia marca do caçador com este traço. A partir do 3º nível, você também pode conjurar a magia localizar objeto com ele. Depois de conjurar qualquer uma dessas magias com este traço, você não pode conjurar essa mesma magia com ele de novo até terminar um descanso longo. Sabedoria é sua habilidade de conjuração para essas magias.",
       spells: ["Marca do Caçador", "Localizar Objeto"],
@@ -612,6 +618,8 @@ const TIEFLING: RaceDef = {
     },
     {
       name: "Legado Infernal",
+      resource: { name: "Repreensão Infernal (Legado Infernal)", max: 1, recharge: "long", minLevel: 3 },
+      extraResources: [{ name: "Escuridão (Legado Infernal)", max: 1, recharge: "long", minLevel: 5 }],
       description:
         "Você conhece o truque taumaturgia. Quando você atingir o 3º nível, você poderá conjurar a magia repreensão infernal como uma magia de 2º nível uma vez. Quando você atingir o 5º nível, você também poderá conjurar a magia escuridão uma vez. Você precisa terminar um descanso longo para poder usar as magias desse traço novamente. Sua habilidade de conjuração para essas magias é Carisma.",
       spells: ["Taumaturgia", "Repreensão Infernal", "Escuridão"],
@@ -677,6 +685,7 @@ const AASIMAR: RaceDef = {
     },
     {
       name: "Mãos Curandeiras",
+      resource: { max: 1, recharge: "long" },
       description:
         "Com uma ação, você pode tocar uma criatura e fazer com que ela recupere um número de pontos de vida igual ao seu nível. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso longo.",
     },
@@ -697,6 +706,7 @@ const AASIMAR: RaceDef = {
       traits: [
         {
           name: "Alma Radiante",
+          resource: { max: 1, recharge: "long", minLevel: 3 },
           description:
             "A partir do 3º nível, você pode usar sua ação para liberar a energia divina dentro de si, fazendo seus olhos brilharem e duas asas luminosas e incorpóreas brotarem das suas costas. Sua transformação dura 1 minuto ou até você encerrá-la com uma ação bônus. Durante ela, você tem deslocamento de voo de 9 metros e, uma vez em cada um dos seus turnos, pode causar dano radiante extra a um alvo quando causar dano a ele com um ataque ou magia; o dano extra é igual ao seu nível. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso longo.",
         },
@@ -711,6 +721,7 @@ const AASIMAR: RaceDef = {
       traits: [
         {
           name: "Consumação Radiante",
+          resource: { max: 1, recharge: "long", minLevel: 3 },
           description:
             "A partir do 3º nível, você pode usar sua ação para liberar a energia divina dentro de si, fazendo uma luz cegante jorrar dos seus olhos e da sua boca e ameaçar queimá-lo. Sua transformação dura 1 minuto ou até você encerrá-la com uma ação bônus. Durante ela, você emite luz plena em um raio de 3 metros e penumbra por mais 3 metros; ao final de cada um dos seus turnos, você e cada criatura a até 3 metros de você sofrem dano radiante igual a metade do seu nível (arredondado para cima). Além disso, uma vez em cada um dos seus turnos, você pode causar dano radiante extra a um alvo quando causar dano a ele com um ataque ou magia; o dano extra é igual ao seu nível. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso longo.",
         },
@@ -725,6 +736,7 @@ const AASIMAR: RaceDef = {
       traits: [
         {
           name: "Mortalha Necrótica",
+          resource: { max: 1, recharge: "long", minLevel: 3 },
           description:
             "A partir do 3º nível, você pode usar sua ação para liberar a energia divina dentro de si, fazendo seus olhos se tornarem poços de escuridão e duas asas esqueléticas e fantasmagóricas brotarem das suas costas. No instante em que você se transforma, cada criatura a até 3 metros de você que possa vê-lo deve ser bem-sucedida em um teste de resistência de Carisma (CD 8 + seu bônus de proficiência + seu modificador de Carisma) ou ficará amedrontada por você até o final do seu próximo turno. Sua transformação dura 1 minuto ou até você encerrá-la com uma ação bônus. Durante ela, uma vez em cada um dos seus turnos, você pode causar dano necrótico extra a um alvo quando causar dano a ele com um ataque ou magia; o dano extra é igual ao seu nível. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso longo.",
         },
@@ -778,6 +790,8 @@ const FIRBOLG: RaceDef = {
   traits: [
     {
       name: "Magia Firbolg",
+      resource: { name: "Detectar Magia (Magia Firbolg)", max: 1, recharge: "short" },
+      extraResources: [{ name: "Disfarçar-se (Magia Firbolg)", max: 1, recharge: "short" }],
       description:
         "Você pode conjurar detectar magia e disfarçar-se com esse traço, usando Sabedoria como sua habilidade de conjuração. Depois de conjurar qualquer uma dessas magias com esse traço, você não pode conjurá-la novamente com ele até terminar um descanso curto ou longo. Quando você usa esta versão de disfarçar-se, pode parecer até 90 centímetros mais baixo do que o normal, o que facilita se misturar a humanos e elfos.",
       spells: ["Detectar Magia", "Disfarçar-se"],
@@ -785,6 +799,7 @@ const FIRBOLG: RaceDef = {
     },
     {
       name: "Passo Oculto",
+      resource: { max: 1, recharge: "short" },
       description:
         "Com uma ação bônus, você pode ficar magicamente invisível até o início do seu próximo turno ou até você atacar, realizar uma jogada de dano ou forçar alguém a fazer um teste de resistência. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
     },
@@ -824,6 +839,7 @@ const GENASI: RaceDef = {
         },
         {
           name: "Mesclar-se ao Vento",
+          resource: { max: 1, recharge: "long" },
           description:
             "Você pode conjurar a magia levitação uma vez com esse traço, sem precisar de componentes materiais, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essa magia.",
           spells: ["Levitação"],
@@ -848,6 +864,7 @@ const GENASI: RaceDef = {
         },
         {
           name: "Fundir-se à Pedra",
+          resource: { max: 1, recharge: "long" },
           description:
             "Você pode conjurar a magia passos sem pegadas uma vez com esse traço, sem precisar de componentes materiais, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essa magia.",
           spells: ["Passos Sem Pegadas"],
@@ -876,6 +893,7 @@ const GENASI: RaceDef = {
         },
         {
           name: "Alcançar as Chamas",
+          resource: { max: 1, recharge: "long", minLevel: 3 },
           description:
             "Você conhece o truque criar chamas. Quando você atinge o 3º nível, você pode conjurar a magia mãos flamejantes uma vez com esse traço como uma magia de 1º nível, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essas magias.",
           spells: ["Criar Chamas", "Mãos Flamejantes"],
@@ -907,6 +925,7 @@ const GENASI: RaceDef = {
         },
         {
           name: "Chamado da Onda",
+          resource: { max: 1, recharge: "long", minLevel: 3 },
           description:
             "Você conhece o truque moldar água. Quando você atinge o 3º nível, você pode conjurar a magia criar ou destruir água uma vez com esse traço como uma magia de 2º nível, e recupera a capacidade de fazê-lo ao terminar um descanso longo. Constituição é a sua habilidade de conjuração para essas magias.",
           spells: ["Moldar Água", "Criar ou Destruir Água"],
@@ -934,6 +953,7 @@ const GOBLIN: RaceDef = {
     visaoNoEscuro("Acostumado a cavernas e tocas,"),
     {
       name: "Fúria dos Pequenos",
+      resource: { max: 1, recharge: "short" },
       description:
         "Quando você causa dano a uma criatura com um ataque ou magia e o tamanho dela é maior que o seu, você pode fazer o ataque ou magia causar dano extra igual ao seu nível. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
     },
@@ -963,6 +983,7 @@ const GOLIAS: RaceDef = {
     },
     {
       name: "Resistência de Pedra",
+      resource: { max: 1, recharge: "short" },
       description:
         "Você pode se concentrar para ignorar ferimentos ocasionalmente. Quando você sofre dano, você pode usar sua reação para rolar um d12. Adicione seu modificador de Constituição ao número rolado e reduza o dano sofrido por esse total. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
     },
@@ -995,6 +1016,7 @@ const HOBGOBLIN: RaceDef = {
     },
     {
       name: "Salvar as Aparências",
+      resource: { max: 1, recharge: "short" },
       description:
         "Hobgoblins são cuidadosos para não demonstrar fraqueza na frente dos aliados, por medo de perder status. Se você errar uma jogada de ataque ou falhar em um teste de habilidade ou de resistência, você pode ganhar um bônus na jogada igual ao número de aliados que possa ver a até 9 metros de você (bônus máximo de +5). Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
     },
@@ -1041,6 +1063,7 @@ const HOMEM_LAGARTO: RaceDef = {
     },
     {
       name: "Mandíbulas Famintas",
+      resource: { max: 1, recharge: "short" },
       description:
         "Em combate, você pode entrar em um frenesi alimentar. Com uma ação bônus, você pode realizar um ataque especial com sua mordida. Se o ataque acertar, ele causa seu dano normal e você ganha pontos de vida temporários (mínimo 1) iguais ao seu modificador de Constituição. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
     },
@@ -1138,6 +1161,7 @@ const KOBOLD: RaceDef = {
     visaoNoEscuro("Acostumado à vida subterrânea,"),
     {
       name: "Rastejar, Encolher-se e Implorar",
+      resource: { max: 1, recharge: "short" },
       description:
         "Com uma ação no seu turno, você pode se encolher pateticamente para distrair os inimigos próximos. Até o final do seu próximo turno, seus aliados têm vantagem nas jogadas de ataque contra inimigos a até 3 metros de você que possam vê-lo. Depois de usar esse traço, você não pode usá-lo novamente até terminar um descanso curto ou longo.",
     },
@@ -1331,7 +1355,7 @@ const SHADE: RaceDef = {
       name: "Carne Fantasmagórica",
       description:
         "A partir do 3º nível, você pode usar sua ação para dissolver seu corpo físico na matéria efêmera dos espíritos. Você fica translúcido e sem cor, e o ar ao seu redor esfria. A transformação dura 1 minuto ou até você encerrá-la com uma ação bônus. Enquanto durar, você ganha deslocamento de voo de 9 metros e pode pairar; tem resistência a dano de concussão, cortante e perfurante de ataques não mágicos que não sejam de prata; tem vantagem em testes para escapar de uma agarrada ou de ficar impedido; e pode atravessar criaturas e objetos como se fossem terreno difícil. Se terminar o turno dentro de um objeto, você sofre 1d10 de dano de energia. Depois de usar este traço, você não pode usá-lo novamente até terminar um descanso longo.",
-      resource: { max: 1, recharge: "long" },
+      resource: { max: 1, recharge: "long", minLevel: 3 },
     },
     {
       name: "Morte Imperfeita",

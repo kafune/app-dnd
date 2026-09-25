@@ -1,6 +1,6 @@
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { useIsMaster, useStore } from "@/lib/store";
+import { useIsMaster, useCharacterSheet, useStore } from "@/lib/store";
 import {
   ABILITY_LABELS,
   abilityMod,
@@ -38,7 +38,7 @@ function skillParts(
 }
 
 export function Skills({ id }: { id: string }) {
-  const c = useStore((s) => s.characters[id]);
+  const c = useCharacterSheet(id);
   const addRoll = useStore((s) => s.addRoll);
   const editMode = useStore((s) => s.editMode);
   const isMaster = useIsMaster(id);
@@ -171,7 +171,7 @@ export function Skills({ id }: { id: string }) {
  * painel some quando não sobra nada para escolher.
  */
 export function ExpertisePicker({ id }: { id: string }) {
-  const c = useStore((s) => s.characters[id]);
+  const c = useCharacterSheet(id);
   const patchSheet = useStore((s) => s.patchSheet);
   if (!c) return null;
 

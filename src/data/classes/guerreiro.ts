@@ -517,6 +517,7 @@ export const GUERREIRO: ClassDef = {
         },
         {
           name: "Adepto Telecinético",
+          resource: { name: "Salto Telecinético", max: 1, recharge: "short" },
           level: 7,
           description:
             "Você dominou novas formas de usar suas habilidades telecinéticas, descritas abaixo.\n" +
@@ -531,12 +532,14 @@ export const GUERREIRO: ClassDef = {
         },
         {
           name: "Baluarte Telecinético",
+          resource: { max: 1, recharge: "short" },
           level: 15,
           description:
             "Você pode proteger a si mesmo e aos outros com energia telecinética. Como uma ação bônus, você pode escolher criaturas que possa ver a até 9 metros de você (incluindo você), até uma quantidade de criaturas igual ao seu modificador de Inteligência (mínimo de uma criatura). Cada criatura escolhida é protegida por meia cobertura por 1 minuto ou até você ficar incapacitado. Uma vez que realize essa ação bônus, você não pode repeti-la até terminar um descanso curto ou longo, a menos que gaste um dado de Energia Psíquica para usá-la de novo.",
         },
         {
           name: "Mestre Telecinético",
+          resource: { max: 1, recharge: "long" },
           level: 18,
           description:
             "Sua habilidade de mover criaturas e objetos com a mente é inigualável. Você pode conjurar a magia telecinesia, sem a necessidade de componentes, e sua habilidade de conjuração para essa magia é Inteligência. Em cada um dos seus turnos enquanto você se concentra na magia, incluindo o turno em que a conjura, você pode realizar um ataque com arma como uma ação bônus. Uma vez que conjure a magia através dessa característica, você não poderá fazê-lo novamente até terminar um descanso longo, a menos que gaste um dado de Energia Psíquica para usá-la de novo.",
@@ -557,6 +560,8 @@ export const GUERREIRO: ClassDef = {
         },
         {
           name: "Entalhador de Runas",
+          // cada runa conhecida invoca 1× por descanso (2× a partir de Mestre das Runas, no 15º)
+          resource: { name: "Invocações de Runa", max: 2, recharge: "short", byLevel: { "3": 2, "7": 3, "10": 4, "15": 10 } },
           level: 3,
           description:
             "Você pode usar runas mágicas para aprimorar seu equipamento. Ao ganhar esta característica, você aprende a inscrever duas runas à sua escolha dentre as descritas abaixo, e cada vez que ganhar um nível nesta classe pode substituir uma runa que conheça por outra desta característica. Quando alcança certos níveis nesta classe, você aprende runas adicionais: 2 runas no 3º nível, 3 no 7º, 4 no 10º e 5 no 15º.\n" +

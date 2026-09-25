@@ -46,13 +46,32 @@ body {
 }
 
 /* Slot de magia */
+/* Toques seguidos não viram "duplo toque para zoom" (que segurava o segundo toque
+   no celular e fazia gastar espaços de magia parecer travado). */
+button,
+a,
+label,
+input,
+select,
+[role="button"] {
+  touch-action: manipulation;
+}
+
 .slot-pip {
+  position: relative;
+  flex-shrink: 0;
   width: 18px;
   height: 18px;
   border: 2px solid currentColor;
   border-radius: 999px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+/* Área de toque maior que a bolinha, sem mudar o desenho. */
+.slot-pip::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
 }
 .slot-pip.used {
   background: transparent;

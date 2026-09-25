@@ -16,8 +16,8 @@ nem nginx servindo arquivos estáticos em produção.
 
 ## Quem manda em quê
 
-A ficha tem dois donos. O **jogador** cuida do estado do personagem: PV, contadores de
-recurso e de espaço de magia, notas da sessão, equipar/desequipar armadura e escudo, a
+A ficha tem dois donos. O **jogador** cuida do estado do personagem: PV, espaços de magia
+e usos de recurso gastos (recurso de descanso o jogador só gasta: volta com o descanso), notas da sessão, equipar/desequipar armadura e escudo, a
 história do personagem e as escolhas que a progressão abriu (talento × atributo,
 especialização em perícia ou em ferramenta, características opcionais do Tasha, magias —
 se a classe trocar magias livremente, ou para preencher as vagas que um nível novo
@@ -44,7 +44,9 @@ mestra. Nele o Mestre vê PV, CA, iniciativa, espaços de magia e recursos de to
 fichas, dá Inspiração com um clique, aplica descanso curto ou longo em cada personagem
 e acompanha um mural de avisos (“Fulano perdeu 7 PV”, “gastou 1 espaço de 2º”) em tempo
 real. Também dá para anotar criaturas da cena — nome, PV e CA; em 0 PV a criatura some
-sozinha.
+sozinha. No mapa, o Mestre salva **mapas prontos** (fundo, grade, marcas, formas e
+tokens) antes da sessão, põe na mesa com um clique e apaga depois de usar; também
+tira um jogador do mapa (ele só volta quando o Mestre o posiciona).
 
 ## Rodar localmente (dev)
 

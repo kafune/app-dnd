@@ -78,6 +78,23 @@ export type MapShape = {
 
 export type MapBackground = { version: string; width?: number; height?: number };
 
+/** Mapa pronto que o Mestre guardou para usar numa sessão (resumo, sem a imagem). */
+export type MapPreset = {
+  id: string;
+  name: string;
+  background: { width?: number | null; height?: number | null } | null;
+  tokens: number;
+  shapes: number;
+  tiles: number;
+  createdAt: string;
+};
+
+/** Miniatura do mapa pronto (a imagem de fundo guardada com ele). */
+export function presetBackgroundUrl(folderId: string, preset: MapPreset): string | null {
+  if (!preset.background) return null;
+  return `/api/folders/${encodeURIComponent(folderId)}/map/presets/${encodeURIComponent(preset.id)}/background?v=${encodeURIComponent(preset.createdAt)}`;
+}
+
 export type MapState = {
   grid: MapGrid;
   /** Chave = id do token: `c:<ficha>` ou `m:<criatura>`. */
@@ -86,6 +103,8 @@ export type MapState = {
   tiles: Record<string, TileMark>;
   shapes: MapShape[];
   background: MapBackground | null;
+  /** Fichas (`c:<ficha>`) que o Mestre tirou do mapa: não se recolocam sozinhas. */
+  excluded?: string[];
   updatedAt?: string;
 };
 
@@ -180,7 +199,16 @@ export function normalizeMapState(raw: unknown): MapState {
           ...(typeof bg.height === "number" ? { height: bg.height } : {}),
         }
       : null;
-  return { grid, tokens, tiles, shapes, background, ...(typeof r.updatedAt === "string" ? { updatedAt: r.updatedAt } : {}) };
+  const excluded = Array.isArray(r.excluded) ? r.excluded.filter((id): id is string => typeof id === "string") : [];
+  return {
+    grid,
+    tokens,
+    tiles,
+    shapes,
+    background,
+    ...(excluded.length ? { excluded } : {}),
+    ...(typeof r.updatedAt === "string" ? { updatedAt: r.updatedAt } : {}),
+  };
 }
 
 // === Escala e tamanhos ===

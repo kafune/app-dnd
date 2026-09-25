@@ -18,6 +18,7 @@ Largura A4 = 595pt (metade ~298), Carta = 612pt (metade ~306).
   extrai "Caldeirão de Tasha.pdf" 105 117 306 tas_cols.txt
   python3 scripts/parse_spells.py <dir_com_os_*_cols.txt>   # gera spells.json (sem classes)
   python3 scripts/parse_spelllists.py <mesmo_dir>           # adiciona campo `classes`
+  python3 scripts/fix_spells.py                             # separa magias grudadas pelo OCR (Xanathar)
 
 As classes vêm das tabelas "Lista de Magias" por classe (PHB pág 209-213 e
 Xanathar pág 150-152, ambas em 3 colunas) e da "Tabela de Feitiços" do Tasha

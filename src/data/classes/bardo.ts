@@ -26,7 +26,8 @@ export const BARDO: ClassDef = {
       level: 1,
       description:
         "Você pode inspirar os outros através de palavras animadoras ou música. Para tanto, você usa uma ação bônus no seu turno para escolher uma criatura, que não seja você mesmo, a até 18 metros de você que possa ouvi-lo. Essa criatura ganha um dado de Inspiração de Bardo, um d6.\nUma vez, nos próximos 10 minutos, a criatura pode rolar o dado e adicionar o valor rolado a um teste de habilidade, jogada de ataque ou teste de resistência que ela fizer. A criatura pode esperar até rolar o d20 antes de decidir usar o dado de Inspiração de Bardo, mas deve decidir antes de o Mestre dizer se a rolagem foi bem ou malsucedida. Quando o dado de Inspiração de Bardo for rolado, ele é gasto. Uma criatura pode ter apenas um dado de Inspiração de Bardo por vez.\nVocê pode usar essa característica um número de vezes igual ao seu modificador de Carisma (no mínimo uma vez). Você recupera todos os usos quando termina um descanso longo.\nSeu dado de Inspiração de Bardo muda quando você atinge certos níveis na classe: o dado se torna um d8 no 5° nível, um d10 no 10° nível e um d12 no 15° nível.",
-      resource: { max: "cha", recharge: "long" },
+      // mesmo nome que Fonte de Inspiração (5º) usa, para virar um recurso só (e não "(d6)" + outro)
+      resource: { name: "Inspiração de Bardo", max: "cha", recharge: "long" },
     },
     {
       name: "Versatilidade",

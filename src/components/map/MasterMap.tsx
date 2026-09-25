@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowDownCircle, ArrowUpCircle, Eraser, Eye, EyeOff, ImagePlus, Map as MapIcon, Shapes, Trash2, TriangleAlert, X } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, BookmarkPlus, Eraser, Eye, EyeOff, ImagePlus, Map as MapIcon, Shapes, Trash2, TriangleAlert, UserX, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -20,6 +20,7 @@ import {
 } from "@/lib/map";
 import { MapCanvas, type CanvasMode } from "./MapCanvas";
 import { ShapeForm } from "./ShapeForm";
+import { MapPresets } from "./MapPresets";
 import { initials } from "@/lib/avatar";
 
 type Tool = "acima" | "abaixo" | "dificil" | "limpar";
@@ -68,6 +69,8 @@ export function MasterMap({ folderId }: { folderId: string }) {
   const [placing, setPlacing] = useState<MapFigure | null>(null);
   const [shapeForm, setShapeForm] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const [removing, setRemoving] = useState<MapFigure | null>(null);
   const [busyBackground, setBusyBackground] = useState(false);
 
   useEffect(() => {
@@ -184,6 +187,8 @@ export function MasterMap({ folderId }: { folderId: string }) {
 
   const unplaced = figures.filter((f) => !state?.tokens[f.id]);
   const creatures = figures.filter((f) => f.kind === "creature");
+  const players = figures.filter((f) => f.kind === "character");
+  const excluded = new Set(state?.excluded ?? []);
 
   return (
     <section className="w-full px-4">
@@ -211,10 +216,20 @@ export function MasterMap({ folderId }: { folderId: string }) {
               <Trash2 className="h-3 w-3" /> Remover fundo
             </Button>
           )}
+          <Button
+            variant={presetsOpen ? "success" : "outline"}
+            size="sm"
+            onClick={() => setPresetsOpen((v) => !v)}
+            title="Salvar este mapa para usar depois, ou pôr na mesa um mapa já montado"
+          >
+            <BookmarkPlus className="h-3 w-3" /> Mapas prontos
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setConfirmReset(true)} title="Tira todos os tokens, marcas e formas do mapa">
             <Eraser className="h-3 w-3" /> Limpar mapa
           </Button>
         </CardHeader>
+
+        {presetsOpen && <MapPresets folderId={folderId} />}
 
         {state && <GridSettings grid={state.grid} onChange={(grid) => void patchMap({ op: "grid", grid })} />}
 
@@ -307,7 +322,7 @@ export function MasterMap({ folderId }: { folderId: string }) {
         </div>
 
         {state && (
-          <CardBody className="grid gap-4 border-t border-zinc-100 text-xs dark:border-zinc-800 sm:grid-cols-2">
+          <CardBody className="grid gap-4 border-t border-zinc-100 text-xs dark:border-zinc-800 sm:grid-cols-2 xl:grid-cols-3">
             <div>
               <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Fora do mapa</div>
               {unplaced.length === 0 ? (
@@ -331,6 +346,47 @@ export function MasterMap({ folderId }: { folderId: string }) {
                       </button>
                     </li>
                   ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Jogadores</div>
+              {players.length === 0 ? (
+                <p className="text-zinc-500">Nenhuma ficha nesta pasta.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {players.map((figure) => {
+                    const onMap = !!state.tokens[figure.id];
+                    const areas = state.shapes.filter((shape) => `c:${shape.ownerId}` === figure.id).length;
+                    return (
+                      <li key={figure.id} className="flex flex-wrap items-center gap-1.5">
+                        <FigureFace figure={figure} folderId={folderId} />
+                        <span className="min-w-0 flex-1 truncate">{figure.name}</span>
+                        {areas > 0 && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void patchMap({ op: "clearShapes", characterId: figure.refId })}
+                            title="Remove as magias e formas que este jogador pôs no mapa"
+                          >
+                            <Eraser className="h-3 w-3" /> {areas} área{areas > 1 ? "s" : ""}
+                          </Button>
+                        )}
+                        {onMap ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setRemoving(figure)}
+                            title="Tira o personagem (e as áreas dele) do mapa; ele só volta se você o posicionar"
+                          >
+                            <UserX className="h-3 w-3" /> Remover do mapa
+                          </Button>
+                        ) : (
+                          <span className="text-zinc-500">{excluded.has(figure.id) ? "removido por você" : "fora do mapa"}</span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -381,6 +437,18 @@ export function MasterMap({ folderId }: { folderId: string }) {
         )}
       </Card>
       </div>
+      <ConfirmDialog
+        open={!!removing}
+        title={`Remover ${removing?.name ?? ""} do mapa?`}
+        description="O token e as áreas de magia dele saem do mapa, e o jogador não consegue se recolocar sozinho. Para trazê-lo de volta, posicione-o pela lista “Fora do mapa”."
+        confirmLabel="Remover"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          const figure = removing;
+          setRemoving(null);
+          if (figure) void patchMap({ op: "token", id: figure.id, remove: true });
+        }}
+      />
       <ConfirmDialog
         open={confirmReset}
         title="Limpar o mapa?"

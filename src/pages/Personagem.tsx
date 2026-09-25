@@ -1,5 +1,5 @@
-import { EscolhasHabilidadesFicha } from "@/components/sheet/EscolhasHabilidadesFicha";
-import { useEffect, useState } from "react";
+import { EscolhasHabilidadesFicha as EscolhasCard } from "@/components/sheet/EscolhasHabilidadesFicha";
+import { memo, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Trash2, Pencil, Check, BellRing, Dices, Swords, Users, History, Map as MapIcon, ScrollText } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -12,22 +12,22 @@ import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { PointAllocator, allocatedPoints } from "@/components/PointAllocator";
 import { fromAllocation, toAllocation } from "@/components/create/AdvancementChoices";
 import { FeatSpellChoices, featHasSpells, featSpellsComplete } from "@/components/create/FeatSpellChoices";
-import { HpTracker } from "@/components/sheet/HpTracker";
-import { Abilities } from "@/components/sheet/Abilities";
-import { Skills } from "@/components/sheet/Skills";
-import { SpellSlots } from "@/components/sheet/SpellSlots";
-import { Resources } from "@/components/sheet/Resources";
-import { Combat } from "@/components/sheet/Combat";
-import { Spells } from "@/components/sheet/Spells";
-import { Features } from "@/components/sheet/Features";
-import { Notes } from "@/components/sheet/Notes";
-import { Backstory } from "@/components/sheet/Backstory";
+import { HpTracker as HpTrackerCard } from "@/components/sheet/HpTracker";
+import { Abilities as AbilitiesCard } from "@/components/sheet/Abilities";
+import { Skills as SkillsCard } from "@/components/sheet/Skills";
+import { SpellSlots as SpellSlotsCard } from "@/components/sheet/SpellSlots";
+import { Resources as ResourcesCard } from "@/components/sheet/Resources";
+import { Combat as CombatCard } from "@/components/sheet/Combat";
+import { Spells as SpellsCard } from "@/components/sheet/Spells";
+import { Features as FeaturesCard } from "@/components/sheet/Features";
+import { Notes as NotesCard } from "@/components/sheet/Notes";
+import { Backstory as BackstoryCard } from "@/components/sheet/Backstory";
 import { Reminders } from "@/components/sheet/Reminders";
-import { OptionalFeatures } from "@/components/sheet/OptionalFeatures";
+import { OptionalFeatures as OptionalFeaturesCard } from "@/components/sheet/OptionalFeatures";
 import { ActionsPanel, TablePanel } from "@/components/sheet/TablePanel";
 import { SidePanels, type SidePanel } from "@/components/sheet/SidePanels";
 import { CharacterAccessGate } from "@/components/sheet/CharacterAccessGate";
-import { ProficienciesAndLanguages, Inventory, Personality } from "@/components/sheet/Misc";
+import { ProficienciesAndLanguages as ProficienciesCard, Inventory as InventoryCard, Personality as PersonalityCard } from "@/components/sheet/Misc";
 import { PlayerMap } from "@/components/map/PlayerMap";
 import { cn } from "@/lib/cn";
 import { PinLock } from "@/components/sheet/PinLock";
@@ -48,6 +48,24 @@ import {
   subclassChoiceFor,
   totalLevelOf,
 } from "@/lib/progression";
+
+// Cada bloco da ficha lê da loja só o que usa; `memo` impede que a página inteira
+// re-renderize junto a cada toque (gastar um espaço de magia travava no celular).
+const EscolhasHabilidadesFicha = memo(EscolhasCard);
+const HpTracker = memo(HpTrackerCard);
+const Abilities = memo(AbilitiesCard);
+const Skills = memo(SkillsCard);
+const SpellSlots = memo(SpellSlotsCard);
+const Resources = memo(ResourcesCard);
+const Combat = memo(CombatCard);
+const Spells = memo(SpellsCard);
+const Features = memo(FeaturesCard);
+const Notes = memo(NotesCard);
+const Backstory = memo(BackstoryCard);
+const OptionalFeatures = memo(OptionalFeaturesCard);
+const ProficienciesAndLanguages = memo(ProficienciesCard);
+const Inventory = memo(InventoryCard);
+const Personality = memo(PersonalityCard);
 
 const selectCls =
   "h-9 w-full rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";

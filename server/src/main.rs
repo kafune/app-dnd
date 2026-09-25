@@ -33,7 +33,7 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
     },
-    routing::{get, patch, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use bytes::Bytes;
@@ -549,8 +549,9 @@ fn player_patch_violation(current: &CharMap, patch: &CharMap) -> Option<&'static
             if value < 0 || value > ceiling {
                 return Some("bad_request");
             }
-            // Inspiração e afins: quem dá é o Mestre, o jogador só gasta.
-            if master_only && value > previous {
+            // Inspiração e afins: quem dá é o Mestre, o jogador só gasta. Recurso de
+            // descanso também só se gasta: os usos voltam no descanso (que o Mestre aplica).
+            if (master_only || kind != "moeda") && value > previous {
                 return Some("master_only_resources");
             }
         }
@@ -1343,11 +1344,30 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
                     return Err("master_only_map");
                 }
             }
-            let tokens = state.get_mut("tokens").and_then(Value::as_object_mut).ok_or("bad_request")?;
+            if matches!(actor, MapActor::Player { .. })
+                && is_excluded(state, id)
+                && !state.get("tokens").and_then(Value::as_object).map(|t| t.contains_key(id)).unwrap_or(false)
+            {
+                // O Mestre tirou o personagem do mapa: só ele o põe de volta.
+                return Err("removed_from_map");
+            }
             if op.get("remove").and_then(Value::as_bool).unwrap_or(false) {
-                tokens.remove(id);
+                if let Some(tokens) = state.get_mut("tokens").and_then(Value::as_object_mut) {
+                    tokens.remove(id);
+                }
+                // Jogador tirado do mapa sai com as áreas dele e não volta sozinho.
+                if let Some(character_id) = id.strip_prefix("c:") {
+                    if let Some(shapes) = state.get_mut("shapes").and_then(Value::as_array_mut) {
+                        shapes.retain(|s| s.get("ownerId").and_then(Value::as_str) != Some(character_id));
+                    }
+                    set_excluded(state, id, true);
+                }
                 return Ok(());
             }
+            if master {
+                set_excluded(state, id, false);
+            }
+            let tokens = state.get_mut("tokens").and_then(Value::as_object_mut).ok_or("bad_request")?;
             let patch = op.get("token").ok_or("bad_request")?;
             let clean = clean_token(patch, master).ok_or(if master { "bad_request" } else { "master_only_map" })?;
             let entry = tokens.entry(id.to_string()).or_insert_with(|| json!({ "x": 0, "y": 0, "rotation": 0 }));
@@ -1461,6 +1481,10 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
         }
         "shape" => {
             let id = op.get("id").and_then(Value::as_str).filter(|s| !s.is_empty() && s.len() <= 128).ok_or("bad_request")?;
+            let excluded_player = match actor {
+                MapActor::Player { character_id } => is_excluded(state, &format!("c:{character_id}")),
+                MapActor::Master => false,
+            };
             let shapes = state.get_mut("shapes").and_then(Value::as_array_mut).ok_or("bad_request")?;
             let index = shapes.iter().position(|s| s.get("id").and_then(Value::as_str) == Some(id));
             if let MapActor::Player { character_id } = actor {
@@ -1473,6 +1497,9 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
             if op.get("remove").and_then(Value::as_bool).unwrap_or(false) {
                 if let Some(index) = index { shapes.remove(index); }
                 return Ok(());
+            }
+            if index.is_none() && excluded_player {
+                return Err("removed_from_map");
             }
             let clean = clean_map_shape(op.get("shape").ok_or("bad_request")?)?;
             if clean.get("id").and_then(Value::as_str) != Some(id) { return Err("bad_request"); }
@@ -1489,6 +1516,21 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
                 if shapes.len() >= MAP_SHAPES_MAX { return Err("too_large"); }
                 shapes.push(clean);
             }
+            Ok(())
+        }
+        "clearShapes" => {
+            // Tira todas as áreas de uma ficha (o jogador, só as dele).
+            let owner = match actor {
+                MapActor::Player { character_id } => character_id.clone(),
+                MapActor::Master => op
+                    .get("characterId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .ok_or("bad_request")?
+                    .to_string(),
+            };
+            let shapes = state.get_mut("shapes").and_then(Value::as_array_mut).ok_or("bad_request")?;
+            shapes.retain(|s| s.get("ownerId").and_then(Value::as_str) != Some(owner.as_str()));
             Ok(())
         }
         "shapes" => {
@@ -1544,9 +1586,39 @@ fn apply_map_op(state: &mut Map<String, Value>, op: &Value, actor: &MapActor) ->
             state.insert("tokens".into(), json!({}));
             state.insert("tiles".into(), json!({}));
             state.insert("shapes".into(), json!([]));
+            state.remove("excluded");
             Ok(())
         }
         _ => Err("bad_request"),
+    }
+}
+
+/// O Mestre tirou este token (`c:<ficha>`) do mapa?
+fn is_excluded(state: &Map<String, Value>, id: &str) -> bool {
+    state
+        .get("excluded")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().any(|v| v.as_str() == Some(id)))
+        .unwrap_or(false)
+}
+
+/// Marca/desmarca um token como tirado do mapa pelo Mestre.
+fn set_excluded(state: &mut Map<String, Value>, id: &str, excluded: bool) {
+    let mut list: Vec<Value> = state
+        .get("excluded")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|v| v.as_str().is_some() && v.as_str() != Some(id))
+        .collect();
+    if excluded {
+        list.push(Value::String(id.to_string()));
+    }
+    if list.is_empty() {
+        state.remove("excluded");
+    } else {
+        state.insert("excluded".into(), Value::Array(list));
     }
 }
 
@@ -1679,7 +1751,7 @@ async fn patch_map(
         } else {
             // Jogador: o PIN deve corresponder à ficha na mesma pasta; a operação valida a autoria.
             let token_id = body.get("id").and_then(Value::as_str).unwrap_or("");
-            let character_id = if body.get("op").and_then(Value::as_str) == Some("shape") {
+            let character_id = if matches!(body.get("op").and_then(Value::as_str), Some("shape" | "clearShapes")) {
                 body.get("characterId").and_then(Value::as_str)
             } else {
                 token_id.strip_prefix("c:")
@@ -1783,6 +1855,139 @@ async fn put_map_background(
     let updated_at = saved.get("map").and_then(|m| m.get("updatedAt")).cloned().unwrap_or(Value::Null);
     st.publish_in(Some(id.clone()), "map", json!({ "folderId": id, "updatedAt": updated_at }));
     Json(saved).into_response()
+}
+
+/// Quantos mapas prontos uma pasta guarda.
+const MAP_PRESETS_MAX: i64 = 30;
+
+/// Checa a chave mestra e a pasta antes das rotas de mapas prontos.
+fn require_master_folder(st: &AppState, db: &Db, folder_id: &str, headers: &HeaderMap) -> Result<(), Response> {
+    if !st.pins.is_master(header_pin(headers).as_deref()) {
+        return Err(error(StatusCode::FORBIDDEN, "bad_pin"));
+    }
+    match db.get_folder(folder_id) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(error(StatusCode::NOT_FOUND, "folder_not_found")),
+        Err(e) => Err(db_error(e)),
+    }
+}
+
+fn presets_response(db: &Db, folder_id: &str) -> Response {
+    match db.list_map_presets(folder_id) {
+        Ok(presets) => Json(json!({ "presets": presets })).into_response(),
+        Err(e) => db_error(e),
+    }
+}
+
+/// Mapas prontos da pasta (só o Mestre).
+async fn list_map_presets(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
+    let db = st.db();
+    if let Err(res) = require_master_folder(&st, &db, &id, &headers) {
+        return res;
+    }
+    presets_response(&db, &id)
+}
+
+/// Guarda o mapa atual como pronto (`{ name }`), para o Mestre montar as cenas antes
+/// da sessão. As áreas das magias dos jogadores ficam de fora: são da cena que passou.
+async fn save_map_preset(
+    State(st): State<Shared>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response {
+    let body = match body {
+        Ok(Json(b)) => b,
+        Err(rej) => return json_body_error(rej),
+    };
+    let name: String = body.get("name").and_then(Value::as_str).unwrap_or("").trim().chars().take(80).collect();
+    if name.is_empty() {
+        return error(StatusCode::BAD_REQUEST, "bad_name");
+    }
+    let db = st.db();
+    if let Err(res) = require_master_folder(&st, &db, &id, &headers) {
+        return res;
+    }
+    let mut map = match stored_map(&db, &id) {
+        Ok(m) => m,
+        Err(e) => return db_error(e),
+    };
+    if let Some(shapes) = map.get_mut("shapes").and_then(Value::as_array_mut) {
+        shapes.retain(|s| s.get("ownerId").and_then(Value::as_str).is_none());
+    }
+    map.remove("excluded");
+    let replacing = db
+        .list_map_presets(&id)
+        .map(|list| list.iter().any(|p| p["name"].as_str().map(|n| n.to_lowercase()) == Some(name.to_lowercase())))
+        .unwrap_or(false);
+    match db.count_map_presets(&id) {
+        Ok(n) if n >= MAP_PRESETS_MAX && !replacing => return error(StatusCode::CONFLICT, "too_many_presets"),
+        Ok(_) => {}
+        Err(e) => return db_error(e),
+    }
+    if let Err(e) = db.save_map_preset(&id, &name, &map) {
+        return db_error(e);
+    }
+    presets_response(&db, &id)
+}
+
+/// Põe um mapa pronto na mesa (troca estado e fundo do mapa atual).
+async fn apply_map_preset(
+    State(st): State<Shared>,
+    Path((id, preset_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let saved = {
+        let db = st.db();
+        if let Err(res) = require_master_folder(&st, &db, &id, &headers) {
+            return res;
+        }
+        let map = match db.apply_map_preset(&id, &preset_id) {
+            Ok(Some(m)) => m.as_object().cloned().unwrap_or_default(),
+            Ok(None) => return error(StatusCode::NOT_FOUND, "preset_not_found"),
+            Err(e) => return db_error(e),
+        };
+        let mut map = map;
+        ensure_map_shape(&mut map);
+        match map_response(&db, &id, map, true) {
+            Ok(b) => b,
+            Err(res) => return res,
+        }
+    };
+    let updated_at = saved.get("map").and_then(|m| m.get("updatedAt")).cloned().unwrap_or(Value::Null);
+    st.publish_in(Some(id.clone()), "map", json!({ "folderId": id, "updatedAt": updated_at }));
+    Json(saved).into_response()
+}
+
+/// Apaga um mapa pronto (depois de usado). Não mexe no mapa que está na mesa.
+async fn delete_map_preset(
+    State(st): State<Shared>,
+    Path((id, preset_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let db = st.db();
+    if let Err(res) = require_master_folder(&st, &db, &id, &headers) {
+        return res;
+    }
+    match db.delete_map_preset(&id, &preset_id) {
+        Ok(true) => presets_response(&db, &id),
+        Ok(false) => error(StatusCode::NOT_FOUND, "preset_not_found"),
+        Err(e) => db_error(e),
+    }
+}
+
+/// Miniatura de um mapa pronto (a imagem de fundo dele).
+async fn get_map_preset_background(
+    State(st): State<Shared>,
+    Path((id, preset_id)): Path<(String, String)>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    match st.db().get_map_preset_background(&id, &preset_id) {
+        Ok(Some(a)) => image_response(a, &q, &headers),
+        Ok(None) => error(StatusCode::NOT_FOUND, "not_found"),
+        Err(e) => db_error(e),
+    }
 }
 
 async fn delete_map_background(State(st): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
@@ -2243,6 +2448,10 @@ async fn main() {
             "/api/folders/{id}/map",
             get(get_map).patch(patch_map).layer(DefaultBodyLimit::max(MAP_OP_LIMIT)),
         )
+        .route("/api/folders/{id}/map/presets", get(list_map_presets).post(save_map_preset))
+        .route("/api/folders/{id}/map/presets/{presetId}", delete(delete_map_preset))
+        .route("/api/folders/{id}/map/presets/{presetId}/apply", post(apply_map_preset))
+        .route("/api/folders/{id}/map/presets/{presetId}/background", get(get_map_preset_background))
         .route(
             "/api/folders/{id}/map/background",
             get(get_map_background)
@@ -2441,6 +2650,39 @@ mod tests {
     }
 
     #[test]
+    fn player_spends_rest_resources_but_does_not_recover_them() {
+        let mut c = character();
+        c.insert(
+            "resources".into(),
+            json!([
+                { "name": "Bênção da Rainha Corvo", "current": 1, "max": 2, "recharge": "long" },
+                { "name": "Ficha de sorte", "current": 1, "max": 0, "recharge": "none", "kind": "moeda" }
+            ]),
+        );
+        let spend = json!([
+            { "name": "Bênção da Rainha Corvo", "current": 0, "max": 2, "recharge": "long" },
+            { "name": "Ficha de sorte", "current": 1, "max": 0, "recharge": "none", "kind": "moeda" }
+        ]);
+        assert_eq!(player_patch_violation(&c, &map(json!({ "resources": spend }))), None);
+
+        let recover = json!([
+            { "name": "Bênção da Rainha Corvo", "current": 2, "max": 2, "recharge": "long" },
+            { "name": "Ficha de sorte", "current": 1, "max": 0, "recharge": "none", "kind": "moeda" }
+        ]);
+        assert_eq!(
+            player_patch_violation(&c, &map(json!({ "resources": recover }))),
+            Some("master_only_resources")
+        );
+
+        // Moeda que não é só do Mestre o jogador recebe e gasta.
+        let earn = json!([
+            { "name": "Bênção da Rainha Corvo", "current": 1, "max": 2, "recharge": "long" },
+            { "name": "Ficha de sorte", "current": 3, "max": 0, "recharge": "none", "kind": "moeda" }
+        ]);
+        assert_eq!(player_patch_violation(&c, &map(json!({ "resources": earn }))), None);
+    }
+
+    #[test]
     fn player_equips_armor_and_picks_expertise() {
         let c = character();
         // Equipar: muda o slot, espelha a CA e desfaz a CA manual.
@@ -2523,6 +2765,54 @@ mod tests {
         for op in ["mark", "grid", "shapes", "tiles", "reset"] {
             assert_eq!(apply_map_op(&mut state, &json!({ "op": op }), &me), Err("master_only_map"), "{op}");
         }
+    }
+
+    #[test]
+    fn player_clears_only_the_own_areas() {
+        let mut state = map_state();
+        let dono = MapActor::Player { character_id: "zorrilho".into() };
+        for (id, owner) in [("a", Some("zorrilho")), ("b", Some("zorrilho")), ("c", Some("outro")), ("d", None)] {
+            let mut shape = json!({ "id": id, "kind": "esfera", "radius": 3, "x": 0, "y": 0 });
+            if let Some(owner) = owner {
+                shape["ownerId"] = json!(owner);
+            }
+            assert_eq!(apply_map_op(&mut state, &json!({ "op": "shape", "id": id, "shape": shape }), &MapActor::Master), Ok(()));
+        }
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "clearShapes" }), &dono), Ok(()));
+        let left: Vec<&str> = state["shapes"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
+        assert_eq!(left, ["c", "d"], "as áreas dos outros e as do Mestre ficam");
+        // O Mestre limpa as de uma ficha específica.
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "clearShapes" }), &MapActor::Master), Err("bad_request"));
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "clearShapes", "characterId": "outro" }), &MapActor::Master), Ok(()));
+        assert_eq!(state["shapes"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn master_removes_a_player_from_the_map() {
+        let mut state = map_state();
+        let me = MapActor::Player { character_id: "zorrilho".into() };
+        let area = json!({ "op": "shape", "id": "a", "shape": { "id": "a", "kind": "esfera", "radius": 3, "ownerId": "zorrilho", "x": 0, "y": 0 } });
+        assert_eq!(apply_map_op(&mut state, &area, &me), Ok(()));
+
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "token", "id": "c:zorrilho", "remove": true }), &MapActor::Master), Ok(()));
+        assert!(state["tokens"].get("c:zorrilho").is_none());
+        assert_eq!(state["shapes"].as_array().unwrap().len(), 0, "as áreas dele saem junto");
+        assert_eq!(state["excluded"], json!(["c:zorrilho"]));
+
+        // O jogador não volta sozinho, nem põe áreas novas.
+        let back = json!({ "op": "token", "id": "c:zorrilho", "token": { "x": 1, "y": 1, "rotation": 0 } });
+        assert_eq!(apply_map_op(&mut state, &back, &me), Err("removed_from_map"));
+        assert_eq!(apply_map_op(&mut state, &area, &me), Err("removed_from_map"));
+
+        // O Mestre põe de volta e o jogador volta a se mover.
+        assert_eq!(apply_map_op(&mut state, &back, &MapActor::Master), Ok(()));
+        assert!(state.get("excluded").is_none());
+        assert_eq!(apply_map_op(&mut state, &back, &me), Ok(()));
+
+        // Limpar o mapa também libera quem tinha sido tirado.
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "token", "id": "c:zorrilho", "remove": true }), &MapActor::Master), Ok(()));
+        assert_eq!(apply_map_op(&mut state, &json!({ "op": "reset" }), &MapActor::Master), Ok(()));
+        assert_eq!(apply_map_op(&mut state, &back, &me), Ok(()));
     }
 
     #[test]

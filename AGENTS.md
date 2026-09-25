@@ -12,8 +12,11 @@ SQLite) e serve o próprio front embutido (`server/build.rs` embute o `dist/`).
 - Mapa da mesa (um por pasta): geometria e escala em `src/lib/map.ts` (1 quadrado =
   1,5 m), áreas das magias/habilidades em `src/data/spellAreas.ts`, tela em
   `src/components/map/`. No servidor, `apply_map_op` decide o que o jogador pode
-  (mover e girar o próprio token e editar as próprias áreas) e `map_for_player` esconde os monstros que o
-  Mestre ainda não liberou.
+  (mover e girar o próprio token e editar/limpar as próprias áreas; quem o Mestre tirou do
+  mapa fica em `excluded` e não se recoloca) e `map_for_player` esconde os monstros que o
+  Mestre ainda não liberou. Mapas prontos do Mestre ficam na tabela `map_presets`.
+- Magias: depois de regenerar o catálogo com `scripts/parse_spells.py`, rode
+  `scripts/fix_spells.py` (separa as magias que o OCR do Xanathar grudou).
 - Antes de entregar: `bun run lint`, `bun run typecheck`, `bun test` e
   `cargo test --manifest-path server/Cargo.toml`.
 - Para ver a mudança rodando de verdade: `bun run build`. O binário só enxerga o

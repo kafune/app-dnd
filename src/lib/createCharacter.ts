@@ -34,6 +34,7 @@ import {
   raceGrantedSpells,
   proficiencyBonusForLevel,
   raceResourcesFor,
+  featResourcesFor,
   spellSlotsFor,
   totalLevelOf,
   norm,
@@ -514,6 +515,7 @@ export function buildCharacter(draft: CharacterDraft, id: string): Character {
       inspirationResource(0),
       ...classResourcesFor(classEntries, scores),
       ...raceResourcesFor(resolvedRaceTraits(draft.raceTraits), level, scores, draft.raceName),
+      ...featResourcesFor(featFeatures, level, scores),
     ],
   };
 }

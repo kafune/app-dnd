@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BookOpen, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useStore, useUnlocked } from "@/lib/store";
+import { useCharacterSheet, useStore, useUnlocked } from "@/lib/store";
 import { cn } from "@/lib/cn";
 
 /**
@@ -16,7 +16,7 @@ import { cn } from "@/lib/cn";
  * você foi editar, é para escrever).
  */
 export function Backstory({ id }: { id: string }) {
-  const character = useStore((s) => s.characters[id]);
+  const character = useCharacterSheet(id);
   const editMode = useStore((s) => s.editMode);
   const unlocked = useUnlocked(id);
   const [open, setOpen] = useState(false);
@@ -66,7 +66,7 @@ function summary(saved: string): string {
 }
 
 function BackstoryEditor({ id, saved }: { id: string; saved: string }) {
-  const character = useStore((s) => s.characters[id]);
+  const character = useCharacterSheet(id);
   const patchSheet = useStore((s) => s.patchSheet);
   const pushToast = useStore((s) => s.pushToast);
   const editMode = useStore((s) => s.editMode);

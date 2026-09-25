@@ -2,18 +2,18 @@ import { useMemo, useState } from "react";
 import type { EquipmentRef, Item, StartingEquipment, StartingEquipmentDef } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { ItemCatalogPicker } from "@/components/ItemCatalogPicker";
 import {
   ARTISAN_TOOLS,
   GAMING_SETS,
-  ITEMS_CATALOG,
-  ITEM_CATEGORY_ORDER,
   MARTIAL_MELEE_WEAPONS,
   MARTIAL_WEAPONS,
   MUSICAL_INSTRUMENTS,
   SIMPLE_MELEE_WEAPONS,
   SIMPLE_WEAPONS,
   findItem,
-  type CatalogItem,
+  groupCatalogNames,
+  type CatalogGroup,
 } from "@/data/itemsCatalog";
 import { STARTING_EQUIPMENT } from "@/data/startingEquipment";
 import { homebrewItem, itemFromName, mergeItems as addItems } from "@/lib/items";
@@ -33,18 +33,22 @@ type Props = {
 
 type AnyRef = Extract<EquipmentRef, { any: string }>;
 
-const ANY_OPTIONS: Record<AnyRef["any"], string[]> = {
-  "arma simples": SIMPLE_WEAPONS,
-  "arma marcial": MARTIAL_WEAPONS,
-  "arma simples corpo-a-corpo": SIMPLE_MELEE_WEAPONS,
-  "arma marcial corpo-a-corpo": MARTIAL_MELEE_WEAPONS,
-  "instrumento musical": MUSICAL_INSTRUMENTS,
-  "ferramentas de artesão": ARTISAN_TOOLS,
-  "kit de jogo": GAMING_SETS,
+/** Opções de cada coringa, agrupadas ("Armas marciais — corpo a corpo"…) e em ordem alfabética. */
+const ANY_GROUPS: Record<AnyRef["any"], CatalogGroup[]> = {
+  "arma simples": groupCatalogNames(SIMPLE_WEAPONS),
+  "arma marcial": groupCatalogNames(MARTIAL_WEAPONS),
+  "arma simples corpo-a-corpo": groupCatalogNames(SIMPLE_MELEE_WEAPONS),
+  "arma marcial corpo-a-corpo": groupCatalogNames(MARTIAL_MELEE_WEAPONS),
+  "instrumento musical": groupCatalogNames(MUSICAL_INSTRUMENTS),
+  "ferramentas de artesão": groupCatalogNames(ARTISAN_TOOLS),
+  "kit de jogo": groupCatalogNames(GAMING_SETS),
 };
 
+/** Letra da opção como no livro: (a), (b), (c)… */
+const optionLetter = (index: number) => `(${String.fromCharCode(97 + index)})`;
+
 function norm(value: string) {
-  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
 
 /** Quantos itens um coringa concede — cada um é escolhido separadamente. */
@@ -71,7 +75,6 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
   const [anyPick, setAnyPick] = useState<Record<string, string>>({});
   const [free, setFree] = useState("");
   const [presetsOpen, setPresetsOpen] = useState(false);
-  const [presetQuery, setPresetQuery] = useState("");
 
   const legacy = useMemo<StartingEquipmentDef | null>(() => {
     if (!equipment || definitions.length > 0) return null;
@@ -87,7 +90,7 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
 
   /** Arma escolhida para a `slot`-ésima vaga de um coringa (padrão: a primeira da lista). */
   const pickedAny = (ref: AnyRef, key: string, slot: number) =>
-    anyPick[`${key}#${slot}`] || ANY_OPTIONS[ref.any][0] || ref.any;
+    anyPick[`${key}#${slot}`] || ANY_GROUPS[ref.any][0]?.items[0]?.name || ref.any;
 
   /** Um ref vira 1+ itens: "duas armas marciais" são duas escolhas independentes. */
   const resolveRef = (ref: EquipmentRef, key: string): Item[] => {
@@ -114,45 +117,38 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
   const anyPickers = (ref: EquipmentRef, key: string) => {
     if (!("any" in ref)) return null;
     const count = refCount(ref);
-    return Array.from({ length: count }, (_, slot) => (
-      <label key={`${key}#${slot}`} className="block">
-        {count > 1 && (
+    return Array.from({ length: count }, (_, slot) => {
+      const picked = pickedAny(ref, key, slot);
+      const detail = findItem(picked)?.detail;
+      return (
+        <label key={`${key}#${slot}`} className="block pl-3">
           <span className="text-[11px] text-zinc-500">
-            {ref.any} {slot + 1} de {count}
+            Qual {ref.any}?{count > 1 ? ` (${slot + 1} de ${count})` : ""}
           </span>
-        )}
-        <select
-          className={selectCls}
-          aria-label={count > 1 ? `Escolher ${ref.any} ${slot + 1}` : `Escolher ${ref.any}`}
-          value={pickedAny(ref, key, slot)}
-          onChange={(event) => setAnyPick((state) => ({ ...state, [`${key}#${slot}`]: event.target.value }))}
-        >
-          {ANY_OPTIONS[ref.any].map((name) => {
-            const item = findItem(name);
-            return (
-              <option key={name} value={name}>
-                {name}
-                {item?.detail ? ` — ${item.detail}` : ""}
-              </option>
-            );
-          })}
-        </select>
-      </label>
-    ));
+          <select
+            className={selectCls}
+            aria-label={count > 1 ? `Escolher ${ref.any} ${slot + 1}` : `Escolher ${ref.any}`}
+            value={picked}
+            onChange={(event) => setAnyPick((state) => ({ ...state, [`${key}#${slot}`]: event.target.value }))}
+          >
+            {ANY_GROUPS[ref.any].map((group) => (
+              <optgroup key={group.id} label={group.label}>
+                {group.items.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name} — {item.detail}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {detail && <span className="mt-0.5 block text-[11px] text-zinc-500">{detail}</span>}
+        </label>
+      );
+    });
   };
 
-  const presetMatches = useMemo(() => {
-    const query = norm(presetQuery.trim());
-    const list = query
-      ? ITEMS_CATALOG.filter((item) => norm(item.name).includes(query) || norm(item.detail).includes(query))
-      : ITEMS_CATALOG;
-    return ITEM_CATEGORY_ORDER.map((category) => ({
-      category,
-      items: list.filter((item) => item.category === category),
-    })).filter((group) => group.items.length > 0);
-  }, [presetQuery]);
-
-  const addPreset = (item: CatalogItem) => onChange(addItems(items, [itemFromName(item.name)]));
+  const ownedQuantity = (name: string) =>
+    items.filter((item) => norm(item.name) === norm(name)).reduce((sum, item) => sum + (item.quantity ?? 1), 0);
   // Item inventado na hora: entra no grupo "Homebrew do Mestre" do inventário.
   const addFree = () => {
     const name = free.trim();
@@ -174,8 +170,12 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
             const option = group[optionIndex];
             return (
               <div key={groupIndex} className="space-y-1">
+                <span className="block text-[11px] font-medium text-zinc-500">
+                  Escolha {groupIndex + 1}: {group.length === 2 ? "(a) ou (b)" : `uma de ${group.length} opções`}
+                </span>
                 <select
                   className={selectCls}
+                  aria-label={`Escolha ${groupIndex + 1} do equipamento de ${className}`}
                   value={optionIndex}
                   onChange={(event) => setSelected((state) => ({
                     ...state,
@@ -183,7 +183,7 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
                   }))}
                 >
                   {group.map((entry, index) => (
-                    <option key={index} value={index}>{optionLabel(entry.items)}</option>
+                    <option key={index} value={index}>{optionLetter(index)} {optionLabel(entry.items)}</option>
                   ))}
                 </select>
                 {option?.items.map((ref, refIndex) => anyPickers(ref, `${className}:${groupIndex}:${refIndex}`))}
@@ -214,19 +214,10 @@ export function EquipmentPicker({ classNames = [], equipment, items, onChange, a
           </button>
           {presetsOpen && (
             <div className="space-y-2 border-t border-zinc-100 p-2 dark:border-zinc-800">
-              <Input value={presetQuery} onChange={(event) => setPresetQuery(event.target.value)} placeholder="Buscar item…" />
-              {presetMatches.map((group) => (
-                <div key={group.category}>
-                  <div className="mb-1 text-[11px] font-semibold uppercase text-zinc-400">{group.category}</div>
-                  <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                    {group.items.map((item) => (
-                      <button key={item.name} type="button" onClick={() => addPreset(item)} className="rounded border border-zinc-200 px-2 py-1 text-left text-xs dark:border-zinc-800">
-                        <strong>{item.name}</strong> — {item.detail} · {item.price}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <ItemCatalogPicker
+                ownedQuantity={ownedQuantity}
+                onAdd={(item, quantity) => onChange(addItems(items, [itemFromName(item.name, quantity)]))}
+              />
               <div className="flex gap-2">
                 <Input value={free} onChange={(event) => setFree(event.target.value)} placeholder="Item custom/homebrew…" />
                 <Button type="button" variant="outline" onClick={addFree}>+</Button>

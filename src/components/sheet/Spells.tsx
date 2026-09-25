@@ -5,6 +5,7 @@ import { useIsMaster, useStore } from "@/lib/store";
 import { ABILITY_LABELS, ABILITY_ORDER, formatMod, type AbilityKey, type Sheet, type Spell } from "@/lib/types";
 import { EditableNumber } from "@/components/sheet/edit/EditControls";
 import { ComponentesMagia } from "@/components/ComponentesMagia";
+import { withCatalogData } from "@/data/spellsCatalog";
 // O seletor de magias só é carregado quando o modo de edição abre.
 const SpellPicker = lazy(() =>
   import("@/components/create/SpellPicker").then((m) => ({ default: m.SpellPicker })),
@@ -25,7 +26,8 @@ export function Spells({ id }: { id: string }) {
   // quem troca as magias dele é o Mestre.
   const canSwap = sheetPermissions(isMaster, c.sheet).spells;
   const { cantrips, known, saveDC, attackMod, castingAbility } = magiasComEscolhas(c.sheet);
-  const all = [...cantrips, ...known];
+  // Fichas antigas guardam o texto da época; mostra o do catálogo (já corrigido).
+  const all = [...cantrips, ...known].map(withCatalogData);
   if (all.length === 0 && !editMode) return null;
 
   const setSpells = (partial: Partial<typeof c.sheet.spells>) =>

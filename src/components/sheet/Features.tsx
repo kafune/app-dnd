@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
-import { useIsMaster, useStore } from "@/lib/store";
+import { useIsMaster, useCharacterSheet, useStore } from "@/lib/store";
 import { EditableText } from "@/components/sheet/edit/EditControls";
 import { groupFeatures } from "@/lib/features";
 import { caracteristicasComEscolhas, featFeature } from "@/lib/progression";
@@ -11,7 +11,7 @@ import { OFFICIAL_RACE_TRAITS } from "@/data/racesCatalog";
 import type { Feature } from "@/lib/types";
 
 export function Features({ id }: { id: string }) {
-  const c = useStore((s) => s.characters[id]);
+  const c = useCharacterSheet(id);
   const editMode = useStore((s) => s.editMode);
   const isMaster = useIsMaster(id);
   const patchSheet = useStore((s) => s.patchSheet);
@@ -31,7 +31,7 @@ export function Features({ id }: { id: string }) {
         </CardHeader>
         <CardBody className="space-y-2">
           {features.map((f, i) => (
-            <div key={i} className="space-y-1 rounded border border-zinc-200 p-2 dark:border-zinc-800">
+            <div key={`${i}:${f.name}`} className="space-y-1 rounded border border-zinc-200 p-2 dark:border-zinc-800">
               <div className="flex items-center gap-1">
                 <EditableText value={f.name} onSave={(v) => updateFeature(i, { name: v })} placeholder="nome" className="flex-1" />
                 <EditableText value={f.source} onSave={(v) => updateFeature(i, { source: v })} placeholder="origem" className="w-28" />
